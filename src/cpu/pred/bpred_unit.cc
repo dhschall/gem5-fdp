@@ -111,8 +111,11 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     return taken;
 }
 
-
-
+void
+BPredUnit::insertPredictorHistory(ThreadID tid, PredictorHistory *&bpu_history)
+{
+    predHist[tid].push_front(bpu_history);
+}
 
 bool
 BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
@@ -441,7 +444,7 @@ BPredUnit::squashHistory(ThreadID tid, PredictorHistory* &history)
                         history->indirectHistory);
     }
 
-    // This call should delete the bpHistory.
+    // This call will  delete the bpHistory.
     cPred->squash(tid, history->bpHistory);
 
     delete history;

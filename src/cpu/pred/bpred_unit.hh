@@ -75,9 +75,6 @@ class BPredUnit : public SimObject
 
     /** Branch Predictor Unit (BPU) interface functions */
   public:
-
-
-
     /**
      * @param params The params object, that has the size of the BP and BTB.
      */
@@ -130,12 +127,6 @@ class BPredUnit : public SimObject
     void squash(const InstSeqNum &squashed_sn, const PCStateBase &corr_target,
                 bool actually_taken, ThreadID tid, bool from_commit=true);
 
-  protected:
-
-    /** *******************************************************
-     * Interface functions to the conditional branch predictor
-     *
-    */
     /**
      * Looks up a given PC in the BTB to see if a matching entry exists.
      * @param tid The thread id.
@@ -208,11 +199,7 @@ class BPredUnit : public SimObject
     void branchPlaceholder(ThreadID tid, Addr pc,
                             bool uncond, void * &bp_history);
 
-
     void dump();
-
-  private:
-
 
     /** Branch Predictor Unit (BPU) history object `PredictorHistory`
      * This class holds all information needed to manage the speculative
@@ -317,7 +304,7 @@ class BPredUnit : public SimObject
         }
 
         /** The sequence number for the predictor history entry. */
-        const InstSeqNum seqNum;
+        InstSeqNum seqNum;
 
         /** The thread id. */
         const ThreadID tid;
@@ -375,8 +362,14 @@ class BPredUnit : public SimObject
 
     };
 
-    typedef std::deque<PredictorHistory*> History;
-
+    /**
+     * Pushes a `PredictorHistory` object into the branch predictor history
+     * queue. This is used by the decoupled front-end to move predictions
+     * histories from the fetch target back to the branch predictor.
+     * @param tid The thread id.
+     * @param bpu_history The history to be inserted.
+     */
+    void insertPredictorHistory(ThreadID tid, PredictorHistory *&bpu_history);
 
     /**
      * Internal prediction function.
@@ -406,6 +399,9 @@ class BPredUnit : public SimObject
      * @param bpu_history The history of the branch to be updated.
      */
     void updateBTB(ThreadID tid, PredictorHistory *&bpu_history);
+
+  private:
+    typedef std::deque<PredictorHistory *> History;
 
   protected:
     /** Number of the threads for which the branch history is maintained. */
