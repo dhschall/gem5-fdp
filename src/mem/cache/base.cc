@@ -129,8 +129,10 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         genTagExtractor(tags->params().indexing_policy));
 
     tags->tagsInit();
-    if (prefetcher)
+    if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), getBlockSize());
+        prefetcher->setCache(this);
+    }
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
         "The tags of compressed cache %s must derive from CompressedTags",

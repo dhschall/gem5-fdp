@@ -59,6 +59,12 @@ Multi::setParentInfo(System *sys, ProbeManager *pm, unsigned blk_size)
         pf->setParentInfo(sys, pm, blk_size);
 }
 
+void
+Multi::setCache(BaseCache *cache)
+{
+    for (auto pf : prefetchers) { pf->setCache(cache); }
+}
+
 Tick
 Multi::nextPrefetchReadyTime() const
 {
@@ -88,6 +94,18 @@ Multi::getPacket()
     }
 
     return nullptr;
+}
+
+void
+Multi::prefetchUnused()
+{
+    for (auto pf : prefetchers) { pf->prefetchUnused(); }
+}
+
+void
+Multi::incrDemandMhsrMisses()
+{
+    for (auto pf : prefetchers) { pf->incrDemandMhsrMisses(); }
 }
 
 } // namespace prefetch

@@ -58,8 +58,11 @@ class Multi : public Base
   public:
     void
     setParentInfo(System *sys, ProbeManager *pm, unsigned blk_size) override;
+    void setCache(BaseCache *cache) override;
     PacketPtr getPacket() override;
     Tick nextPrefetchReadyTime() const override;
+    void prefetchUnused() override;
+    void incrDemandMhsrMisses() override;
 
     /** @{ */
     /**
