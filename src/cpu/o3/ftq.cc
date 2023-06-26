@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2022-2023 The University of Edinburgh
+<<<<<<< HEAD
  * Copyright (c) 2025 Arm Limited
+=======
+>>>>>>> 62b0067a4b (cpu: Implement decoupled front-end)
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall

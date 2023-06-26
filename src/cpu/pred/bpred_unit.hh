@@ -400,6 +400,9 @@ class BPredUnit : public SimObject
      */
     void updateBTB(ThreadID tid, PredictorHistory *&bpu_history);
 
+  private:
+    typedef std::deque<PredictorHistory *> History;
+
   protected:
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
