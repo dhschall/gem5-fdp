@@ -250,6 +250,15 @@ class BaseO3CPU(BaseCPU):
         1, "Max number of taken predictions per cycle"
     )
 
+    maxOutstandingPrefetches = Param.Unsigned(
+        2, "Maximum outstanding prefetches. (Used for decoupled front-end)"
+    )
+
+    maxOutstandingTranslations = Param.Unsigned(
+        2,
+        "Maximum outstanding translation prefetches. (Used for decoupled front-end)",
+    )
+
 
 add_citation(
     BaseO3CPU,

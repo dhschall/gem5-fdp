@@ -109,9 +109,13 @@ class Fetch
     {
       protected:
         Fetch *fetch;
+        FetchTargetPtr ft;
 
       public:
-        FetchTranslation(Fetch *_fetch) : fetch(_fetch) {}
+        FetchTranslation(Fetch *_fetch)
+          : fetch(_fetch), ft(nullptr) {}
+        FetchTranslation(Fetch *_fetch, FetchTargetPtr _ft)
+          : fetch(_fetch), ft(_ft) {}
 
         void markDelayed() {}
 
@@ -120,7 +124,7 @@ class Fetch
             gem5::ThreadContext *tc, BaseMMU::Mode mode)
         {
             assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, ft);
             delete this;
         }
     };
@@ -135,21 +139,24 @@ class Fetch
         Fetch *fetch;
         Fault fault;
         RequestPtr req;
+        FetchTargetPtr ft;
 
       public:
         FinishTranslationEvent(Fetch *_fetch)
-            : fetch(_fetch), req(nullptr)
+            : fetch(_fetch), req(nullptr), ft(nullptr)
         {}
 
         void setFault(Fault _fault) { fault = _fault; }
         void setReq(const RequestPtr &_req) { req = _req; }
+        void setFT(const FetchTargetPtr &_ft) { ft = _ft; }
 
         /** Process the delayed finish translation */
         void
         process()
         {
             assert(fetch->numInst < fetch->fetchWidth);
-            fetch->finishTranslation(fault, req);
+            // fetch->finishTranslation(fault, req);
+            fetch->finishTranslation(fault, req, ft);
         }
 
         const char *
@@ -158,6 +165,42 @@ class Fetch
             return "CPU FetchFinishTranslation";
         }
       };
+
+ class ProcessTrapEvent : public Event
+    {
+      private:
+        Fetch *fetch;
+        ThreadID tid;
+        Fault fault;
+        RequestPtr req;
+
+      public:
+        ProcessTrapEvent(Fetch *_fetch)
+            : fetch(_fetch), fault(nullptr), req(nullptr)
+        {}
+
+        void setup(ThreadID _tid, Fault _fault, RequestPtr _req) {
+            tid = _tid;
+            fault = _fault;
+            req = _req;
+        }
+
+        /** Process the delayed finish translation */
+        void
+        process()
+        {
+            assert(fetch->numInst < fetch->fetchWidth);
+            // fetch->finishTranslation(fault, req);
+            fetch->processTrap(tid, fault, req);
+        }
+
+        const char *
+        description() const
+        {
+            return "CPU ProcessTrapEvent";
+        }
+      };
+
 
   public:
     /** Overall fetch status. Used to determine if the CPU can
@@ -293,10 +336,52 @@ class Fetch
      * the icache access.
      * @param tid Thread id.
      * @param pc The actual PC of the current instruction.
+     * @param ft The fetch target to fetch from.
      * @return Any fault that occured.
      */
-    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc,
+                        FetchTargetPtr ft=nullptr);
+
+    /** Access the instruction cache either for a prefetch or the actual
+     * demand request. */
+    bool performCacheAccess(Addr vaddr, ThreadID tid,
+                             const RequestPtr &mem_req, bool prefetch=false);
+
+    /** Sends a translation request to the I-TLB */
+    void startTranslation(const RequestPtr &mem_req, const ThreadID tid,
+                          const FetchTargetPtr &ft);
+    /** Received a translation from the I-TLB */
+    void finishTranslation(const Fault &fault, const RequestPtr &mem_req,
+                           const FetchTargetPtr &ft);
+
+    /** Check the FTQ if this translation belongs to
+     * a fetch target prefetch.
+     */
+    bool isPrefetchTranslation(const ThreadID tid, const Fault &fault,
+                                const RequestPtr &mem_req);
+    /** Check the FTQ if this translation belongs to
+     * a fetch target prefetch.
+     */
+    bool trySatisfyPrefetch(const ThreadID tid, PacketPtr pkt);
+
+    /** The translation failed. Generate a fault instruction (Noop)*/
+    void processTrap(const ThreadID tid, const Fault &fault,
+                     const RequestPtr &mem_req);
+
+    RequestPtr makeRequest(Addr vaddr, ThreadID tid, Addr pc,
+                            FetchTargetPtr ft = nullptr);
+
+    /** Parameters to throttle the prefetching */
+    int outstandingPrefetches;
+    std::unordered_set<Addr> fetchesInProgress;
+    const int maxOutstandingPrefetches;
+
+    int outstandingTranslations;
+    const int maxOutstandingTranslations;
+
+    // Function that issues translation and prefetch requests for
+    // fetch targets that needs it.
+    void processFTQ(const ThreadID tid);
 
 
     /** Check if an interrupt is pending and that we need to handle
@@ -354,9 +439,15 @@ class Fetch
     void fetch(bool &status_change);
 
     /** Align a PC to the start of a fetch buffer block. */
-    Addr fetchBufferAlignPC(Addr addr)
+    inline Addr fetchBufferAlignPC(Addr addr)
     {
         return (addr & ~(fetchBufferMask));
+    }
+
+    /** Align a address to the start of a cache block. */
+    inline Addr cacheBlockAligned(Addr addr)
+    {
+        return (addr & ~(cacheBlkSize - 1));
     }
 
     /** The decoder. */
@@ -484,12 +575,12 @@ class Fetch
     ThreadID retryTid;
 
     /** Cache block size. */
-    Addr cacheBlkSize;
+    const unsigned int cacheBlkSize;
 
     /** The size of the fetch buffer in bytes. The fetch buffer
      *  itself may be smaller than a cache line.
      */
-    unsigned fetchBufferSize;
+    const unsigned fetchBufferSize;
 
     /** Mask to align a fetch address to a fetch buffer boundary. */
     Addr fetchBufferMask;
@@ -545,6 +636,9 @@ class Fetch
     const unsigned maxFTPerCycle;
     const unsigned maxTakenPredPerCycle;
 
+    /** Event used to delay fault generation of translation faults */
+    ProcessTrapEvent processTrapEvent;
+
   protected:
     struct FetchStatGroup : public statistics::Group
     {
@@ -597,6 +691,31 @@ class Fetch
         statistics::Formula idleRate;
         /*Number of fetch target processed per cycle*/
         statistics::Distribution ftNumber;
+
+        statistics::Distribution instrAccessLatency;
+        statistics::Distribution translationLatency;
+        statistics::Distribution memReqInFlight;
+
+        statistics::Scalar ftReadyToFetch;
+        statistics::Scalar ftPrefetchInProgress;
+        statistics::Scalar ftTranslationInProgress;
+        statistics::Scalar ftTranslationReady;
+        statistics::Scalar ftTranslationFailed;
+
+        statistics::Scalar ftCrossCacheBlock;
+        statistics::Scalar ftCrossCacheBlockNotNext;
+
+        statistics::Scalar demandHit;
+        statistics::Scalar demandMiss;
+        statistics::Scalar pfIssued;
+        statistics::Scalar pfReceived;
+        statistics::Scalar pfLate;
+        statistics::Scalar pfInCache;
+        statistics::Scalar pfSquashed;
+        statistics::Scalar pfLimitReached;
+        statistics::Scalar pfTranslationLimitReached;
+        statistics::Formula pfAccuracy;
+        statistics::Formula pfCoverage;
     } fetchStats;
 };
 

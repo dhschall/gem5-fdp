@@ -553,7 +553,7 @@ BAC::tick()
 FetchTargetPtr
 BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
 {
-    auto ft = std::make_shared<FetchTarget>(tid, start_pc,
+    auto ft = std::make_shared<FetchTarget>(*ftq, tid, start_pc,
                                             cpu->getAndIncrementFTSeq());
 
     DPRINTF(BAC, "Create new fetch target ftn:%llu\n", ft->ftNum());
@@ -727,7 +727,8 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // Complete the fetch target if
         // - a branch is found
         // - or the maximum fetch bandwidth is reached.
-        curFT->finalize(cur_pc, branch_found, predict_taken, *next_pc);
+        curFT->finalize(cur_pc, curFT->ftNum(), branch_found,
+                        predict_taken, *next_pc);
 
         ftq->insert(tid, curFT);
         wroteToTimeBuffer = true;
