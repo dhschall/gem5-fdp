@@ -571,7 +571,7 @@ BAC::tick()
 FetchTargetPtr
 BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
 {
-    auto ft = std::make_shared<FetchTarget>(tid, start_pc,
+    auto ft = std::make_shared<FetchTarget>(*ftq, tid, start_pc,
                                             cpu->getAndIncrementFTSeq());
 
     DPRINTF(BAC, "Create new fetch target ftn:%llu\n", ft->ftNum());
@@ -642,6 +642,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // simulation time.
         Addr search_addr = cur_pc.instAddr();
         Addr start_addr = search_addr;
+        Addr cur_cache_block = alignToCacheBlock(cur_pc.instAddr());
 
         // Create a new fetch target starting with the current PC.
         FetchTargetPtr curFT = newFetchTarget(tid, cur_pc);
@@ -673,6 +674,12 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
                 break;
             }
 
+            // Check if the search address will exceed the cache block
+            // boundary. If yes stop searching.
+            if (alignToCacheBlock(search_addr + minInstSize) != cur_cache_block) {
+                break;
+            }
+
             // Continue searching.
             search_addr += minInstSize;
         }
@@ -684,6 +691,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // Make a copy of the current PC since the BPU will update it.
         std::unique_ptr<PCStateBase> next_pc(cur_pc.clone());
         StaticInstPtr staticInst = nullptr;
+        Addr ftEndAddr = cur_pc.instAddr();
 
         if (branch_found) {
             // Branch found in instruction stream. As the current
@@ -691,6 +699,10 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             // look it up from the BTB.
             staticInst = bpu->BTBGetInst(tid, cur_pc.instAddr());
             assert(staticInst);
+
+            // The end address of the fetch target is the address of the
+            // branch instruction + instruction size.
+            ftEndAddr = cur_pc.instAddr() + staticInst->size() - 1;
 
             // Now make the actual prediction. Note the BPU will advance
             // the PC to the next instruction.
@@ -709,11 +721,12 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
                 stats.predTakenBranches++;
                 num_taken++;
             }
-        }
+        } else {
 
-        if (!predict_taken) {
+        // if (!predict_taken) {
             // Not predicted taken. Start the next FT at the next address.
             next_pc->set(cur_pc.instAddr() + minInstSize);
+            ftEndAddr = next_pc->instAddr() - 1;
         }
 
         // x86 has some complex instruction like string copy where the branch
@@ -743,12 +756,14 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
                     cur_pc);
 
             next_pc->set(cur_pc.instAddr() + staticInst->size());
+            ftEndAddr = next_pc->instAddr() - 1;
         }
 
         // Complete the fetch target if
         // - a branch is found
         // - or the maximum fetch bandwidth is reached.
-        curFT->finalize(cur_pc, branch_found, predict_taken, *next_pc);
+        curFT->finalize(cur_pc, ftEndAddr, curFT->ftNum(), branch_found,
+                            predict_taken, *next_pc);
 
         ftq->insert(tid, curFT);
         wroteToTimeBuffer = true;
