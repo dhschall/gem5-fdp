@@ -47,6 +47,8 @@
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/limits.hh"
+#include "mem/request.hh"
+#include "sim/faults.hh"
 #include "sim/probe/probe.hh"
 
 #define FDIP
@@ -59,6 +61,7 @@ namespace o3
 {
 
 class CPU;
+class FTQ;
 
 struct DerivO3CPUParams;
 
@@ -71,14 +74,21 @@ typedef InstSeqNum FTSeqNum;
 class FetchTarget
 {
   public:
-    FetchTarget(const PCStateBase &_start_pc, FTSeqNum _seqNum);
-
+    FetchTarget(const FTQ& parent, const PCStateBase &start_pc,
+                FTSeqNum _seqNum);
+    ~FetchTarget();
   private:
-    /** Start address of the fetch target */
-    std::unique_ptr<PCStateBase> startPC;
+    /** The parent ftq */
+    const FTQ &ftq;
 
-    /** End address of the fetch target */
+    /** Start PC and address of the fetch target */
+    std::unique_ptr<PCStateBase> startPC;
+    Addr startAddr;
+
+    /** End PC of the fetch target */
     std::unique_ptr<PCStateBase> endPC;
+    /** The very last address of the fetch target PC + instr. addr*/
+    Addr endAddr;
 
     /** Predicted target address of the fetch target.
      *  Only valid when the ft ends with branch. */
@@ -93,16 +103,30 @@ class FetchTarget
     /** If the exit branch is taken */
     bool taken;
 
+    /** Virtual and physical address of the
+     * cache block comprising the fetch target */
+    Addr vaddr;
+    Addr paddr;
+
+    /** Translation status */
+    bool translation_done;
+    bool paddr_valid;
+
+    Tick translation_start = 0;
+
   public:
     /** Ancore point to attach a branch predictor history.
      * Will carry information while FT is waiting in th FTQ. */
     void* bpu_history;
 
-    /* Start address of the basic block */
+    /* Start address of the fetch target */
     Addr startAddress() { return startPC->instAddr(); }
 
-    /* End address of the basic block */
-    Addr endAddress() { return (endPC) ? endPC->instAddr() : MaxAddr; }
+    /* PC address of the last instruction in the fetch target */
+    Addr endPCAddr() { return (endPC) ? endPC->instAddr() : MaxAddr; }
+
+    /* Address of the last byte in the fetch target */
+    Addr endAddress() { return endAddr; }
 
     /* Fetch Target size (number of bytes) */
     unsigned size() { return endAddress() - startAddress(); }
@@ -111,16 +135,25 @@ class FetchTarget
         return addr >= startAddress() && addr <= endAddress();
     }
 
+    bool inRangeAligned(Addr addr, int alignment) {
+        return addr >= (startAddress() & ~(alignment - 1))
+            && addr <= (endAddress() & ~(alignment - 1));
+    }
+
     bool isExitInst(Addr addr) {
-        return addr == endAddress();
+        return addr == endPCAddr();
     }
 
     bool isExitBranch(Addr addr) {
-        return (addr == endAddress()) && is_branch;
+        return (addr == endPCAddr()) && is_branch;
     }
 
     bool hasExceeded(Addr addr) {
         return addr > endAddress();
+    }
+
+    Addr getBlkAddr() {
+        return vaddr;
     }
 
     /** Returns the fetch target number. */
@@ -141,10 +174,79 @@ class FetchTarget
 
     /** Check if the exit branch was predicted taken. */
     bool predTaken() { return taken; }
+    bool isFallThrough() { return !taken; }
 
-    /** Complete a fetch target with the exit instruction */
-    void finalize(const PCStateBase &exit_pc, InstSeqNum sn, bool _is_branch,
+    /** Complete a fetch target with the exit instruction
+     * @param exit_pc The PCState of the exit instruction.
+     * @param end_addr The last address in the fetch target (PC + instr.
+     *                size).
+     * @param sn The fetch target sequence number.
+     * @param _is_branch Whether the exit instruction is a branch.
+     * @param pred_taken Whether the exit branch was predicted taken.
+     * @param pred_pc The predicted target of the exit branch.
+    */
+    void finalize(const PCStateBase &exit_pc, const Addr end_addr,
+                  InstSeqNum sn, bool _is_branch,
                   bool pred_taken, const PCStateBase &pred_pc);
+
+
+
+    /** Fetch target status. */
+    enum Status
+    {
+        // Initial state, no translation or prefetching has been issued yet.
+        Initial,
+        // States to track translation progress
+        TranslationInProgress,
+        TranslationFailed,
+        TranslationReady,
+        // State to track prefetching progress
+        PrefetchInProgress,
+        ReadyToFetch,
+        //
+        FetchInProgress,
+        Invalid
+    } state;
+
+
+    /** Check if the current fetch target was already translated */
+    // Addr isTranslated() { return translated; }
+    Addr getPaddr() { return paddr; }
+    bool hasPaddr() { return paddr_valid; }
+
+    RequestPtr popReq() { return std::move(req); }
+    RequestPtr req;
+    Fault fault;
+
+    bool initial() { return state == Initial; }
+    bool prefetchInProgress() { return state == PrefetchInProgress; }
+    bool translationInProgress() { return state == TranslationInProgress; }
+    bool translationFailed() { return state == TranslationFailed;}
+    bool translationReady() { return state == TranslationReady; }
+
+    bool requiresTranslation() { return state == Initial; }
+    void startTranslation(RequestPtr _req) {
+      state = TranslationInProgress;
+      req = _req;
+      translation_start = curTick();
+    }
+
+    Tick finishTranslation(const Fault &_fault, const RequestPtr &_req,
+                           bool prefetch=false);
+
+    void prefetchIssued() {
+      state = PrefetchInProgress;
+    }
+
+    void markReady() {
+      req = nullptr;
+      state = ReadyToFetch;
+    }
+
+
+    bool readyToFetch() { return state == ReadyToFetch; }
+
+    bool isValid() { return state != Invalid; }
 
     /** Print the fetch target for debugging. */
     std::string print();
@@ -156,7 +258,7 @@ typedef std::shared_ptr<FetchTarget> FetchTargetPtr;
 
 
 /**
- * FTQ class.
+ * The fetch target queue.
  */
 class FTQ
 {
@@ -187,6 +289,11 @@ class FTQ
     /** Pointer to the CPU. */
     CPU *cpu;
 
+  public:
+    /** Cache block size */
+    const unsigned cacheBlkSize;
+
+  private:
     /** Max number of threads */
     const unsigned numThreads;
 
@@ -245,13 +352,30 @@ public:
     bool isLocked(ThreadID tid);
 
 
-    /** Interates forward over all fetch targets in the FTQ from head/front to
+    /** Iterates forward over all fetch targets in the FTQ from head/front to
      * tail/back and applies a given function. */
     void forAllForward(ThreadID tid, std::function<void(FetchTargetPtr&)> f);
 
-    /** Interates backward over all fetch targets in the FTQ from tail/back to
+    /** Iterates backward over all fetch targets in the FTQ from tail/back to
      * head/front and applies a given function. */
     void forAllBackward(ThreadID tid, std::function<void(FetchTargetPtr&)> f);
+
+    /** Helper function to find a certain fetch target in the FTQ.
+     * The search condition must be provided as a lambda function.
+     * The function will iterate over all fetch targets in the FTQ
+     * and return the first fetch target that matches the condition.
+     */
+    FetchTargetPtr findNext(ThreadID tid,
+                            std::function<bool(FetchTargetPtr&)> f);
+
+    /** Helper function to find a certain fetch target in the FTQ.
+     * The search condition must be provided as a lambda function.
+     * The function will iterate over all fetch targets AFTER the head
+     * in the FTQ and return the first fetch target that matches the
+     * condition.
+     */
+    FetchTargetPtr findAfterHead(ThreadID tid,
+                                 std::function<bool(FetchTargetPtr&)> f);
 
 
     /** Pushes a fetch target into the back/tail of the FTQ.
@@ -275,12 +399,23 @@ public:
      */
     FetchTargetPtr readHead(ThreadID tid);
 
+    FetchTargetPtr readNextHead(ThreadID tid);
+
+
     /** Updates the head fetch target once its fully processed
      * In case there is still a branch history attached to the
      * head fetch target the FTQ goes into invalid state.
-     * @return Wheather or not the update was successful.
+     * @return Whether or not the update was successful.
     */
     bool updateHead(ThreadID tid);
+
+    /** Searches the FTQ if the translation is required for one of the
+     * fetch targets in the FTQ in order to prefetch it into the L1 cache.
+     * @param fault The fault object that contains the translation result.
+     * @return Whether the translation belongs to FT in the FTQ.
+     */
+    bool finishTranslation(ThreadID tid, const Fault &fault, RequestPtr &req);
+
 
 
     /** Print the all fetch targets in the FTQ for debugging. */

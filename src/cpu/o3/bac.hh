@@ -235,7 +235,7 @@ class BAC
      * @param start_pc The current PC. Will be the start address of the
      * fetch target.
     */
-    FetchTargetPtr newFetchTarget(ThreadID tid, const PCStateBase &start_pc);
+    FetchTargetPtr newFetchTarget(const PCStateBase &start_pc);
 
     /**
      * The prediction function for the BAC stage. In the decoupled scenario
@@ -399,6 +399,9 @@ class BAC
     /** BAC to fetch delay. */
     const Cycles bacToFetchDelay;
 
+    /** Cache block size. */
+    const unsigned int cacheBlkSize;
+
     /** The maximum width of a fetch target. This also determines the
      * maximum addresses searched in one cycle. (FT width / minInstSize) */
     const unsigned fetchTargetWidth;
@@ -415,6 +418,11 @@ class BAC
     /** Number of threads. */
     const ThreadID numThreads;
 
+    /** Align a address to the start of a cache block. */
+    inline Addr alignToCacheBlock(Addr addr)
+    {
+        return (addr & ~(cacheBlkSize - 1));
+    }
 
 
   protected:
