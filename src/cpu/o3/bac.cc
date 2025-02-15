@@ -952,12 +952,12 @@ BAC::updatePC(const DynInstPtr &inst,
         } else {
             // With a coupled front-end we need to make the branch prediction
             // here.
-            predict_taken = bpu->predict(inst->staticInst, inst->seqNum,
-                                         fetch_pc, tid);
             if(pfc){
                 bool direction_hint = bpu->predictHint(fetch_pc.instAddr(), tid);
                 inst->setHintTaken(direction_hint);
             }
+            predict_taken = bpu->predict(inst->staticInst, inst->seqNum,
+                                         fetch_pc, tid);
         }
 
         DPRINTF(BAC, "[tid:%i] [sn:%llu] Branch at PC %#x "
