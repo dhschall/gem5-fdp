@@ -512,7 +512,8 @@ ITTAGE::commit(ThreadID tid, InstSeqNum sn, void * &indirect_history)
             bi->branchPC, bi->corrTarget->instAddr(), bi->taken,
             toString(bi->type));
 
-    int nrand = rng->random<int>() & 3;
+    //int nrand = rng->random<int>() & 3;
+    int nrand = random_mt.random<int>() & 3;
     if (bi->indirect) {
         stats.indirectRecords++;
 

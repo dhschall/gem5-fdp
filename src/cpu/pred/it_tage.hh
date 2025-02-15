@@ -166,7 +166,7 @@ class ITTAGE : public IndirectPredictor
   protected:
     ITTAGE_TAGE *itage;
 
-    Random::RandomPtr rng = Random::genRandom();
+    //Random::RandomPtr rng = Random::genRandom();
 
   public:
 
