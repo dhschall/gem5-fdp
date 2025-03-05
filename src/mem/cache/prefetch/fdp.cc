@@ -76,46 +76,75 @@ FetchDirectedPrefetcher::notifyFTQRemove(const o3::FetchTargetPtr& ft)
 }
 
 
+// void
+// FetchDirectedPrefetcher::notifyPfAddr(Addr addr, bool virtual_addr)
+// {
+//     Addr blk_addr = blockAddress(addr);
+
+//     // Check if the address is already in the prefetch queue
+//     std::list<PrefetchRequest>::iterator it = std::find(pfq.begin(),
+//                                 pfq.end(), blk_addr);
+//     if (it != pfq.end()) {
+//         DPRINTF(HWPrefetch, "%#x already in prefetch_queue\n", blk_addr);
+//         return;
+//     }
+
+//     stats.pfIdentified++;
+
+//     // // Create the packet for this address
+//     // PacketPtr pkt = createPrefetchPacket(blk_addr, virtual_addr);
+
+//     // if (!pkt) {
+//     //     DPRINTF(HWPrefetch, "Fail to create packet\n");
+//     //     delete pkt;
+//     //     return;
+//     // }
+
+//     stats.pfPacketsCreated++;
+
+//     if (cacheSnoop && (inCache(pkt->getAddr(), pkt->isSecure())
+//                 || (inMissQueue(pkt->getAddr(), pkt->isSecure())))) {
+//         stats.pfInCache++;
+//         DPRINTF(HWPrefetch, "Drop Packet. In Cache / MSHR\n");
+//         return;
+//     }
+
+//     Tick t = curTick() + latency;
+//     DPRINTF(HWPrefetch, "Addr: %#x Add packet to PFQ. pkt PA:%#x, PFQ sz:%i\n",
+//                         blk_addr, pkt->getAddr(), pfq.size());
+
+//     stats.pfCandidatesAdded++;
+//     pfq.push_back(PrefetchRequest(blk_addr, pkt, t));
+// }
+
+
 void
 FetchDirectedPrefetcher::notifyPfAddr(Addr addr, bool virtual_addr)
 {
     Addr blk_addr = blockAddress(addr);
 
     // Check if the address is already in the prefetch queue
-    std::list<PFQEntry>::iterator it = std::find(pfq.begin(),
+    std::list<PrefetchRequest>::iterator it = std::find(pfq.begin(),
                                 pfq.end(), blk_addr);
     if (it != pfq.end()) {
         DPRINTF(HWPrefetch, "%#x already in prefetch_queue\n", blk_addr);
         return;
     }
 
+    it = std::find(translationq.begin(), translationq.end(), blk_addr);
+    if (it != translationq.end()) {
+        DPRINTF(HWPrefetch, "%#x already in translation queue\n", blk_addr);
+        return;
+    }
+
     stats.pfIdentified++;
 
-    // Create the packet for this address
-    PacketPtr pkt = createPrefetchPacket(blk_addr, virtual_addr);
+    translationq.emplace_back(*this, blk_addr);
+    translationq.back().startTranslation();
 
-    if (!pkt) {
-        DPRINTF(HWPrefetch, "Fail to create packet\n");
-        delete pkt;
-        return;
-    }
-
-    stats.pfPacketsCreated++;
-
-    if (cacheSnoop && (inCache(pkt->getAddr(), pkt->isSecure())
-                || (inMissQueue(pkt->getAddr(), pkt->isSecure())))) {
-        stats.pfInCache++;
-        DPRINTF(HWPrefetch, "Drop Packet. In Cache / MSHR\n");
-        return;
-    }
-
-    Tick t = curTick() + latency;
-    DPRINTF(HWPrefetch, "Addr: %#x Add packet to PFQ. pkt PA:%#x, PFQ sz:%i\n",
-                        blk_addr, pkt->getAddr(), pfq.size());
-
-    stats.pfCandidatesAdded++;
-    pfq.push_back(PFQEntry(blk_addr, pkt, t));
 }
+
+
 
 
 RequestPtr
@@ -169,6 +198,45 @@ FetchDirectedPrefetcher::createPrefetchPacket(Addr addr, bool virtual_addr)
 }
 
 
+void
+FetchDirectedPrefetcher::translationComplete(PrefetchRequest *pfr, bool failed)
+{
+    auto it = translationq.begin();
+    while (it != translationq.end()) {
+        if (&(*it) == pfr) {
+            break;
+        }
+        ++it;
+    }
+    assert(it != translationq.end());
+
+    if (failed) {
+        DPRINTF(HWPrefetch, "Translation of %#x failed\n", pfr->addr);
+        stats.translationFail++;
+    } else {
+        DPRINTF(HWPrefetch, "Translation of %#x succeeded\n", pfr->addr);
+        stats.translationSuccess++;
+        it->createPkt(curTick() + latency);
+        stats.pfPacketsCreated++;
+
+        if (cacheSnoop && (inCache(pfr->pkt->getAddr(), pfr->pkt->isSecure())
+                    || (inMissQueue(pfr->pkt->getAddr(), pfr->pkt->isSecure())))) {
+            stats.pfInCache++;
+            DPRINTF(HWPrefetch, "Drop Packet. In Cache / MSHR\n");
+        } else {
+        
+            DPRINTF(HWPrefetch, "Addr: %#x Add packet to PFQ. pkt PA:%#x, "
+                    "PFQ sz:%i\n", pfr->addr, pfr->pkt->getAddr(), pfq.size());
+        
+            stats.pfCandidatesAdded++;
+            pfq.push_back(*it);
+        }
+    }
+    translationq.erase(it);
+}
+
+
+
 bool
 FetchDirectedPrefetcher::translateFunctional(RequestPtr req)
 {
@@ -180,7 +248,7 @@ FetchDirectedPrefetcher::translateFunctional(RequestPtr req)
 
     DPRINTF(HWPrefetch, "%s Try trans of pc %#x\n",
                                 mmu->name(), req->getVaddr());
-    Fault fault = mmu->translateFunctional(req, tc, BaseMMU::Read);
+    Fault fault = mmu->translateFunctional(req, tc, BaseMMU::Execute);
     if (fault == NoFault) {
         DPRINTF(HWPrefetch, "%s Translation of vaddr %#x succeeded: "
                         "paddr %#x \n", mmu->name(), req->getVaddr(),
@@ -213,6 +281,52 @@ FetchDirectedPrefetcher::getPacket()
     return pkt;
 }
 
+FetchDirectedPrefetcher::PrefetchRequest::PrefetchRequest(
+    FetchDirectedPrefetcher& _owner, uint64_t _addr)
+    : owner(_owner),
+      addr(_addr),
+      req(nullptr),
+      pkt(nullptr)
+{
+    createRequest();
+    assert(req);
+}
+
+void
+FetchDirectedPrefetcher::PrefetchRequest::createRequest()
+{
+    Flags flags = Request::INST_FETCH|Request::PREFETCH;
+    req = std::make_shared<Request>(
+            addr, owner.blkSize, flags, owner.requestorId, addr, 0);
+    req->setFlags(Request::PREFETCH);
+}
+
+void
+FetchDirectedPrefetcher::PrefetchRequest::createPkt(Tick t)
+{
+    req->taskId(context_switch_task_id::Prefetcher);
+    pkt = new Packet(req, MemCmd::HardPFReq);
+    pkt->allocate();
+    readyTime = t;
+}
+
+void
+FetchDirectedPrefetcher::PrefetchRequest::startTranslation()
+{
+    assert(owner.mmu != nullptr);
+    auto tc = owner.cache->system->threads[req->contextId()];
+    // DPRINTF(HWPrefetch, "%s Try translation of pc %#x\n",
+    //     owner.mmu->name(), req->getVaddr());
+    owner.mmu->translateTiming(req, tc, this, BaseMMU::Execute);
+}
+
+void
+FetchDirectedPrefetcher::PrefetchRequest::finish(const Fault &fault,
+    const RequestPtr &req, ThreadContext *tc, BaseMMU::Mode mode)
+{
+    bool failed = (fault != NoFault);
+    owner.translationComplete(this, failed);
+}
 
 void
 FetchDirectedPrefetcher::regProbeListeners()

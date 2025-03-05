@@ -48,6 +48,7 @@
 #include "cpu/base.hh"
 #include "cpu/o3/ftq.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "arch/generic/mmu.hh"
 
 namespace gem5
 {
@@ -99,15 +100,23 @@ class FetchDirectedPrefetcher : public Base
     const bool cacheSnoop;
 
     /** The prefetch queue entry objects */
-    struct PFQEntry
+    struct PrefetchRequest : public BaseMMU::Translation
     {
-        PFQEntry(uint64_t _addr, PacketPtr p, Tick t)
-            : addr(_addr), pkt(p), readyTime(t) {}
+        // PrefetchRequest(FetchDirectedPrefetcher& _owner,
+        //       uint64_t _addr, PacketPtr p, Tick t)
+        //     : owner(_owner),
+        //     addr(_addr), pkt(p), readyTime(t) {}
+
+        PrefetchRequest(FetchDirectedPrefetcher& _owner, uint64_t _addr);
+
+        /** Owner of the packet */
+        FetchDirectedPrefetcher& owner;
 
         /** The virtual address. Used to scan for redundand prefetches.*/
-        uint64_t addr;
+        const uint64_t addr;
 
-        /** The packet that will be sent to the cache. */
+        /** The request and packet that will be sent to the cache. */
+        RequestPtr req;
         PacketPtr pkt;
 
         /** The time when the prefetch is ready to be sent to the cache. */
@@ -115,10 +124,27 @@ class FetchDirectedPrefetcher : public Base
         bool operator==(const int& a) const {
             return this->addr == a;
         }
+
+
+        void createRequest();
+
+        void createPkt(Tick t);
+
+
+        void finish(const Fault &fault, const RequestPtr &req,
+                      ThreadContext *tc, BaseMMU::Mode mode) override;
+
+        /**
+        * Issues the translation request
+        */
+        void startTranslation();
+
+        void markDelayed() override{}
     };
 
     /** The prefetch queue */
-    std::list<PFQEntry> pfq;
+    std::list<PrefetchRequest> pfq;
+    std::list<PrefetchRequest> translationq;
 
 
     /** Notifies the prefetcher that a new fetch target was
@@ -143,6 +169,12 @@ class FetchDirectedPrefetcher : public Base
 
     /** Creates a prefetch packet for the given address. */
     PacketPtr createPrefetchPacket(Addr addr, bool va=false);
+
+    /** Creates a prefetch packet for the given address. */
+    void startTranslation(Addr addr);
+    void startTranslation(PrefetchRequest& pf_req);
+
+    void translationComplete(PrefetchRequest* pf_req, const bool failed);
 
     /** Performs a functional translation of the incomming packet by useing
      * the CPU's TLB. */
