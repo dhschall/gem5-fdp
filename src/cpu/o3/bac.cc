@@ -324,8 +324,8 @@ BAC::checkAndUpdateBPUSignals(ThreadID tid)
                                 fromCommit->commitInfo[tid]
                             .mispredictInst->pcState().instAddr()));
             } else {
-                DPRINTF(BAC, "[tid:%i] Squashing due to "
-                "mispredict of non-control instruction: %s\n",tid);
+                DPRINTF(BAC, "[tid:%i] Squashing not due to "
+                "mispredict of an instruction\n",tid);
             }
             stats.noBranchMisspredict++;
         }
