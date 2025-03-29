@@ -459,6 +459,7 @@ class BAC
 
       /** Distribution of number of bytes per fetch target. */
       statistics::Distribution ftSizeDist;
+      statistics::Distribution ftNumber;
 
     } stats;
     /** @} */
