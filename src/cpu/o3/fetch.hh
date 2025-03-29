@@ -591,6 +591,9 @@ class Fetch
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
+        /*Number of fetch target processed per cycle*/
+        statistics::Distribution ftNumber;
+
     } fetchStats;
 };
 
