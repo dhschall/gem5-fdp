@@ -54,7 +54,7 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 
-#define NUM_PREDICTIONS 4
+#define NUM_PREDICTIONS 1
 
 using namespace gem5::branch_prediction;
 
@@ -621,8 +621,8 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
 
      PCStateBase &cur_pc = *bacPC[tid];
 
-
-    for(int i = 0; i < NUM_PREDICTIONS ; i++)
+    int i =0;
+    for(; i < NUM_PREDICTIONS ; i++)
     {
 
 
@@ -716,13 +716,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         ftq->insert(tid, curFT);
         wroteToTimeBuffer = true;
     
-        // Check whether the FTQ became full. In that case block until
-        // fetch has consumed one.
-        if (ftq->isFull(tid)) {
-            DPRINTF(BAC, "FTQ full\n");
-            bacStatus[tid] = FTQFull;
-            status_change = true;
-        }
+       
     
         // x86 has some complex instruction like string copy where the branch
         // is not the last instruction or have several branches within the same
@@ -757,8 +751,18 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // Finally set the BPU PC to the next FT in the next cycle
         set(cur_pc, *next_pc);
 
-    } 
 
+        // Check whether the FTQ became full. In that case block until
+        // fetch has consumed one.
+        if (ftq->isFull(tid)) {
+            DPRINTF(BAC, "FTQ full\n");
+            bacStatus[tid] = FTQFull;
+            status_change = true;
+            break;
+        }
+
+    } 
+    stats.ftNumber.sample(i);
     // ftq->printFTQ(tid);
 }
 
@@ -1048,7 +1052,9 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
     ADD_STAT(multiBranchInst, statistics::units::Count::get(),
             "Number branches because its not the last branch."),
     ADD_STAT(ftSizeDist, statistics::units::Count::get(),
-             "Number of bytes per fetch target")
+             "Number of bytes per fetch target"),
+    ADD_STAT(ftNumber, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle")
 {
     using namespace statistics;
 
@@ -1057,6 +1063,9 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
               /* last value */ bac->fetchTargetWidth,
               /* bucket size */ 4)
         .flags(statistics::pdf);
+    
+
+    ftNumber.init(0, NUM_PREDICTIONS, 1);
 
     preDecUpdate
         .init(enums::Num_BranchType)
