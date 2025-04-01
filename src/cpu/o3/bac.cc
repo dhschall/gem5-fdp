@@ -54,7 +54,6 @@
 #include "params/BaseO3CPU.hh"
 #include "sim/full_system.hh"
 
-#define NUM_PREDICTIONS 1
 
 using namespace gem5::branch_prediction;
 
@@ -77,7 +76,9 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       fetchTargetWidth(params.fetchTargetWidth),
       minInstSize(params.minInstSize),
       numThreads(params.numThreads),
+      numPredPerCycle(params.numPredPerCycle),
       stats(_cpu,this)
+      
 {
     fatal_if(decoupledFrontEnd && (fetchTargetWidth < params.fetchBufferSize),
             "Fetch target width should be larger than fetch buffer size!");
@@ -622,7 +623,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
      PCStateBase &cur_pc = *bacPC[tid];
 
     int i =0;
-    for(; i < NUM_PREDICTIONS ; i++)
+    for(; i < numPredPerCycle ; i++)
     {
 
 
@@ -1065,7 +1066,7 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
         .flags(statistics::pdf);
     
 
-    ftNumber.init(0, NUM_PREDICTIONS, 1);
+    ftNumber.init(0, bac->numPredPerCycle, 1);
 
     preDecUpdate
         .init(enums::Num_BranchType)

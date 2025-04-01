@@ -415,7 +415,8 @@ class BAC
     /** Number of threads. */
     const ThreadID numThreads;
 
-
+    /*Max number of FT added to the FTQ per Cycle*/
+    const unsigned  numPredPerCycle;
 
   protected:
     struct BACStats : public statistics::Group

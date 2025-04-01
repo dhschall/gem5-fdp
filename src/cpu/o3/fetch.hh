@@ -541,6 +541,9 @@ class Fetch
     /** Event used to delay fault generation of translation faults */
     FinishTranslationEvent finishTranslationEvent;
 
+    /*Max number of FT added to the FTQ per Cycle*/
+    const unsigned  numPredPerCycle;
+
   protected:
     struct FetchStatGroup : public statistics::Group
     {
