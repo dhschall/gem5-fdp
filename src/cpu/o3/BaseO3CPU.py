@@ -37,14 +37,14 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.defines import buildEnv
-from m5.objects.BaseCPU import BaseCPU
+from m5.defines import buildEnv # type: ignore
+from m5.objects.BaseCPU import BaseCPU # type: ignore
 
 # from m5.objects.O3Checker import O3Checker
-from m5.objects.BranchPredictor import *
-from m5.objects.FUPool import *
-from m5.objects.IndexingPolicies import *
-from m5.objects.ReplacementPolicies import *
+from m5.objects.BranchPredictor import * # type: ignore
+from m5.objects.FUPool import * # type: ignore
+from m5.objects.IndexingPolicies import *  # type: ignore
+from m5.objects.ReplacementPolicies import *  # type: ignore
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import *
@@ -237,3 +237,5 @@ class BaseO3CPU(BaseCPU):
         "of the instruction minimum search width per cycle",
     )
     decoupledFrontEnd = Param.Bool(False, "Enables the decoupled front-end")
+
+    numPredPerCycle = Param.Unsigned(2, "Max number of FTs added to the FTQ per Cycle")
