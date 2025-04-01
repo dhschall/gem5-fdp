@@ -101,6 +101,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
       finishTranslationEvent(this),
+      numPredPerCycle(params.numPredPerCycle),
       fetchStats(_cpu, this)
 {
     if (numThreads > MaxThreads)
@@ -197,7 +198,9 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of instructions fetched each cycle (Total)"),
     ADD_STAT(idleRate, statistics::units::Ratio::get(),
              "Ratio of cycles fetch was idle",
-             idleCycles / cpu->baseStats.numCycles)
+             idleCycles / cpu->baseStats.numCycles),
+    ADD_STAT(ftNumber, statistics::units::Count::get(),
+             "Number of fetch targets processed each cycle (Total)")
 {
         predictedBranches
             .prereq(predictedBranches);
@@ -231,6 +234,7 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
             .prereq(icacheSquashes);
         tlbSquashes
             .prereq(tlbSquashes);
+        ftNumber.init(0, fetch->numPredPerCycle, 1);
         nisnDist
             .init(/* base value */ 0,
               /* last value */ fetch->fetchWidth,
@@ -1181,6 +1185,8 @@ Fetch::fetch(bool &status_change)
     // Need to keep track of whether or not a predicted branch
     // ended this fetch block.
     bool predictedBranch = false;
+    bool mispredict = false;
+    unsigned ftCount = 0;
 
     // Need to halt fetch if quiesce instruction detected
     bool quiesce = false;
@@ -1195,7 +1201,7 @@ Fetch::fetch(bool &status_change)
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize
-           && !predictedBranch && !quiesce) {
+            && !quiesce && !mispredict) {
 
         // For the decoupled front-end also check if the FTQ
         // and the fetch target are still valid.
@@ -1327,8 +1333,23 @@ Fetch::fetch(bool &status_change)
                 quiesce = true;
                 break;
             }
+            //If the current FT is consumed, pop the head and read the next one 
             if (decoupledFrontEnd && !curFT) {
-                break;
+                ftCount++;
+                if(ftq->updateHead(tid)){
+                    if(ftCount <  numPredPerCycle)
+                    {
+                    curFT = ftq->readHead(tid);
+                } else {
+                    break;
+                }
+                } else {
+            // The update was not successful. The BPU predicted something
+            // wrong. Squash the FTQ.
+                    mispredict = true;
+                    break;
+                }
+                
             }
         } while ((curMacroop || dec_ptr->instReady()) &&
                  numInst < fetchWidth &&
@@ -1353,13 +1374,12 @@ Fetch::fetch(bool &status_change)
                 "target.\n", tid);
     }
 
-    if (decoupledFrontEnd && !curFT) {
-        DPRINTF(Fetch, "Done with FT. Pop from FTQ.\n");
-        if (!ftq->updateHead(tid)) {
-            // The update was not successful. The BPU predicted something
-            // wrong. Squash the FTQ.
+    fetchStats.ftNumber.sample(ftCount);
+    
+    //is mispredict detected, we are squashing the ftq
+    if (decoupledFrontEnd && mispredict) {
+        DPRINTF(Fetch, "Mispredict detected, squashing the FTQ.\n");
             bacResteer(this_pc, tid);
-        }
     }
 
     macroop[tid] = curMacroop;
