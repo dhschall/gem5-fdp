@@ -373,6 +373,9 @@ class BAC
      */
     bool wroteToTimeBuffer;
 
+    /** Tracks remaining cycles that the branch predictor stalls BAC */
+    Cycles branchPredictRemaining[MaxThreads];
+
     /** Source of possible stalls. */
     struct Stalls
     {
@@ -398,6 +401,9 @@ class BAC
 
     /** BAC to fetch delay. */
     const Cycles bacToFetchDelay;
+
+    /** BAC branch predict delay. */
+    const Cycles bacBranchPredictDelay;
 
     /** The maximum width of a fetch target. This also determines the
      * maximum addresses searched in one cycle. (FT width / minInstSize) */
