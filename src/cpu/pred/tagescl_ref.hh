@@ -46,7 +46,7 @@
 
 #include "base/sat_counter.hh"
 #include "base/types.hh"
-#include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/conditional.hh"
 #include "params/TageSCLRef.hh"
 
 namespace gem5
@@ -63,7 +63,7 @@ namespace branch_prediction
  * predictor state that needs to be recorded or updated; the update can be
  * determined solely by the branch being taken or not taken.
  */
-class TageSCLRef : public BPredUnit
+class TageSCLRef : public ConditionalPredictor
 {
   public:
     /**

@@ -142,6 +142,18 @@ class SimpleBTB(BranchTargetBuffer):
     )
 
 
+class ConditionalPredictor(SimObject):
+    type = "ConditionalPredictor"
+    cxx_class = "gem5::branch_prediction::ConditionalPredictor"
+    cxx_header = "cpu/pred/conditional.hh"
+    abstract = True
+
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
+    instShiftAmt = Param.Unsigned(
+        Parent.instShiftAmt, "Number of bits to shift instructions by"
+    )
+
+
 class IndirectPredictor(SimObject):
     type = "IndirectPredictor"
     cxx_class = "gem5::branch_prediction::IndirectPredictor"
@@ -179,7 +191,6 @@ class BranchPredictor(SimObject):
     type = "BranchPredictor"
     cxx_class = "gem5::branch_prediction::BPredUnit"
     cxx_header = "cpu/pred/bpred_unit.hh"
-    abstract = True
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
@@ -197,6 +208,9 @@ class BranchPredictor(SimObject):
     ras = Param.ReturnAddrStack(
         ReturnAddrStack(), "Return address stack, set to NULL to disable RAS."
     )
+    conditionalBranchPred = Param.ConditionalPredictor(
+        "Conditional branch predictor"
+    )
     indirectBranchPred = Param.IndirectPredictor(
         SimpleIndirectPredictor(),
         "Indirect branch predictor, set to NULL to disable "
@@ -212,7 +226,7 @@ class BranchPredictor(SimObject):
     )
 
 
-class LocalBP(BranchPredictor):
+class LocalBP(ConditionalPredictor):
     type = "LocalBP"
     cxx_class = "gem5::branch_prediction::LocalBP"
     cxx_header = "cpu/pred/2bit_local.hh"
@@ -221,7 +235,7 @@ class LocalBP(BranchPredictor):
     localCtrBits = Param.Unsigned(2, "Bits per counter")
 
 
-class TournamentBP(BranchPredictor):
+class TournamentBP(ConditionalPredictor):
     type = "TournamentBP"
     cxx_class = "gem5::branch_prediction::TournamentBP"
     cxx_header = "cpu/pred/tournament.hh"
@@ -235,7 +249,7 @@ class TournamentBP(BranchPredictor):
     choiceCtrBits = Param.Unsigned(2, "Bits of choice counters")
 
 
-class BiModeBP(BranchPredictor):
+class BiModeBP(ConditionalPredictor):
     type = "BiModeBP"
     cxx_class = "gem5::branch_prediction::BiModeBP"
     cxx_header = "cpu/pred/bi_mode.hh"
@@ -310,7 +324,7 @@ class TAGEBase(SimObject):
 
 # TAGE branch predictor as described in https://www.jilp.org/vol8/v8paper1.pdf
 # The default sizes below are for the 8C-TAGE configuration (63.5 Kbits)
-class TAGE(BranchPredictor):
+class TAGE(ConditionalPredictor):
     type = "TAGE"
     cxx_class = "gem5::branch_prediction::TAGE"
     cxx_header = "cpu/pred/tage.hh"
@@ -776,7 +790,7 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
 
 
-class MultiperspectivePerceptron(BranchPredictor):
+class MultiperspectivePerceptron(ConditionalPredictor):
     type = "MultiperspectivePerceptron"
     cxx_class = "gem5::branch_prediction::MultiperspectivePerceptron"
     cxx_header = "cpu/pred/multiperspective_perceptron.hh"
@@ -1117,7 +1131,7 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     statistical_corrector = MPP_StatisticalCorrector_8KB()
 
 
-class TageSCLRef(BranchPredictor):
+class TageSCLRef(ConditionalPredictor):
     type = "TageSCLRef"
     cxx_class = "gem5::branch_prediction::TageSCLRef"
     cxx_header = "cpu/pred/tagescl_ref.hh"
