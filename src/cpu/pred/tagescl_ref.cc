@@ -54,7 +54,7 @@ namespace branch_prediction
 {
 
 TageSCLRef::TageSCLRef(const TageSCLRefParams &params)
-    : BPredUnit(params)
+    : ConditionalPredictor(params)
 {
     predictor = new PREDICTOR();
 }
