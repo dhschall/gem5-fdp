@@ -171,23 +171,24 @@ FetchDirectedPrefetcher::translationComplete(PrefetchRequest *pfr, bool failed)
     assert(cache != nullptr);
 
     if (failed) {
-        DPRINTF(HWPrefetch, "Translation of %#x failed\n", pfr->addr);
+        DPRINTF(HWPrefetch, "Translation of %#x failed\n", it->addr);
         stats.translationFail++;
     } else {
-        DPRINTF(HWPrefetch, "Translation of %#x succeeded\n", pfr->addr);
+        DPRINTF(HWPrefetch, "Translation of %#x succeeded\n", it->addr);
         stats.translationSuccess++;
-        it->createPkt(curTick() + latency);
-        stats.pfPacketsCreated++;
 
-        if (cacheSnoop && (cache->inCache(pfr->pkt->getAddr(), pfr->pkt->isSecure())
-                    || (cache->inMissQueue(pfr->pkt->getAddr(), pfr->pkt->isSecure())))) {
+        if (cacheSnoop &&
+            (cache->inCache(it->req->getPaddr(), it->req->isSecure())
+         || (cache->inMissQueue(it->req->getPaddr(), it->req->isSecure())))) {
             stats.pfInCache++;
             DPRINTF(HWPrefetch, "Drop Packet. In Cache / MSHR\n");
         } else {
-        
+
+            it->createPkt(curTick() + latency);
+            stats.pfPacketsCreated++;
             DPRINTF(HWPrefetch, "Addr: %#x Add packet to PFQ. pkt PA:%#x, "
-                    "PFQ sz:%i\n", pfr->addr, pfr->pkt->getAddr(), pfq.size());
-        
+                    "PFQ sz:%i\n", it->addr, it->pkt->getAddr(), pfq.size());
+
             stats.pfCandidatesAdded++;
             pfq.push_back(*it);
         }

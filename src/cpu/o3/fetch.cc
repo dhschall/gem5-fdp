@@ -1340,15 +1340,13 @@ Fetch::fetch(bool &status_change)
                     if(ftCount <  numPredPerCycle)
                     {
                     curFT = ftq->readHead(tid);
-                } else {
-                    break;
-                }
+                } 
                 } else {
             // The update was not successful. The BPU predicted something
             // wrong. Squash the FTQ.
                     mispredict = true;
-                    break;
                 }
+                break;
                 
             }
         } while ((curMacroop || dec_ptr->instReady()) &&
