@@ -90,7 +90,7 @@ SimObject('StaticInstFlags.py', enums=['StaticInstFlags'])
 if env['CONF']['HAVE_PROTOBUF']:
     SimObject(
         'InstPBTrace.py',
-        sim_objects=['InstPBTrace'],
+        sim_objects=['InstPBTrace', 'ChampSimTrace'],
         tags=['protobuf']
     )
     Source('inst_pb_trace.cc', tags=['protobuf'])
@@ -111,6 +111,7 @@ Source('base.cc')
 Source('exetrace.cc')
 Source('inteltrace.cc')
 Source('nativetrace.cc')
+Source('champsim_trace.cc')
 Source('nop_static_inst.cc')
 Source('null_static_inst.cc')
 Source('profile.cc')

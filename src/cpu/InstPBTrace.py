@@ -34,3 +34,10 @@ class InstPBTrace(InstTracer):
     cxx_class = "gem5::trace::InstPBTrace"
     cxx_header = "cpu/inst_pb_trace.hh"
     file_name = Param.String("Instruction trace output file")
+
+
+class ChampSimTrace(InstTracer):
+    type = "ChampSimTrace"
+    cxx_class = "gem5::trace::ChampSimTrace"
+    cxx_header = "cpu/champsim_trace.hh"
+    file_name = Param.String("Instruction trace output file")
