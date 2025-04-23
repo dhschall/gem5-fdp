@@ -62,6 +62,13 @@ class ConditionalPredictor : public SimObject
 
     ConditionalPredictor(const Params &params);
 
+    /**
+     * Returns the configured prediction latency in cycles
+     * @return The prediction latency in cycles
+     */
+    Cycles getLatency() const {
+        return latency;
+    }
 
     /**
      * Looks up a given conditional branch PC of in the BP to see if it
@@ -140,6 +147,9 @@ class ConditionalPredictor : public SimObject
 
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
+
+    /** Latency of the predictor (for lookup / actual prediction) in cycles */
+    const Cycles latency;
 };
 
 } // namespace branch_prediction

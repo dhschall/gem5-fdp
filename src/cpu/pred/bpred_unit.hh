@@ -82,7 +82,13 @@ class BPredUnit : public SimObject
     /** Branch Predictor Unit (BPU) interface functions */
   public:
 
-
+    struct Prediction
+    {
+      /** Whether the branch is predicted taken */
+      bool taken;
+      /** The latency that this prediction would normally take */
+      Cycles latency;
+    };
 
     /**
      * @param params The params object, that has the size of the BP and BTB.
@@ -103,7 +109,7 @@ class BPredUnit : public SimObject
      * @param tid The thread id.
      * @return Returns if the branch is taken or not.
      */
-    bool predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
+    Prediction predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                  PCStateBase &pc, ThreadID tid);
 
     /**
@@ -195,24 +201,6 @@ class BPredUnit : public SimObject
         ++stats.BTBUpdates;
         return btb->update(tid, pc, target);
     }
-
-    /**
-     * Special function for the decoupled front-end. In it there can be
-     * branches which are not detected by the BPU in the first place as it
-     * requires a BTB hit. This function will generate a placeholder for
-     * such a branch once it is pre-decoded in the fetch stage. It will
-     * only create the branch history object but not update any internal state
-     * of the BPU.
-     * If the branch turns to be wrong then decode or commit will
-     * be able to use the normal squash functionality to correct the branch.
-     * Note that not all branch predictors implement this functionality.
-     * @param tid The thread id.
-     * @param pc The branch's PC.
-     * @param uncond Whether or not this branch is an unconditional branch.
-     * @param bp_history Pointer that will be set to an branch history object.
-     */
-    void branchPlaceholder(ThreadID tid, Addr pc,
-                            bool uncond, void * &bp_history);
 
 
     void dump();
@@ -375,6 +363,8 @@ class BPredUnit : public SimObject
          */
         void *bpHistory = nullptr;
 
+        void *overridingBpHistory = nullptr;
+
         void *indirectHistory = nullptr;
 
         void *rasHistory = nullptr;
@@ -387,7 +377,7 @@ class BPredUnit : public SimObject
     /**
      * Internal prediction function.
      */
-    bool predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
+    Prediction predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                PCStateBase &pc, ThreadID tid, PredictorHistory* &bpu_history);
 
     /**
@@ -406,7 +396,23 @@ class BPredUnit : public SimObject
      */
     void commitBranch(ThreadID tid, PredictorHistory* &bpu_history);
 
-
+    /**
+     * Special function for the decoupled front-end. In it there can be
+     * branches which are not detected by the BPU in the first place as it
+     * requires a BTB hit. This function will generate a placeholder for
+     * such a branch once it is pre-decoded in the fetch stage. It will
+     * only create the branch history object but not update any internal state
+     * of the BPU.
+     * If the branch turns to be wrong then decode or commit will
+     * be able to use the normal squash functionality to correct the branch.
+     * Note that not all branch predictors implement this functionality.
+     * @param tid The thread id.
+     * @param pc The branch's PC.
+     * @param uncond Whether or not this branch is an unconditional branch.
+     * @param bp_history Pointer that will be set to an branch history object.
+     */
+    void branchPlaceholder(ThreadID tid, Addr pc,
+                            bool uncond, PredictorHistory* &hist);
 
   protected:
     /** Number of the threads for which the branch history is maintained. */
@@ -438,6 +444,9 @@ class BPredUnit : public SimObject
 
     /** The conditional branch predictor. */
     ConditionalPredictor * cPred;
+
+    /** The overriding conditional branch predictor. */
+    ConditionalPredictor * overridingCPred;
 
     /** The indirect target predictor. */
     IndirectPredictor * iPred;

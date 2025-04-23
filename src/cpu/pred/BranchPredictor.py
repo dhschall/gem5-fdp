@@ -152,6 +152,7 @@ class ConditionalPredictor(SimObject):
     instShiftAmt = Param.Unsigned(
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
+    latency = Param.Cycles(0, "Latency of the predictor (in cycles)")
 
 
 class IndirectPredictor(SimObject):
@@ -210,6 +211,10 @@ class BranchPredictor(SimObject):
     )
     conditionalBranchPred = Param.ConditionalPredictor(
         "Conditional branch predictor"
+    )
+    overridingBranchPred = Param.ConditionalPredictor(
+        NULL,
+        "Secondary, overriding predictor which corrects the primary predictor",
     )
     indirectBranchPred = Param.IndirectPredictor(
         SimpleIndirectPredictor(),

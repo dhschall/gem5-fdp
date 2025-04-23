@@ -93,6 +93,7 @@ typedef std::shared_ptr<FetchTarget> FetchTargetPtr;
 class BAC
 {
   typedef branch_prediction::BranchType BranchType;
+  typedef branch_prediction::BPredUnit BPredUnit;
 
   public:
     /** Overall decoupled BPU stage status. Used to determine if the CPU can
@@ -245,9 +246,9 @@ class BAC
      * @param inst The branch instruction.
      * @param ft The fetch target that is currently processed.
      * @param PC The predicted PC is passed back through this parameter.
-     * @return Returns if the branch is taken or not.
+     * @return Returns the prediction result from the BPU.
      */
-    bool predict(ThreadID tid, const StaticInstPtr &inst,
+    BPredUnit::Prediction predict(ThreadID tid, const StaticInstPtr &inst,
                  const FetchTargetPtr &ft, PCStateBase &pc);
 
 
@@ -402,9 +403,6 @@ class BAC
     /** BAC to fetch delay. */
     const Cycles bacToFetchDelay;
 
-    /** BAC branch predict delay. */
-    const Cycles bacBranchPredictDelay;
-
     /** The maximum width of a fetch target. This also determines the
      * maximum addresses searched in one cycle. (FT width / minInstSize) */
     const unsigned fetchTargetWidth;
@@ -434,6 +432,8 @@ class BAC
       statistics::Scalar runCycles;
       /** Stat for total number of squashing cycles. */
       statistics::Scalar squashCycles;
+      /** Stat for total number of blocked cycles. */
+      statistics::Scalar blockedCycles;
       /** Stat for total number of cycles the FTQ was full. */
       statistics::Scalar ftqFullCycles;
 

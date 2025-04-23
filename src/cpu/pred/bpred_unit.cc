@@ -64,6 +64,7 @@ BPredUnit::BPredUnit(const Params &params)
       btb(params.btb),
       ras(params.ras),
       cPred(params.conditionalBranchPred),
+      overridingCPred(params.overridingBranchPred),
       iPred(params.indirectBranchPred),
       stats(this)
 {
@@ -96,13 +97,13 @@ BPredUnit::drainSanityCheck() const
 }
 
 
-bool
+BPredUnit::Prediction
 BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                    PCStateBase &pc, ThreadID tid)
 {
     /** Perform the prediction. */
     PredictorHistory* bpu_history = nullptr;
-    bool taken  = predict(inst, seqNum, pc, tid, bpu_history);
+    Prediction pred  = predict(inst, seqNum, pc, tid, bpu_history);
 
     assert(bpu_history!=nullptr);
 
@@ -112,18 +113,19 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     DPRINTF(Branch, "[tid:%i] [sn:%llu] History entry added. "
             "predHist.size(): %i\n", tid, seqNum, predHist[tid].size());
 
-    return taken;
+    return pred;
 }
 
 
 
 
-bool
+BPredUnit::Prediction
 BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                    PCStateBase &pc, ThreadID tid, PredictorHistory* &hist)
 {
     assert(hist == nullptr);
 
+    Cycles totalLatency = Cycles(0);
 
     // See if branch predictor predicts taken.
     // If so, get its target addr either from the BTB or the RAS.
@@ -151,12 +153,36 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     } else {
         // Conditional branches -------
         ++stats.condPredicted;
-        hist->condPred = cPred->lookup(tid, pc.instAddr(), hist->bpHistory);
+        hist->condPred = cPred->lookup(
+            tid, pc.instAddr(), hist->bpHistory
+        );
+
+        if (overridingCPred) {
+            bool secondaryPred = overridingCPred->lookup(
+                tid, pc.instAddr(), hist->overridingBpHistory
+            );
+            assert(hist->overridingBpHistory);
+            if (secondaryPred != hist->condPred) {
+                // If the predictors disagree,
+                // use the result of the overriding predictor
+                // and incur its latency
+                totalLatency += overridingCPred->getLatency();
+                hist->condPred = secondaryPred;
+            } else {
+                // If the predictors agree,
+                // use the result of the primary predictor
+                totalLatency += cPred->getLatency();
+            }
+        } else {
+            totalLatency += cPred->getLatency();
+        }
+
 
         if (hist->condPred) {
             ++stats.condPredictedTaken;
         }
     }
+
     hist->predTaken = hist->condPred;
 
     DPRINTF(Branch,
@@ -324,6 +350,13 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     cPred->updateHistories(tid, hist->pc, hist->uncond, hist->predTaken,
                     hist->target->instAddr(), hist->inst, hist->bpHistory);
 
+    if (overridingCPred) {
+        overridingCPred->updateHistories(
+            tid, hist->pc, hist->uncond, hist->predTaken,
+            hist->target->instAddr(), hist->inst, hist->overridingBpHistory
+        );
+    }
+
 
     if (iPred) {
         // Update the indirect predictor with the direction prediction
@@ -331,7 +364,10 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                       *hist->target, brType, hist->indirectHistory);
     }
 
-    return hist->predTaken;
+    return Prediction {
+        .taken = hist->predTaken,
+        .latency = totalLatency,
+    };
 }
 
 
@@ -383,6 +419,18 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                 hist->bpHistory, false,
                 hist->inst,
                 hist->target->instAddr());
+
+    // If the overriding predictor was used,
+    // also update it with the correct result
+    if (overridingCPred) {
+
+        assert(hist->overridingBpHistory);
+        overridingCPred->update(
+            tid, hist->pc, hist->actuallyTaken,
+            hist->overridingBpHistory, false,
+            hist->inst, hist->target->instAddr()
+        );
+    }
 
     // Commit also Indirect predictor and RAS
     if (iPred) {
@@ -466,6 +514,14 @@ BPredUnit::squashHistory(ThreadID tid, PredictorHistory* &history)
     // This call will delete the bpHistory.
     cPred->squash(tid, history->bpHistory);
 
+    // If the overriding predictor was used, also squash it
+    // This call will delete the overridingBpHistory.
+    if (overridingCPred) {
+        assert(history->overridingBpHistory);
+        overridingCPred->squash(tid, history->overridingBpHistory);
+        assert(history->overridingBpHistory == nullptr);
+    }
+
     delete history;
     history = nullptr;
 }
@@ -545,6 +601,14 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
         // Correct Direction predictor ------------------
         cPred->update(tid, hist->pc, actually_taken, hist->bpHistory,
                true, hist->inst, corr_target.instAddr());
+
+        // If the overriding predictor was used, also update it
+        if (overridingCPred) {
+            overridingCPred->update(tid, hist->pc, actually_taken,
+                                    hist->overridingBpHistory,
+                                    true, hist->inst,
+                                    corr_target.instAddr());
+        }
 
 
         // Correct Indirect predictor -------------------
@@ -630,10 +694,15 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
 
 void
 BPredUnit::branchPlaceholder(ThreadID tid, Addr pc,
-                             bool uncond, void * &bp_history)
+                             bool uncond, PredictorHistory* &hist)
 {
     // Delegate to conditional predictor
-    cPred->branchPlaceholder(tid, pc, uncond, bp_history);
+    cPred->branchPlaceholder(tid, pc, uncond, hist->bpHistory);
+    // If the overriding predictor is used, also call it
+    if (overridingCPred) {
+        overridingCPred->branchPlaceholder(tid, pc, uncond,
+                                           hist->overridingBpHistory);
+    }
 }
 
 void

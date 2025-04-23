@@ -204,7 +204,7 @@ Fetch2::predictBranch(MinorDynInstPtr inst, BranchData &branch)
         DPRINTF(Branch, "Trying to predict for inst: %s\n", *inst);
 
         if (branchPredictor.predict(inst->staticInst,
-                    inst->id.fetchSeqNum, *inst_pc, inst->id.threadId)) {
+                    inst->id.fetchSeqNum, *inst_pc, inst->id.threadId).taken) {
             set(branch.target, *inst_pc);
             inst->predictedTaken = true;
             set(inst->predictedTarget, inst_pc);

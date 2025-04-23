@@ -72,11 +72,10 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       decodeToFetchDelay(params.decodeToFetchDelay),
       commitToFetchDelay(params.commitToFetchDelay),
       bacToFetchDelay(params.bacToFetchDelay),
-      bacBranchPredictDelay(params.bacBranchPredictDelay),
       fetchTargetWidth(params.fetchTargetWidth),
       minInstSize(params.minInstSize),
       numThreads(params.numThreads),
-      stats(_cpu,this)
+      stats(_cpu, this)
 {
     fatal_if(decoupledFrontEnd && (fetchTargetWidth < params.fetchBufferSize),
             "Fetch target width should be larger than fetch buffer size!");
@@ -591,14 +590,16 @@ BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
     return ft;
 }
 
-bool
+BPredUnit::Prediction
 BAC::predict(ThreadID tid, const StaticInstPtr &inst,
              const FetchTargetPtr &ft, PCStateBase &pc)
 {
 
     /** Perform the prediction. */
     BPredUnit::PredictorHistory* bpu_history = nullptr;
-    bool taken  = bpu->predict(inst, ft->ftNum(), pc, tid, bpu_history);
+    BPredUnit::Prediction pred = bpu->predict(
+        inst, ft->ftNum(), pc, tid, bpu_history
+    );
 
     /** Push the prediction history to the fetch target.
      * The postFetch() function will move the history from the FTQ to the
@@ -607,7 +608,7 @@ BAC::predict(ThreadID tid, const StaticInstPtr &inst,
     ft->bpu_history = static_cast<void*>(bpu_history);
 
     DPRINTF(Branch,"[tid:%i, ftn:%llu] History added.\n", tid, ft->ftNum());
-    return taken;
+    return pred;
 }
 
 
@@ -692,8 +693,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
 
         // Now make the actual prediction. Note the BPU will advance
         // the PC to the next instruction.
-        predict_taken = predict(tid, staticInst, curFT, *next_pc);
-        branchPredictRemaining[tid] = Cycles(bacBranchPredictDelay);
+        BPredUnit::Prediction pred = predict(tid, staticInst, curFT, *next_pc);
+        predict_taken = pred.taken;
+        branchPredictRemaining[tid] = Cycles(pred.latency);
 
         DPRINTF(BAC, "[tid:%i, ftn:%llu] Branch found at PC %#x "
                 "taken?:%i, target:%#x\n",
@@ -884,7 +886,7 @@ BAC::updatePreDecode(ThreadID tid, const InstSeqNum seqNum,
         hist = new BPredUnit::PredictorHistory(tid, seqNum,
                                                pc.instAddr(), inst);
         bpu->branchPlaceholder(tid, pc.instAddr(), inst->isUncondCtrl(),
-                               hist->bpHistory);
+                               hist);
 
         hist->predTaken = hist->condPred = false;
         hist->targetProvider = BPredUnit::TargetProvider::NoTarget;
@@ -941,8 +943,12 @@ BAC::updatePC(const DynInstPtr &inst,
         } else {
             // With a coupled front-end we need to make the branch prediction
             // here.
-            predict_taken = bpu->predict(inst->staticInst, inst->seqNum,
-                                         fetch_pc, tid);
+            //
+            // Latency is ignored in coupled mode
+            BPredUnit::Prediction pred = bpu->predict(
+                inst->staticInst, inst->seqNum, fetch_pc, tid
+            );
+            predict_taken = pred.taken;
         }
 
         DPRINTF(BAC, "[tid:%i] [sn:%llu] Branch at PC %#x "
@@ -1004,6 +1010,9 @@ BAC::profileCycle(ThreadID tid)
     case Squashing:
         stats.squashCycles++;
         break;
+    case Blocked:
+        stats.blockedCycles++;
+        break;
     case FTQFull:
         stats.ftqFullCycles++;
         break;
@@ -1023,6 +1032,8 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
             "Number of cycles BAC is running"),
     ADD_STAT(squashCycles, statistics::units::Cycle::get(),
             "Number of cycles BAC is squashing"),
+    ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC is blocked"),
     ADD_STAT(ftqFullCycles, statistics::units::Cycle::get(),
             "Number of cycles BAC has spent waiting for FTQ to become free"),
 
