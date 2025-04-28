@@ -82,7 +82,7 @@ LTAGE::branchPlaceholder(ThreadID tid, Addr pc,
 }
 
 //prediction
-bool
+Prediction
 LTAGE::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void* &b)
 {
     LTageBranchInfo *bi = new LTageBranchInfo(*tage, *loopPredictor,
@@ -110,7 +110,7 @@ LTAGE::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void* &b)
     // record final prediction
     bi->lpBranchInfo->predTaken = pred_taken;
 
-    return pred_taken;
+    return staticPrediction(pred_taken);
 }
 
 // PREDICTOR UPDATE

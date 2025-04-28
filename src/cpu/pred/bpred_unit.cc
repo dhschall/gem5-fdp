@@ -97,7 +97,7 @@ BPredUnit::drainSanityCheck() const
 }
 
 
-BPredUnit::Prediction
+Prediction
 BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                    PCStateBase &pc, ThreadID tid)
 {
@@ -119,7 +119,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
 
 
 
-BPredUnit::Prediction
+Prediction
 BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                    PCStateBase &pc, ThreadID tid, PredictorHistory* &hist)
 {
@@ -153,28 +153,30 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     } else {
         // Conditional branches -------
         ++stats.condPredicted;
-        hist->condPred = cPred->lookup(
+        Prediction condPred = cPred->lookup(
             tid, pc.instAddr(), hist->bpHistory
         );
+        hist->condPred = condPred.taken;
 
         if (overridingCPred) {
-            bool secondaryPred = overridingCPred->lookup(
+
+            Prediction secondaryPred = overridingCPred->lookup(
                 tid, pc.instAddr(), hist->overridingBpHistory
             );
             assert(hist->overridingBpHistory);
-            if (secondaryPred != hist->condPred) {
+            if (secondaryPred.taken != hist->condPred) {
                 // If the predictors disagree,
                 // use the result of the overriding predictor
                 // and incur its latency
-                totalLatency += overridingCPred->getLatency();
-                hist->condPred = secondaryPred;
+                totalLatency += secondaryPred.latency;
+                hist->condPred = secondaryPred.taken;
             } else {
                 // If the predictors agree,
                 // use the result of the primary predictor
-                totalLatency += cPred->getLatency();
+                totalLatency += condPred.latency;
             }
         } else {
-            totalLatency += cPred->getLatency();
+            totalLatency += condPred.latency;
         }
 
 

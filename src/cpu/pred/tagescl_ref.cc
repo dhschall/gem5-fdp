@@ -76,11 +76,11 @@ TageSCLRef::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
 }
 
 
-bool
+Prediction
 TageSCLRef::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 {
     auto pred = predictor->GetPrediction(branch_addr);
-    return pred;
+    return staticPrediction(pred);
 }
 
 void

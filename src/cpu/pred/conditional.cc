@@ -37,7 +37,7 @@ namespace branch_prediction
 ConditionalPredictor::ConditionalPredictor(const Params &params)
     : SimObject(params),
       instShiftAmt(params.instShiftAmt),
-      latency(params.latency)
+      staticLatency(params.latency)
 {
 }
 

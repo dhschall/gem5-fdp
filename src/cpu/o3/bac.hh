@@ -53,6 +53,7 @@ namespace gem5
 {
 
 struct BaseO3CPUParams;
+typedef branch_prediction::Prediction Prediction;
 
 namespace o3
 {
@@ -248,7 +249,7 @@ class BAC
      * @param PC The predicted PC is passed back through this parameter.
      * @return Returns the prediction result from the BPU.
      */
-    BPredUnit::Prediction predict(ThreadID tid, const StaticInstPtr &inst,
+    Prediction predict(ThreadID tid, const StaticInstPtr &inst,
                  const FetchTargetPtr &ft, PCStateBase &pc);
 
 

@@ -85,6 +85,16 @@ inline std::string toString(BranchType type)
 }
 
 
+struct Prediction
+{
+    /** Whether the branch is predicted taken */
+    bool taken;
+    /** The latency that this prediction would normally take */
+    Cycles latency;
+};
+
+
+
 } // namespace branch_prediction
 } // namespace gem5
 

@@ -364,7 +364,7 @@ TAGE_SC_L::branchPlaceholder(ThreadID tid, Addr pc,
     bp_history = (void*)(bi);
 }
 
-bool
+Prediction
 TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
 {
     TageSCLBranchInfo *bi = new TageSCLBranchInfo(*tage,
@@ -412,7 +412,7 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
     // record final prediction
     bi->lpBranchInfo->predTaken = pred_taken;
 
-    return pred_taken;
+    return staticPrediction(pred_taken);
 }
 
 void

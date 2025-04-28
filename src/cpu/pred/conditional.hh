@@ -66,8 +66,8 @@ class ConditionalPredictor : public SimObject
      * Returns the configured prediction latency in cycles
      * @return The prediction latency in cycles
      */
-    Cycles getLatency() const {
-        return latency;
+    Cycles getStaticLatency() const {
+        return staticLatency;
     }
 
     /**
@@ -79,7 +79,7 @@ class ConditionalPredictor : public SimObject
      * has the branch predictor state associated with the lookup.
      * @return Whether the branch is taken or not taken.
      */
-    virtual bool lookup(ThreadID tid, Addr pc, void * &bp_history) = 0;
+    virtual Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) = 0;
 
     /**
      * Ones done with the prediction this function updates the
@@ -148,8 +148,14 @@ class ConditionalPredictor : public SimObject
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
 
-    /** Latency of the predictor (for lookup / actual prediction) in cycles */
-    const Cycles latency;
+    /** Static latency of the predictor in cycles */
+    const Cycles staticLatency;
+
+    /** Return a prediction with only static latency */
+    Prediction staticPrediction(bool taken) const
+    {
+        return Prediction{taken, staticLatency};
+    }
 };
 
 } // namespace branch_prediction

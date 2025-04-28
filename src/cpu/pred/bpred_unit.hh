@@ -82,14 +82,6 @@ class BPredUnit : public SimObject
     /** Branch Predictor Unit (BPU) interface functions */
   public:
 
-    struct Prediction
-    {
-      /** Whether the branch is predicted taken */
-      bool taken;
-      /** The latency that this prediction would normally take */
-      Cycles latency;
-    };
-
     /**
      * @param params The params object, that has the size of the BP and BTB.
      */

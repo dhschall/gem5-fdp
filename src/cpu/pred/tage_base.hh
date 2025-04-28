@@ -68,7 +68,6 @@ class TAGEBase : public SimObject
     TAGEBase(const TAGEBaseParams &p);
     void init() override;
 
-  protected:
     // Prediction Structures
 
     // Tage Entry
@@ -485,7 +484,6 @@ class TAGEBase : public SimObject
     bool isSpeculativeUpdateEnabled() const;
     size_t getSizeInBits() const;
 
-  protected:
     const unsigned logRatioBiModalHystEntries;
     const unsigned nHistoryTables;
     const unsigned tagTableCounterBits;
@@ -495,6 +493,7 @@ class TAGEBase : public SimObject
     const unsigned maxHist;
     const unsigned pathHistBits;
 
+    protected:
     std::vector<unsigned> tagTableTagWidths;
     std::vector<int> logTagTableSizes;
 

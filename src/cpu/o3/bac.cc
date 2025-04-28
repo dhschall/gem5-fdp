@@ -590,14 +590,14 @@ BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
     return ft;
 }
 
-BPredUnit::Prediction
+Prediction
 BAC::predict(ThreadID tid, const StaticInstPtr &inst,
              const FetchTargetPtr &ft, PCStateBase &pc)
 {
 
     /** Perform the prediction. */
     BPredUnit::PredictorHistory* bpu_history = nullptr;
-    BPredUnit::Prediction pred = bpu->predict(
+    Prediction pred = bpu->predict(
         inst, ft->ftNum(), pc, tid, bpu_history
     );
 
@@ -693,7 +693,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
 
         // Now make the actual prediction. Note the BPU will advance
         // the PC to the next instruction.
-        BPredUnit::Prediction pred = predict(tid, staticInst, curFT, *next_pc);
+        Prediction pred = predict(tid, staticInst, curFT, *next_pc);
         predict_taken = pred.taken;
         branchPredictRemaining[tid] = Cycles(pred.latency);
 
@@ -945,7 +945,7 @@ BAC::updatePC(const DynInstPtr &inst,
             // here.
             //
             // Latency is ignored in coupled mode
-            BPredUnit::Prediction pred = bpu->predict(
+            Prediction pred = bpu->predict(
                 inst->staticInst, inst->seqNum, fetch_pc, tid
             );
             predict_taken = pred.taken;

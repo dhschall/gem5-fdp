@@ -152,7 +152,9 @@ class ConditionalPredictor(SimObject):
     instShiftAmt = Param.Unsigned(
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
-    latency = Param.Cycles(0, "Latency of the predictor (in cycles)")
+    latency = Param.Cycles(
+        0, "Static (flat) latency of the predictor (in cycles)"
+    )
 
 
 class IndirectPredictor(SimObject):
@@ -793,6 +795,19 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     tage = TAGE_SC_L_TAGE_8KB()
     loop_predictor = TAGE_SC_L_8KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
+
+
+class LLBP(LTAGE):
+    type = "LLBP"
+    cxx_class = "gem5::branch_prediction::LLBP"
+    cxx_header = "cpu/pred/llbp.hh"
+
+    CTWidth = Param.Int(14, "RCR CTWidth")
+    patternBufferCapacity = Param.Int(16, "Pattern Buffer Capacity")
+    contextCapacity = Param.Int(1 << 4, "Context Capacity")
+    storageCapacity = Param.Int(1 << 16, "Storage Capacity")
+    ptnCounterBits = Param.Int(3, "Bits in Pattern Counter")
+    ctxCounterBits = Param.Int(2, "Bits in Context Replacement Counter")
 
 
 class MultiperspectivePerceptron(ConditionalPredictor):

@@ -128,7 +128,7 @@ class LTAGE : public TAGE
      * @param b Reference to wrapping pointer to allow storing
      * derived class prediction information in the base class.
      */
-    bool predict(
+    Prediction predict(
         ThreadID tid, Addr branch_pc, bool cond_branch, void* &b) override;
 };
 

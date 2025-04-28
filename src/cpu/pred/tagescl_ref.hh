@@ -73,7 +73,7 @@ class TageSCLRef : public ConditionalPredictor
     ~TageSCLRef();
 
     // Overriding interface functions
-    bool lookup(ThreadID tid, Addr pc, void * &bp_history) override;
+    Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) override;
 
     // void updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
     //                      Addr target,  void * &bp_history) override;
