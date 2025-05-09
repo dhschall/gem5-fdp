@@ -37,6 +37,7 @@ Implementation of the last-level branch predictor (LLBP).
 
 #include "base/cache/associative_cache.hh"
 #include "base/cache/cache_entry.hh"
+#include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/pred/ltage.hh"
 #include "params/LLBP.hh"
@@ -58,18 +59,31 @@ class LLBP : public LTAGE
                 const StaticInstPtr & inst, Addr target) override;
 
     void init() override;
+    void branchPlaceholder(ThreadID tid, Addr pc,
+                        bool uncond, void * &bpHistory) override;
 
     protected:
+
+    Cycles calculateRemainingLatency(Cycles insertTime);
 
     struct LLBPBranchInfo : public LTageBranchInfo
     {
         bool overridden;
-        bool pred_taken;
+        bool llbp_pred;
+        bool base_pred;
+        bool avenged;
+        std::list<uint64_t> rcrBackup;
+         
         LLBPBranchInfo(TAGEBase &tage, LoopPredictor &lp,
                         Addr pc, bool conditional)
           : LTageBranchInfo(tage, lp, pc, conditional),
-          overridden(false)
+          overridden(false),
+          avenged(false)
         {}
+
+        bool getPrediction() {
+            return overridden ? llbp_pred : base_pred;
+        }
 
         virtual ~LLBPBranchInfo()
         {}
@@ -78,38 +92,71 @@ class LLBP : public LTAGE
     Prediction predict(
         ThreadID tid, Addr branch_pc, bool cond_branch, void* &b) override;
 
+
+    Prediction lTagePredict(
+        ThreadID tid, Addr branch_pc, bool cond_branch, LTageBranchInfo* b);
+
+    void lTageUpdate(ThreadID tid, Addr pc, bool taken, LTageBranchInfo * bi,
+                bool squashed, const StaticInstPtr & inst, Addr target);
     struct Pattern
     {
-        int tag;
-        // direction & whether to replace if low on space in a context
+        //* hysteresis counter: > 0 = taken, < 0 = not taken
         int8_t counter;
     };
 
     struct Context
     {
-        std::vector<Pattern> patterns;
-        uint8_t replace; // whether to replace context in the storage
+        std::unordered_map<int, Pattern> patterns;
+        /** Confidence counter of the context (guides replacement) */
+        uint8_t confidence;
     };
 
-    std::unordered_map<uint64_t, Context> storage;
-    std::vector<std::unordered_set<uint64_t>> storagePriority;
-    std::deque<uint64_t> patternBuffer;
+    struct PatternBufferEntry
+    {
+        uint64_t cid;
+        Cycles insertTime;
+    };
 
-    int contextCapacity;
+    std::unordered_map<uint64_t, Context> backingStorage;
+    std::unordered_map<uint64_t, Cycles> patternBuffer;
+    std::deque<uint64_t> patternBufferQueue;
+
     int patternBufferCapacity;
     int storageCapacity;
     int ctxCounterBits;
     int ptnCounterBits;
-    int overrides = 0;
-    int llbp_hits = 0;
 
-    int8_t normalize(int8_t counter);
+    Cycles backingStorageLatency;
+
+    int8_t absPredCounter(int8_t counter);
     void storageUpdate(
         ThreadID tid, Addr pc, uint64_t cid, bool taken, LLBPBranchInfo* bi);
     void storageInvalidate();
     int findBestPattern(ThreadID tid, Addr pc, Context& ctx);
     int findVictimPattern(int min, Context& ctx);
     uint64_t findVictimContext();
+
+    struct LLBPStats : public statistics::Group
+    {
+        LLBPStats(LLBP *llbp);
+
+        statistics::Scalar prefetchesIssued;
+        statistics::Scalar demandHitsTotal;
+        statistics::Scalar demandHitsOverride;
+        statistics::Scalar demandHitsNoOverride;
+        statistics::Scalar demandMissesTotal;
+        statistics::Scalar demandMissesNoPattern;
+        statistics::Scalar demandMissesNoPrefetch;
+        statistics::Scalar demandMissesCold;
+        statistics::Scalar patternBufferEvictions;
+        statistics::Scalar backingStorageEvictions;
+        statistics::Scalar backingStorageInsertions;
+        statistics::Scalar correctOverridesTotal;
+        statistics::Scalar correctOverridesIdentical;
+        statistics::Scalar wrongOverridesTotal;
+        statistics::Scalar wrongOverridesIdentical;
+        statistics::Scalar squashedOverrides;
+    } stats;
 
 
     /* From LLBP Source Code */
@@ -122,10 +169,10 @@ class LLBP : public LTAGE
             int start=0, int shift=0);
 
         // The context tag width
-        const int CTWidth;
+        const int tagWidthBits;
 
         // A list of previouly taken branches
-        std::list<uint64_t> bb[10];
+        std::list<uint64_t> bb;
 
         // We compute the context ID and prefetch context ID
         // only when the content of the RCR changes.
@@ -134,8 +181,6 @@ class LLBP : public LTAGE
             uint64_t ccid = 0;
             uint64_t pcid = 0;
         } ctxs;
-
-        int branchCount = 0;
 
     public:
 
@@ -147,6 +192,11 @@ class LLBP : public LTAGE
         // Push a new branch into the RCR.
         bool update(Addr pc, const StaticInstPtr & inst, bool taken);
 
+        // Save the RCR state into a list
+        void backup(std::list<uint64_t> &vec);
+
+        // Restore the RCR state from a list
+        void restore(std::list<uint64_t> &vec);
 
         /**
           * Computes the modulo of a number val with respect to 2^exp

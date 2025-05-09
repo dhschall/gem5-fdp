@@ -35,7 +35,7 @@ namespace branch_prediction
 {
 
 ConditionalPredictor::ConditionalPredictor(const Params &params)
-    : SimObject(params),
+    : ClockedObject(params),
       instShiftAmt(params.instShiftAmt),
       staticLatency(params.latency)
 {

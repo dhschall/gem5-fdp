@@ -27,8 +27,8 @@ Implementation of the last-level branch predictor (LLBP).
 */
 
 #include "cpu/pred/llbp.hh"
-
 #include "debug/LLBP.hh"
+#include <algorithm>
 
 namespace gem5
 {
@@ -38,21 +38,19 @@ namespace branch_prediction
 
 LLBP::LLBP(const LLBPParams &params)
     : LTAGE(params),
-      contextCapacity(params.contextCapacity),
       patternBufferCapacity(params.patternBufferCapacity),
       storageCapacity(params.storageCapacity),
       ctxCounterBits(params.ctxCounterBits),
       ptnCounterBits(params.ptnCounterBits),
-      rcr(3, 8, 8, 2, params.CTWidth)
+      backingStorageLatency(params.backingStorageLatency),
+      stats(this),
+      rcr(3, 8, 8, 2, params.tagWidthBits)
 {
-    storagePriority.resize(1 << ctxCounterBits);
     DPRINTF(LLBP, "Using experimental LLBP\n");
-    DPRINTF(LLBP, "RCR: T=%d,  W=%d,  D=%d,  S=%d,  CTWidth=%d\n",
-            rcr.T, rcr.W, rcr.D, rcr.S, params.CTWidth);
-    DPRINTF(LLBP, "Storage: cap=%d,  bits=%d,  PQ=%d\n",
-            storageCapacity, ctxCounterBits, storagePriority.size());
-    DPRINTF(LLBP, "Context: cap=%d,  bits=%d\n",
-            contextCapacity, ptnCounterBits);
+    DPRINTF(LLBP, "RCR: T=%d,  W=%d,  D=%d,  S=%d,  tagWidthBits=%d\n",
+            rcr.T, rcr.W, rcr.D, rcr.S, params.tagWidthBits);
+    DPRINTF(LLBP, "Storage: cap=%d,  bits=%d\n",
+            storageCapacity, ctxCounterBits);
 }
 
 void
@@ -64,6 +62,12 @@ LLBP::init()
 void
 LLBP::squash(ThreadID tid, void *&bp_history)
 {
+    LLBPBranchInfo *bi = static_cast<LLBPBranchInfo *>(bp_history);
+    if (bi->overridden) {
+        if (!bi->avenged) {
+            stats.squashedOverrides++;
+        }
+    }
     // TODO: No squash in LLBP?
     LTAGE::squash(tid, bp_history);
 }
@@ -73,14 +77,37 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
              void *&bp_history, bool squashed,
              const StaticInstPtr &inst, Addr target)
 {
+    assert(bp_history);
     LLBPBranchInfo *bi = static_cast<LLBPBranchInfo *>(bp_history);
-    if (!inst->isUncondCtrl())
-    {
+    LTageBranchInfo *ltage_bi = static_cast<LTageBranchInfo*>(bi);
+
+    if (inst->isUncondCtrl()) {
+        // Insert the next prefetch context into the pattern buffer
+        if (backingStorage.count(rcr.getPCID()))
+        {
+            uint64_t pcid = rcr.getPCID();
+            if (patternBuffer.count(rcr.getPCID()) == 0) {
+                ++stats.prefetchesIssued;
+                patternBuffer[pcid] = curCycle();
+
+                patternBufferQueue.push_back(pcid);
+                if (patternBufferQueue.size() >= patternBufferCapacity)
+                {
+                    patternBuffer.erase(patternBufferQueue.front());
+                    patternBufferQueue.pop_front();
+                    ++stats.patternBufferEvictions;
+                }
+            }
+        }
+    } else {
+        if (squashed && !bi->avenged) {
+            rcr.restore(bi->rcrBackup);
+        } 
         storageUpdate(tid, pc, rcr.getCCID(), taken, bi);
     }
 
     rcr.update(pc, inst, taken);
-    LTAGE::update(tid, pc, taken, bp_history, squashed, inst, target);
+    lTageUpdate(tid, pc, taken, ltage_bi, squashed, inst, target);
 
     DPRINTF(LLBP, "[thread %d] Updated %s on %lld (%s): ccid=%llu, counter=%d,"
             "uncond=%s, sz=%d\n",
@@ -91,129 +118,268 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
             rcr.getCCID(),
             -1,
             inst->isUncondCtrl() ? "true" : "false",
-            storage.size());
+            backingStorage.size());
+    
+    if (!squashed) {
+        delete bi;
+        bp_history = nullptr;
+    }
+}
+
+void
+LLBP::branchPlaceholder(ThreadID tid, Addr pc,
+                         bool uncond, void * &bpHistory)
+{
+    LLBPBranchInfo *bi = new LLBPBranchInfo(*tage, *loopPredictor,
+                                              pc, !uncond);
+    bpHistory = (void*)(bi);
+}
+
+void
+LLBP::lTageUpdate(ThreadID tid, Addr pc, bool taken, LTageBranchInfo * bi,
+              bool squashed, const StaticInstPtr & inst, Addr target)
+{
+    assert(bi);
+
+    if (squashed) {
+        if (tage->isSpeculativeUpdateEnabled()) {
+            // This restores the global history, then update it
+            // and recomputes the folded histories.
+            tage->squash(tid, taken, target, inst, bi->tageBranchInfo);
+
+            if (bi->tageBranchInfo->condBranch) {
+                loopPredictor->squashLoop(bi->lpBranchInfo);
+            }
+        }
+        return;
+    }
+
+    int nrand = rng->random<int>() & 3;
+    if (bi->tageBranchInfo->condBranch) {
+        DPRINTF(LLBP, "Updating tables for branch:%lx; taken?:%d\n",
+                pc, taken);
+        tage->updateStats(taken, bi->tageBranchInfo);
+
+        loopPredictor->updateStats(taken, bi->lpBranchInfo);
+
+        loopPredictor->condBranchUpdate(tid, pc, taken,
+            bi->tageBranchInfo->tagePred, bi->lpBranchInfo, instShiftAmt);
+
+        tage->condBranchUpdate(tid, pc, taken, bi->tageBranchInfo,
+            nrand, target, bi->lpBranchInfo->predTaken);
+    }
+
+    tage->updateHistories(tid, pc, false, taken, target,
+                           inst, bi->tageBranchInfo);
+
 }
 
 Prediction
 LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
 {
     Addr pc = branch_pc;
-    bool tage_prediction = LTAGE::predict(
-        tid, branch_pc, cond_branch, b
-    ).taken;
-    LLBPBranchInfo *bi = static_cast<LLBPBranchInfo *>(b);
+    
+    LLBPBranchInfo *bi = new LLBPBranchInfo(*tage, *loopPredictor, pc, cond_branch);
+    LTageBranchInfo *ltage_bi = static_cast<LTageBranchInfo *>(bi);
+    b = (void*)(bi);
+
+    Prediction ltage_prediction = lTagePredict(
+        tid, branch_pc, cond_branch, ltage_bi
+    );
+    
     auto tage_bi = bi->tageBranchInfo;
     bi->overridden = false;
-    bi->pred_taken = tage_prediction;
+    bi->base_pred = ltage_prediction.taken;
 
-    int8_t llbp_confidence = 127;
+    int8_t llbp_confidence = 0;
 
     if (cond_branch)
     {
+        rcr.backup(bi->rcrBackup);
         int tage_bank = tage->nHistoryTables;
         if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
             tage_bank = tage_bi->hitBank;
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
             tage_bank = tage_bi->altBank;
         auto ccid = rcr.getCCID();
-        if (storage.count(ccid))
+        if (backingStorage.count(ccid))
         {
-            int i = findBestPattern(tid, pc, storage[ccid]);
-            if (i >= 0)
-            {
-                llbp_hits++;
-                llbp_confidence = storage[ccid].patterns[i].counter;
-                bool llbp_prediction = llbp_confidence >= 0;
-                if (i > tage_bank)
-                {
-                    bi->overridden = true;
-                    bi->pred_taken = llbp_prediction;
-                    overrides++;
+            if (patternBuffer.count(ccid)) {
+                Cycles additionalLatency = calculateRemainingLatency(patternBuffer[ccid]);
+                if (additionalLatency == 0) {
+                    int i = findBestPattern(tid, pc, backingStorage[ccid]);
+                    if (i >= 0)
+                    {
+                        int key = tage->gtag(tid, pc, i);
+                        ++stats.demandHitsTotal;
+                        llbp_confidence = backingStorage[ccid].patterns[key].counter;
+                        bool llbp_prediction = llbp_confidence >= 0;
+                        if (i > tage_bank)
+                        {
+                            ++stats.demandHitsOverride;
+                            bi->overridden = true;
+                            bi->llbp_pred = llbp_prediction;
+                        } else {
+                            ++stats.demandHitsNoOverride;
+                        }
+                    } else {
+                        ++stats.demandMissesNoPattern;
+                        ++stats.demandMissesTotal;
+                    }
+                } else {
+                    ++stats.demandMissesTotal;
                 }
+            } else {
+                ++stats.demandMissesNoPrefetch;
+                ++stats.demandMissesTotal;
             }
+        } else {
+            ++stats.demandMissesCold;
+            ++stats.demandMissesTotal;
         }
-        DPRINTF(LLBP, "[thread %d] Predicted %s%s on %lld: overides=%d, "
-                "llbp_hits=%d, confidence=%d, hitBank=%d, ccid=%llu\n",
-                tid,
-                bi->pred_taken ? "true" : "false",
-                bi->overridden ? "'" : "",
-                branch_pc,
-                overrides,
-                llbp_hits,
-                llbp_confidence,
-                bi->tageBranchInfo->hitBank,
-                ccid);
     }
-    return staticPrediction(bi->pred_taken);
+    Cycles latency = ltage_prediction.latency;
+    return Prediction {.taken = bi->getPrediction(), .latency = latency};
 }
 
-int8_t LLBP::normalize(int8_t counter)
+
+//prediction
+Prediction
+LLBP::lTagePredict(ThreadID tid, Addr branch_pc, bool cond_branch, LTageBranchInfo* bi)
+{
+    bool pred_taken = tage->tagePredict(tid, branch_pc, cond_branch,
+                                        bi->tageBranchInfo);
+
+    pred_taken = loopPredictor->loopPredict(tid, branch_pc, cond_branch,
+                                            bi->lpBranchInfo, pred_taken,
+                                            instShiftAmt);
+    if (cond_branch) {
+        if (bi->lpBranchInfo->loopPredUsed) {
+            bi->tageBranchInfo->provider = LOOP;
+        }
+        DPRINTF(LLBP, "Predict for %lx: taken?:%d, loopTaken?:%d, "
+                "loopValid?:%d, loopUseCounter:%d, tagePred:%d, altPred:%d\n",
+                branch_pc, pred_taken, bi->lpBranchInfo->loopPred,
+                bi->lpBranchInfo->loopPredValid,
+                loopPredictor->getLoopUseCounter(),
+                bi->tageBranchInfo->tagePred, bi->tageBranchInfo->altTaken);
+    }
+
+    // record final prediction
+    bi->lpBranchInfo->predTaken = pred_taken;
+
+    return staticPrediction(pred_taken);
+}
+
+
+int8_t LLBP::absPredCounter(int8_t counter)
 {
     return counter >= 0 ? counter : -counter - 1;
 }
 
+/**
+ * Update LLBP with the real outcome of a branch.
+ * It is currently assumed that the PB still contains the
+ * corresponding pattern set (no access latency applied).
+ * The context is created if it does not exist yet.
+ * The pattern is updated / a longer pattern is allocated.
+ *
+ * @param tid Thread ID
+ * @param pc Program counter
+ * @param cid Context ID
+ * @param taken Whether the branch was taken
+ * @param bi Branch info
+ */
 void LLBP::storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken,
                          LLBPBranchInfo *bi)
 {
-    if (storage.count(cid))
+    // Check whether the current context is known
+    // If not, we create a new context
+    if (backingStorage.count(cid))
     {
-        storagePriority[storage[cid].replace].erase(cid);
-        int i = findBestPattern(tid, pc, storage[cid]);
+        auto context = backingStorage[cid];
+        // The best pattern is always the one that was used to predict
+        // the branch. Both the pattern and the context are updated.
+        int i = findBestPattern(tid, pc, context);
         if (i >= 0)
         {
-            TAGEBase::ctrUpdate(storage[cid].patterns[i].counter, taken,
+            int key = tage->gtag(tid, pc, i);
+            TAGEBase::ctrUpdate(context.patterns[key].counter, taken,
                                 ptnCounterBits);
-            if (storage[cid].patterns[i].counter == (taken ? 1 : -2))
+            if (context.patterns[key].counter == (taken ? 1 : -2))
             {
-                // entry became medium confident
-                TAGEBase::unsignedCtrUpdate(storage[cid].replace, true,
+                // Context is now medium confidence
+                TAGEBase::unsignedCtrUpdate(backingStorage[cid].confidence, true,
                                             ctxCounterBits);
             }
-            else if (storage[cid].patterns[i].counter == (taken ? -1 : 0))
+            else if (context.patterns[key].counter == (taken ? -1 : 0))
             {
-                // entry became low confident
-                TAGEBase::unsignedCtrUpdate(storage[cid].replace, false,
+                // Context is now low confidence
+                TAGEBase::unsignedCtrUpdate(context.confidence, false,
                                             ctxCounterBits);
             }
         }
-        i = findVictimPattern(i, storage[cid]);
-        if (i >= 0 && bi->overridden && bi->pred_taken != taken)
-        {
-            storage[cid].patterns[i].tag = tage->gtag(tid, pc, i);
-            storage[cid].patterns[i].counter = taken ? 0 : -1;
+
+        // If a misprediction occurs, we allocate a new pattern with longer history
+        // in the context. The pattern with the weakest confidence is replaced.
+        // This only happens if the LLBP was the provider.
+        if (bi->overridden) {
+            if (bi->getPrediction() != taken) {
+                if (!bi->avenged) {
+                    ++stats.wrongOverridesTotal;
+                    if (bi->llbp_pred == bi->base_pred) {
+                        ++stats.wrongOverridesIdentical;
+                    }
+                    bi->avenged = true;
+                }
+                if (i < tage->nHistoryTables - 1) {
+                    int choosei = std::min(i + 1, (int) tage->nHistoryTables - 1);
+                    context.patterns[tage->gtag(tid, pc, choosei)].counter = taken ? 0 : -1;
+                }
+            } else {
+                ++stats.correctOverridesTotal;   
+                if (bi->llbp_pred == bi->base_pred) {
+                    ++stats.correctOverridesIdentical;
+                }
+            }
         }
     }
     else
     {
-        while (storage.size() >= storageCapacity)
+        while (backingStorage.size() >= storageCapacity)
         {
+            ++stats.backingStorageEvictions;
             uint64_t i = findVictimContext();
-            storagePriority[storage[i].replace].erase(i);
-            storage.erase(i);
+            backingStorage.erase(i);
         }
-        storage[cid] = LLBP::Context();
-        storage[cid].patterns.resize(tage->nHistoryTables + 1);
+
+        ++stats.backingStorageInsertions;
+        backingStorage[cid] = LLBP::Context();
+        // Fill the context with initial patterns
+        // (only this branch, in different history lengths)
         for (int i = 1; i <= tage->nHistoryTables; i++)
         {
-            storage[cid].patterns[i].tag = tage->gtag(tid, pc, i);
-            storage[cid].patterns[i].counter = taken ? 0 : -1;
+            backingStorage[cid].patterns[tage->gtag(tid, pc, i)].counter = taken ? 0 : -1;
         }
     }
-    if (std::find(patternBuffer.begin(), patternBuffer.end(), cid) ==
-        patternBuffer.end())
-    {
-        patternBuffer.push_back(cid);
-        if (patternBuffer.size() > patternBufferCapacity)
-            patternBuffer.pop_front();
-    }
-    storagePriority[storage[cid].replace].insert(cid);
 }
 
+/**
+ * Find the best (=longest) pattern in the context.
+ * The context is searched by comparing the pc tag with decreasing length
+ * (similar to the TAGE predictor).
+ *
+ * @param tid Thread ID
+ * @param pc Program counter
+ * @param ctx Context to search in
+ * @return Index of the best pattern, or -1 if not found
+ */
 int LLBP::findBestPattern(ThreadID tid, Addr pc, Context &ctx)
 {
     for (int i = tage->nHistoryTables; i > 0; i--)
     {
-        if (ctx.patterns[i].tag == tage->gtag(tid, pc, i))
+        int key = tage->gtag(tid, pc, i);
+        if (ctx.patterns.count(key))
         {
             return i;
         }
@@ -221,12 +387,20 @@ int LLBP::findBestPattern(ThreadID tid, Addr pc, Context &ctx)
     return -1;
 }
 
+/**
+ * Find the pattern with the lowest confidence in the context.
+ * Lengths and confidence vals smaller than {min} are not considered.
+ *
+ * @param min Minimum confidence value
+ * @param ctx Context to search in
+ * @return Index of the pattern with the lowest confidence, or -1 if not found
+ */
 int LLBP::findVictimPattern(int min, Context &ctx)
 {
     int min_conf = 1 << (ptnCounterBits - 2);
     for (int i = (min >= 0 ? min + 1 : 1); i <= tage->nHistoryTables; i++)
     {
-        if (normalize(ctx.patterns[i].counter) < min_conf)
+        if (absPredCounter(ctx.patterns[i].counter) < min_conf)
         {
             return i;
         }
@@ -234,56 +408,72 @@ int LLBP::findVictimPattern(int min, Context &ctx)
     return -1;
 }
 
+/**
+ * Find the context with the lowest confidence.
+ * @return Index of the context with the lowest confidence, or -1 if not found
+ */
 uint64_t LLBP::findVictimContext()
 {
-    for (int i = 0; i < storagePriority.size(); i++)
-    {
-        if (storagePriority.size())
+    auto elem = std::min_element(
+        backingStorage.begin(), backingStorage.end(),
+        [](const auto &a, const auto &b)
         {
-            return *storagePriority[i].begin();
-        }
+            return a.second.confidence < b.second.confidence;
+        });
+    if (elem == backingStorage.end())
+    {
+        return -1;
     }
-    return -1;
+    return elem->first;
+}
+
+Cycles LLBP::calculateRemainingLatency(Cycles insertTime) {
+    Cycles passedTime = (curCycle() - insertTime);
+    if (passedTime >= backingStorageLatency)
+        return Cycles(0);
+    return backingStorageLatency - passedTime;
 }
 
 /* from LLBP source code: */
 
 LLBP::RCR::RCR(int _T, int _W, int _D, int _shift, int _CTWidth)
-    : CTWidth(_CTWidth), T(_T), W(_W), D(_D), S(_shift)
+    : tagWidthBits(_CTWidth), T(_T), W(_W), D(_D), S(_shift)
 {
-    bb[0].resize(maxwindow);
-    bb[1].resize(maxwindow);
+    bb.resize(maxwindow);
     ctxs = {0, 0};
 }
 
-/*
-    * Given the {n} number of branches starting from vec[end-start]
-    * to vec[end-start-n-1] we create the hash function by shifting
-    * each PC by {shift} number if bits i.e.
-    *
-    *   000000000000|  PC  |    :vec[end-start]
-    * ^ 0000000000|  PC  |00    :vec[end-start-1]
-    * ^ 00000000|  PC  |0000    :vec[end-start-2]
-    *           .                     .
-    *           .                     .
-    *           .                     .
-    * ^ |  PC  |000000000000    :vec[end-start-n-1]
-    * ----------------------
-    *       final hash value
-    *
+/**
+ * Given {n} number of branches starting from the end of the RCR (front of the vec)
+ * (minus {skip} # of branches) we create the hash function by shifting
+ * each PC by {shift} number if bits i.e.
+ *
+ *   000000000000|  PC  |    :vec[end-skip]
+ * ^ 0000000000|  PC  |00    :vec[end-skip-1]
+ * ^ 00000000|  PC  |0000    :vec[end-skip-2]
+ *           .                     .
+ *           .                     .
+ *           .                     .
+ * ^ |  PC  |000000000000    :vec[end-skip-n-1]
+ * ----------------------
+ *       final hash value
+ *  Then, the hash value is wrapped to the size of the context tag:
+ *  @return final hash value % 2^tagWidthBits
 */
 uint64_t
 LLBP::RCR::calcHash(std::list<uint64_t> &vec, int n,
-    int start, int shift)
+    int skip, int shift)
 {
     uint64_t hash = 0;
-    if (vec.size() < (start + n))
+    if (vec.size() < (skip + n))
     {
         return 0;
     }
+
+    // Compute the rolling hash in element order (newer branches at the front)
     uint64_t sh = 0;
     auto it = vec.begin();
-    std::advance(it, start);
+    std::advance(it, skip);
     for (; (it != vec.end()) && (n > 0); it++, n--)
     {
         uint64_t val = *it;
@@ -292,29 +482,26 @@ LLBP::RCR::calcHash(std::list<uint64_t> &vec, int n,
         hash ^= val << uint64_t(sh);
 
         sh += shift;
-        if (sh >= CTWidth)
+        if (sh >= tagWidthBits)
         {
-            sh -= uint64_t(CTWidth);
+            sh -= uint64_t(tagWidthBits);
         }
     }
-    return hash & ((1 << CTWidth) - 1);
+    return moduloTwoExp(hash, tagWidthBits);
 }
 
 uint64_t LLBP::RCR::getCCID()
 {
-    return ctxs.ccid & ((1ULL << CTWidth) - 1);
-}
+    return moduloTwoExp(ctxs.ccid, tagWidthBits);
+}    // Hash of all branches
 
 uint64_t LLBP::RCR::getPCID()
 {
-    return ctxs.pcid & ((1ULL << CTWidth) - 1);
+    return moduloTwoExp(ctxs.pcid, tagWidthBits);
 }
 
 bool LLBP::RCR::update(Addr pc, const StaticInstPtr &inst, bool taken)
 {
-    // Hash of all branches
-    branchCount++;
-
     bool update = false;
 
     switch (T)
@@ -344,24 +531,84 @@ bool LLBP::RCR::update(Addr pc, const StaticInstPtr &inst, bool taken)
     if (update)
     {
         // Add the new branch to the history
-        bb[0].push_front(pc);
-        bb[1].push_front(pc);
+        bb.push_front(pc);
 
         // Remove the oldest branch
-        bb[0].pop_back();
-        bb[1].pop_back();
+        bb.pop_back();
 
         // The current context.
-        ctxs.ccid = calcHash(bb[0], W, D, S);
+        ctxs.ccid = calcHash(bb, W, D, S);
         // The prefetch context.
-        ctxs.pcid = calcHash(bb[0], W, 0, S);
+        ctxs.pcid = calcHash(bb, W, 0, S);
 
-        // DPRINTF(LLBP, "UH:%llx, %i\n", pc, taken);
         return true;
     }
 
     return false;
 }
+
+void LLBP::RCR::backup(std::list<uint64_t> &vec)
+{
+    vec.clear();
+    int count = 0;
+    for (auto it = bb.begin(); it != bb.end(); ++it)
+    {
+        if (count == D + W - 1) {
+            break;
+        }
+        vec.push_back(*it);
+        count++;
+    }
+}
+
+void LLBP::RCR::restore(std::list<uint64_t> &vec)
+{
+    bb.clear();
+    for (auto it = vec.begin(); it != vec.end(); ++it)
+    {
+        bb.push_back(*it);
+    }
+    // The current context.
+    ctxs.ccid = calcHash(bb, W, D, S);
+    // The prefetch context.
+    ctxs.pcid = calcHash(bb, W, 0, S);
+}
+
+LLBP::LLBPStats::LLBPStats(LLBP *llbp)
+    : statistics::Group(llbp),
+      ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
+              "Number of prefetches issued to the backing storage"),
+      ADD_STAT(demandHitsTotal, statistics::units::Count::get(),
+              "Total on-demand hits to the pattern buffer"),
+      ADD_STAT(demandHitsOverride, statistics::units::Count::get(),
+              "On-demand hits to the pattern buffer with LLBP overriding the base predictor"),
+      ADD_STAT(demandHitsNoOverride, statistics::units::Count::get(),
+              "On-demand hits to the pattern buffer, using the base predictor (LLBP dropped)"),
+      ADD_STAT(demandMissesTotal, statistics::units::Count::get(),
+              "Total on-demand misses to the pattern buffer"),
+      ADD_STAT(demandMissesNoPattern, statistics::units::Count::get(),
+              "On-demand misses to the pattern buffer, the chosen pattern-set did not contain the needed pattern"),
+      ADD_STAT(demandMissesNoPrefetch, statistics::units::Count::get(),
+              "On-demand misses to the pattern buffer where the context was not scheduled for insertion"),
+      ADD_STAT(demandMissesCold, statistics::units::Count::get(),
+              "On-demand misses to the pattern buffer where the context was not in the backing storage"),
+      ADD_STAT(patternBufferEvictions, statistics::units::Count::get(),
+              "Number of pattern sets evicted from the pattern buffer due to capacity limits"),
+      ADD_STAT(backingStorageEvictions, statistics::units::Count::get(),
+              "Number of pattern sets evicted from the backing storage due to capacity limits"),
+      ADD_STAT(backingStorageInsertions, statistics::units::Count::get(),
+              "Number of pattern sets inserted into the backing storage (including replacements)"),
+      ADD_STAT(correctOverridesTotal, statistics::units::Count::get(),
+              "Number of branches predicted correctly by LLBP (LLBP was provider)"),
+      ADD_STAT(correctOverridesIdentical, statistics::units::Count::get(),
+              "Number of branches predicted correctly by LLBP, but the base predictor would also be correct"),
+      ADD_STAT(wrongOverridesTotal, statistics::units::Count::get(),
+              "Number of branches predicted wrong by LLBP (LLBP was provider)"),
+      ADD_STAT(wrongOverridesIdentical, statistics::units::Count::get(),
+              "Number of branches predicted wrong by LLBP, but the base predictor would also be wrong"),
+      ADD_STAT(squashedOverrides, statistics::units::Count::get(),
+              "Number of branches predicted by LLBP, but squashed before the outcome was known")
+              {}
 
 } // namespace branch_prediction
 } // namespace gem5

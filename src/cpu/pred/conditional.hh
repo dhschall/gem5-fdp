@@ -46,7 +46,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/branch_type.hh"
 #include "params/ConditionalPredictor.hh"
-#include "sim/sim_object.hh"
+#include "sim/clocked_object.hh"
 
 namespace gem5
 {
@@ -54,7 +54,7 @@ namespace gem5
 namespace branch_prediction
 {
 
-class ConditionalPredictor : public SimObject
+class ConditionalPredictor : public ClockedObject
 {
   public:
 
@@ -161,4 +161,4 @@ class ConditionalPredictor : public SimObject
 } // namespace branch_prediction
 } // namespace gem5
 
-#endif // __CPU_PRED_CONDITIONAL_BASE_HH__
+#endif //__CPU_PRED_CONDITIONAL_BASE_HH__

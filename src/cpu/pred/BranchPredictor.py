@@ -142,7 +142,7 @@ class SimpleBTB(BranchTargetBuffer):
     )
 
 
-class ConditionalPredictor(SimObject):
+class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"
     cxx_header = "cpu/pred/conditional.hh"
@@ -802,12 +802,12 @@ class LLBP(LTAGE):
     cxx_class = "gem5::branch_prediction::LLBP"
     cxx_header = "cpu/pred/llbp.hh"
 
-    CTWidth = Param.Int(14, "RCR CTWidth")
-    patternBufferCapacity = Param.Int(16, "Pattern Buffer Capacity")
-    contextCapacity = Param.Int(1 << 4, "Context Capacity")
-    storageCapacity = Param.Int(1 << 16, "Storage Capacity")
+    tagWidthBits = Param.Int(14, "RCR CTWidth")
+    patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity")
+    storageCapacity = Param.Int(14000, "Storage Capacity")
     ptnCounterBits = Param.Int(3, "Bits in Pattern Counter")
     ctxCounterBits = Param.Int(2, "Bits in Context Replacement Counter")
+    backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
 
 
 class MultiperspectivePerceptron(ConditionalPredictor):
