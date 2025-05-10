@@ -428,7 +428,19 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 
     DPRINTF(Fetch, "%s: PA:%#x, VA:%#x\n", __func__,
             pkt->req->getPaddr(), pkt->req->getVaddr());
+    
 
+    if(decoupledFrontEnd) {
+         
+
+    FetchTargetPtr  ft = ftq->findNext(tid, [pkt](FetchTargetPtr ft) {
+        return ft->hasPaddr() && ft->getPaddr() == pkt->req->getPaddr();
+    });
+
+    if(ft)
+        ft->setFetchBuffer(pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+
+        }
 
     // First check if the request is the active demand request
     // we are waiting for.
@@ -1671,6 +1683,10 @@ Fetch::fetch(bool &status_change)
 
     FetchTargetPtr curFT = ftq->readHead(tid);
 
+    //Only check the fetch target if we are in decoupled front-end mode.
+    // We check if the fetch target has a valid fetch buffer and can be used to read instructions
+    bool ftHasFB = ftqReady(tid, status_change) && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
+
     if (decoupledFrontEnd) { // #ifdef FDIP
         assert(ftqReady(tid,status_change));
 
@@ -1698,9 +1714,8 @@ Fetch::fetch(bool &status_change)
         // If buffer is no longer valid or fetchAddr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
-        if (!(fetchBufferValid[tid] && ftqReady(tid, status_change) &&
-                    fetchBufferBlockPC == fetchBufferPC[tid]) && !inRom &&
-                !macroop[tid]) {
+        if (!((fetchBufferValid[tid] && ftqReady(tid, status_change) && fetchBufferBlockPC == fetchBufferPC[tid]) || ftHasFB) 
+         && !inRom && !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
 
@@ -1754,9 +1769,18 @@ Fetch::fetch(bool &status_change)
 
     // Need to halt fetch if quiesce instruction detected
     bool quiesce = false;
+    
+
+    Addr &lFetchBufferPC = fetchBufferPC[tid];
+    
+    if(ftHasFB) {
+
+        lFetchBufferPC = fetchBufferAlignPC(curFT->startAddress());
+        
+    }
 
     const unsigned numInsts = fetchBufferSize / instSize;
-    unsigned blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
+    unsigned blkOffset = (fetchAddr - lFetchBufferPC) / instSize;
 
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
@@ -1780,12 +1804,12 @@ Fetch::fetch(bool &status_change)
         bool needMem = !inRom && !curMacroop && !dec_ptr->instReady();
         fetchAddr = (this_pc.instAddr() + pcOffset) & pc_mask;
         Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-
+        ftHasFB = ftqReady(tid, status_change) && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferBlockPC;
         if (needMem) {
             // If buffer is no longer valid or fetchAddr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!fetchBufferValid[tid] ||
-                fetchBufferBlockPC != fetchBufferPC[tid])
+            if (!ftHasFB && (!fetchBufferValid[tid] ||
+                fetchBufferBlockPC != fetchBufferPC[tid]))
                 break;
 
             if (blkOffset >= numInsts) {
@@ -1794,10 +1818,15 @@ Fetch::fetch(bool &status_change)
                 break;
             }
 
+            const u_int8_t *l_buffer = fetchBuffer[tid];
+            if(ftHasFB) {
+                l_buffer = curFT->getFetchBuffer();
+            }
+
             memcpy(dec_ptr->moreBytesPtr(),
-                    fetchBuffer[tid] + blkOffset * instSize, instSize);
+            l_buffer + blkOffset * instSize, instSize);
             DPRINTF(Fetch, "Copy bytes %#x from %#x to %#x\n",
-                    uint64_t(fetchBuffer[tid] + blkOffset * instSize),
+                    uint64_t(l_buffer + blkOffset * instSize),
                     fetchAddr, fetchAddr + instSize);
             decoder[tid]->moreBytes(this_pc, fetchAddr);
 
@@ -1880,8 +1909,13 @@ Fetch::fetch(bool &status_change)
             inRom = isRomMicroPC(this_pc.microPC());
 
             if (newMacro) {
+
+                if(!ftHasFB){
+                    lFetchBufferPC = fetchBufferPC[tid];
+                }
+
                 fetchAddr = this_pc.instAddr() & pc_mask;
-                blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
+                blkOffset = (fetchAddr - lFetchBufferPC) / instSize;
                 pcOffset = 0;
                 curMacroop = NULL;
             }

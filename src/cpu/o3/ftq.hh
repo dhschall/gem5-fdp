@@ -80,7 +80,7 @@ class FetchTarget
   private:
     /** The parent ftq */
     const FTQ &ftq;
-
+    
     /** Start PC and address of the fetch target */
     std::unique_ptr<PCStateBase> startPC;
     Addr startAddr;
@@ -156,6 +156,7 @@ class FetchTarget
         return vaddr;
     }
 
+    
     /** Returns the fetch target number. */
     FTSeqNum ftNum() { return ftSeqNum; }
 
@@ -189,7 +190,23 @@ class FetchTarget
                   InstSeqNum sn, bool _is_branch,
                   bool pred_taken, const PCStateBase &pred_pc);
 
+    /*Copy the content of the buffer passed to the fetch buffer of the fetch target*/
+    void setFetchBuffer(const u_int8_t* _buffer , size_t fetchBufferSize) {
+      if(fetchBuffer) return;
+        fetchBuffer = new uint8_t[fetchBufferSize];
+        memcpy(fetchBuffer, _buffer, fetchBufferSize);
+        fetchBufferValid = true;
+    }
 
+    /*Expose the content of the fetch buffer*/
+    const uint8_t* getFetchBuffer() {
+        return fetchBuffer;
+    }
+
+    /*Return true if the fetch buffer of the fetch target is valid*/
+    bool hasFetchBuffer() {
+      return fetchBufferValid;
+  }
 
     /** Fetch target status. */
     enum Status
@@ -251,6 +268,14 @@ class FetchTarget
 
     /** Print the fetch target for debugging. */
     std::string print();
+
+    private:
+
+    /** The fetch target buffer */
+    uint8_t* fetchBuffer; 
+    /** Whether the fetch buffer is valid */
+    bool fetchBufferValid;
+
 };
 
 

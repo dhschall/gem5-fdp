@@ -43,6 +43,9 @@ scons build/ARM/gem5.opt
 
 from gem5.components.boards.simple_board import SimpleBoard
 from gem5.components.cachehierarchies.classic.no_cache import NoCache
+from gem5.components.cachehierarchies.classic.private_l1_private_l2_cache_hierarchy import (
+    PrivateL1PrivateL2CacheHierarchy,
+)
 from gem5.components.memory import SingleChannelDDR3_1600
 from gem5.components.processors.cpu_types import CPUTypes
 from gem5.components.processors.simple_processor import SimpleProcessor
@@ -51,18 +54,60 @@ from gem5.resources.resource import obtain_resource
 from gem5.simulate.simulator import Simulator
 from gem5.utils.requires import requires
 
+from m5.objects import (
+    LTAGE,
+    TAGE_SC_L_64KB,
+    L2XBar,
+    TaggedPrefetcher,
+    SimpleBTB,
+)
+
 # This check ensures the gem5 binary is compiled to the ARM ISA target. If not,
 # an exception will be thrown.
 requires(isa_required=ISA.ARM)
 
 # In this setup we don't have a cache. `NoCache` can be used for such setups.
-cache_hierarchy = NoCache()
+cache_hierarchy = PrivateL1PrivateL2CacheHierarchy(
+    l1d_size="32kB", l1i_size="32kB", l2_size="512kB"
+)
+
+
+class BTB(SimpleBTB):
+    # numEntries = 32*1024
+    numEntries = 32 * 1024
+
+
+class BPTageSCL(TAGE_SC_L_64KB):
+    instShiftAmt = 0
+    requiresBTBHit = True
+    # takenOnlyHistory = True
+    # indirectBranchPred=ITTAGE(itage=IT_TAGE())
+    # indirectBranchPred=ITTAGE()
+    # sc_enabled = False
+    btb = BTB()
+
+
+
 
 # We use a single channel DDR3_1600 memory system
 memory = SingleChannelDDR3_1600(size="32MiB")
 
 # We use a simple Timing processor with one core.
-processor = SimpleProcessor(cpu_type=CPUTypes.TIMING, isa=ISA.ARM, num_cores=1)
+processor = SimpleProcessor(cpu_type=CPUTypes.O3, isa=ISA.ARM, num_cores=1)
+
+
+cpu = processor.cores[-1].core
+
+
+cpu.branchPred = BPTageSCL()
+# cpu.branchPred = BPTageSCL()
+# cpu.branchPred = BPTageRef()
+# cpu.branchPred.tage.histBufferSize= 10000
+# cpu.branchPred.tage.logTagTableSize= 13
+cpu.branchPred.tage.speculativeHistUpdate = True
+
+cpu.decoupledFrontEnd = True
+cpu.fetchTargetWidth = 65
 
 # The gem5 library simple board which can be used to run simple SE-mode
 # simulations.

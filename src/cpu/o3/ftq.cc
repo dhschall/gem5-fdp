@@ -60,7 +60,10 @@ FetchTarget::FetchTarget(const FTQ& parent, const PCStateBase &_start_pc,
     translation_done(false),
     paddr_valid(false),
     bpu_history(nullptr),
-    state(Initial)
+    state(Initial),
+    fetchBuffer(nullptr),
+    fetchBufferValid(false)
+   
 {
     set(startPC , _start_pc);
     vaddr = startPC->instAddr() & ~(ftq.cacheBlkSize-1);
@@ -300,7 +303,7 @@ FTQ::squashSanityCheck(ThreadID tid)
 bool
 FTQ::isHeadReady(ThreadID tid)
 {
-    return (ftqStatus[tid] != Invalid) && (ftq[tid].size() > 1);
+    return (ftqStatus[tid] != Invalid) && (ftq[tid].size() > 0);
 }
 
 
