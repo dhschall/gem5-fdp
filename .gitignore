@@ -40,3 +40,5 @@ typings
 .DS_Store
 tests/test-progs/hello/src/branch.cpp
 SPEC2017
+tests/test-progs/hello/src/microbench
+tests/test-progs/hello/src/microbench.cpp
