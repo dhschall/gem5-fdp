@@ -797,11 +797,12 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
 
 
-class LLBP(LTAGE):
+class LLBP(ConditionalPredictor):
     type = "LLBP"
     cxx_class = "gem5::branch_prediction::LLBP"
     cxx_header = "cpu/pred/llbp.hh"
 
+    base = Param.LTAGE("Base predictor")
     tagWidthBits = Param.Int(14, "RCR CTWidth")
     patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity")
     storageCapacity = Param.Int(14000, "Storage Capacity")

@@ -90,7 +90,6 @@ class LTAGE : public TAGE
 
     void init() override;
 
-  protected:
     /** The loop predictor object */
     LoopPredictor *loopPredictor;
 

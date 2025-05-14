@@ -113,6 +113,15 @@ class TAGE: public ConditionalPredictor
     virtual void squash(ThreadID tid, void * &bp_history) override;
     virtual void branchPlaceholder(ThreadID tid, Addr pc,
                                    bool uncond, void * &bp_history) override;
+
+    unsigned int getNumHistoryTables() const
+    {
+        return tage->nHistoryTables;
+    }
+
+    uint16_t gtag(ThreadID tid, Addr pc, int bank) const {
+        return tage->gtag(tid, pc, bank);
+    }
 };
 
 } // namespace branch_prediction

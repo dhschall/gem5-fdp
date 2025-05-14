@@ -48,10 +48,12 @@ namespace gem5
 namespace branch_prediction
 {
 
-class LLBP : public LTAGE
+class LLBP : public ConditionalPredictor
 {
   public:
     LLBP(const LLBPParams &params);
+
+    Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) override;
 
     void squash(ThreadID tid, void * &bp_history) override;
     void update(ThreadID tid, Addr pc, bool taken,
@@ -62,42 +64,45 @@ class LLBP : public LTAGE
     void branchPlaceholder(ThreadID tid, Addr pc,
                         bool uncond, void * &bpHistory) override;
 
-    protected:
+    void updateHistories(ThreadID tid, Addr pc, bool uncond,
+                         bool taken, Addr target,
+                         const StaticInstPtr &inst,
+                         void * &bp_history) override;
+  protected:
 
+    LTAGE* base;
+    
     Cycles calculateRemainingLatency(Cycles insertTime);
 
-    struct LLBPBranchInfo : public LTageBranchInfo
+    Prediction predict(ThreadID tid, Addr pc,
+        bool cond_branch, void * &bp_history);
+
+    struct LLBPBranchInfo
     {
         bool overridden;
         bool llbp_pred;
         bool base_pred;
         bool avenged;
+        Addr pc;
+        bool conditional;
         std::list<uint64_t> rcrBackup;
-         
-        LLBPBranchInfo(TAGEBase &tage, LoopPredictor &lp,
-                        Addr pc, bool conditional)
-          : LTageBranchInfo(tage, lp, pc, conditional),
-          overridden(false),
-          avenged(false)
+        void* ltage_bi;
+        
+        LLBPBranchInfo(Addr pc, bool conditional)
+          : pc(pc),
+            conditional(conditional),
+            ltage_bi(nullptr)
         {}
 
         bool getPrediction() {
             return overridden ? llbp_pred : base_pred;
         }
 
-        virtual ~LLBPBranchInfo()
+        ~LLBPBranchInfo()
         {}
     };
 
-    Prediction predict(
-        ThreadID tid, Addr branch_pc, bool cond_branch, void* &b) override;
 
-
-    Prediction lTagePredict(
-        ThreadID tid, Addr branch_pc, bool cond_branch, LTageBranchInfo* b);
-
-    void lTageUpdate(ThreadID tid, Addr pc, bool taken, LTageBranchInfo * bi,
-                bool squashed, const StaticInstPtr & inst, Addr target);
     struct Pattern
     {
         //* hysteresis counter: > 0 = taken, < 0 = not taken
@@ -163,9 +168,10 @@ class LLBP : public LTAGE
 
     class RCR
     {
+    public:
         const int maxwindow = 120;
 
-        uint64_t calcHash(std::list<uint64_t> &vec, int n,
+        uint64_t calcHash(int n,
             int start=0, int shift=0);
 
         // The context tag width
@@ -182,7 +188,6 @@ class LLBP : public LTAGE
             uint64_t pcid = 0;
         } ctxs;
 
-    public:
 
         // The hash constants
         const int T, W, D, S;
