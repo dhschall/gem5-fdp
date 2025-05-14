@@ -47,44 +47,48 @@
 namespace gem5
 {
 
-PioDevice::PioDevice(const Params &p)
-    : ClockedObject(p), sys(p.system), pioPort(this)
-{}
-
-PioDevice::~PioDevice()
-{
-}
-
-void
-PioDevice::init()
-{
-    if (!pioPort.isConnected())
-        panic("Pio port of %s not connected to anything!", name());
-    pioPort.sendRangeChange();
-}
-
-Port &
-PioDevice::getPort(const std::string &if_name, PortID idx)
-{
-    if (if_name == "pio") {
-        return pioPort;
+    PioDevice::PioDevice(const Params &p)
+        : ClockedObject(p), sys(p.system), pioPort(this)
+    {
     }
-    return ClockedObject::getPort(if_name, idx);
-}
 
-BasicPioDevice::BasicPioDevice(const Params &p, Addr size)
-    : PioDevice(p), pioAddr(p.pio_addr), pioSize(size),
-      pioDelay(p.pio_latency)
-{}
+    PioDevice::~PioDevice()
+    {
+    }
 
-AddrRangeList
-BasicPioDevice::getAddrRanges() const
-{
-    assert(pioSize != 0);
-    AddrRangeList ranges;
-    DPRINTF(AddrRanges, "registering range: %#x-%#x\n", pioAddr, pioSize);
-    ranges.push_back(RangeSize(pioAddr, pioSize));
-    return ranges;
-}
+    void
+    PioDevice::init()
+    {
+        if (!pioPort.isConnected())
+            panic("Pio port of %s not connected to anything!", name());
+        std::cout << "PIO sending range change!\n";
+        pioPort.sendRangeChange();
+    }
+
+    Port &
+    PioDevice::getPort(const std::string &if_name, PortID idx)
+    {
+        if (if_name == "pio")
+        {
+            return pioPort;
+        }
+        return ClockedObject::getPort(if_name, idx);
+    }
+
+    BasicPioDevice::BasicPioDevice(const Params &p, Addr size)
+        : PioDevice(p), pioAddr(p.pio_addr), pioSize(size),
+          pioDelay(p.pio_latency)
+    {
+    }
+
+    AddrRangeList
+    BasicPioDevice::getAddrRanges() const
+    {
+        assert(pioSize != 0);
+        AddrRangeList ranges;
+        DPRINTF(AddrRanges, "registering range: %#x-%#x\n", pioAddr, pioSize);
+        ranges.push_back(RangeSize(pioAddr, pioSize));
+        return ranges;
+    }
 
 } // namespace gem5

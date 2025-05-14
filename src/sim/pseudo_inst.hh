@@ -91,6 +91,8 @@ void debugbreak(ThreadContext *tc);
 void switchcpu(ThreadContext *tc);
 void workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid);
 void workend(ThreadContext *tc, uint64_t workid, uint64_t threadid);
+void utimer(ThreadContext *tc, Tick time);
+void utimer_end(ThreadContext *tc);
 void m5Syscall(ThreadContext *tc);
 void togglesync(ThreadContext *tc);
 void triggerWorkloadEvent(ThreadContext *tc);
@@ -228,6 +230,13 @@ pseudoInstWork(ThreadContext *tc, uint8_t func, uint64_t &result)
 
       case M5OP_WORKLOAD:
         invokeSimcall<ABI>(tc, triggerWorkloadEvent);
+        return true;
+
+      case M5OP_UTIMER:
+        invokeSimcall<ABI>(tc, utimer);
+        return true;
+      case M5OP_UTIMEREND:
+        invokeSimcall<ABI>(tc, utimer_end);
         return true;
 
       default:

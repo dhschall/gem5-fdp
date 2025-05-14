@@ -60,34 +60,34 @@
 namespace gem5
 {
 
-// forward declarations
-class Packet;
+  // forward declarations
+  class Packet;
 
-class ExecContext;
-class ThreadContext;
+  class ExecContext;
+  class ThreadContext;
 
-namespace loader
-{
-class SymbolTable;
-} // namespace loader
+  namespace loader
+  {
+    class SymbolTable;
+  } // namespace loader
 
-namespace trace
-{
-class InstRecord;
-} // namespace trace
+  namespace trace
+  {
+    class InstRecord;
+  } // namespace trace
 
-/**
- * Base, ISA-independent static instruction class.
- *
- * The main component of this class is the vector of flags and the
- * associated methods for reading them.  Any object that can rely
- * solely on these flags can process instructions without being
- * recompiled for multiple ISAs.
- */
-class StaticInst : public RefCounted, public StaticInstFlags
-{
+  /**
+   * Base, ISA-independent static instruction class.
+   *
+   * The main component of this class is the vector of flags and the
+   * associated methods for reading them.  Any object that can rely
+   * solely on these flags can process instructions without being
+   * recompiled for multiple ISAs.
+   */
+  class StaticInst : public RefCounted, public StaticInstFlags
+  {
   public:
-    using RegIdArrayPtr = RegId (StaticInst:: *)[];
+    using RegIdArrayPtr = RegId (StaticInst::*)[];
 
   private:
     /// See srcRegIdx().
@@ -97,7 +97,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
     RegIdArrayPtr _destRegIdxPtr = nullptr;
 
   protected:
-
     /// Flag values for this instruction.
     std::bitset<Num_Flags> flags;
 
@@ -113,20 +112,19 @@ class StaticInst : public RefCounted, public StaticInstFlags
     std::array<uint8_t, MiscRegClass + 1> _numTypedDestRegs = {};
 
   public:
-
     /// @name Register information.
     /// The sum of the different numDestRegs([type])-s equals numDestRegs().
     /// The per-type function is used to track physical register usage.
     //@{
     /// Number of source registers.
-    uint8_t numSrcRegs()  const { return _numSrcRegs; }
+    uint8_t numSrcRegs() const { return _numSrcRegs; }
     /// Number of destination registers.
     uint8_t numDestRegs() const { return _numDestRegs; }
     /// Number of destination registers of a particular type.
     uint8_t
     numDestRegs(RegClassType type) const
     {
-        return _numTypedDestRegs[type];
+      return _numTypedDestRegs[type];
     }
     //@}
 
@@ -136,45 +134,45 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /// of the individual flags.
     //@{
 
-    bool isNop()          const { return flags[IsNop]; }
+    bool isNop() const { return flags[IsNop]; }
 
     bool
     isMemRef() const
     {
-        return flags[IsLoad] || flags[IsStore] || flags[IsAtomic];
+      return flags[IsLoad] || flags[IsStore] || flags[IsAtomic];
     }
-    bool isLoad()         const { return flags[IsLoad]; }
-    bool isStore()        const { return flags[IsStore]; }
-    bool isAtomic()       const { return flags[IsAtomic]; }
-    bool isStoreConditional()     const { return flags[IsStoreConditional]; }
+    bool isLoad() const { return flags[IsLoad]; }
+    bool isStore() const { return flags[IsStore]; }
+    bool isAtomic() const { return flags[IsAtomic]; }
+    bool isStoreConditional() const { return flags[IsStoreConditional]; }
     bool isInstPrefetch() const { return flags[IsInstPrefetch]; }
     bool isDataPrefetch() const { return flags[IsDataPrefetch]; }
-    bool isPrefetch()     const { return isInstPrefetch() ||
-                                         isDataPrefetch(); }
+    bool isPrefetch() const { return isInstPrefetch() ||
+                                     isDataPrefetch(); }
 
-    bool isInteger()      const { return flags[IsInteger]; }
-    bool isFloating()     const { return flags[IsFloating]; }
-    bool isVector()       const { return flags[IsVector]; }
-    bool isMatrix()       const { return flags[IsMatrix]; }
+    bool isInteger() const { return flags[IsInteger]; }
+    bool isFloating() const { return flags[IsFloating]; }
+    bool isVector() const { return flags[IsVector]; }
+    bool isMatrix() const { return flags[IsMatrix]; }
 
-    bool isControl()      const { return flags[IsControl]; }
-    bool isCall()         const { return flags[IsCall]; }
-    bool isReturn()       const { return flags[IsReturn]; }
-    bool isDirectCtrl()   const { return flags[IsDirectControl]; }
+    bool isControl() const { return flags[IsControl]; }
+    bool isCall() const { return flags[IsCall]; }
+    bool isReturn() const { return flags[IsReturn]; }
+    bool isDirectCtrl() const { return flags[IsDirectControl]; }
     bool isIndirectCtrl() const { return flags[IsIndirectControl]; }
-    bool isCondCtrl()     const { return flags[IsCondControl]; }
-    bool isUncondCtrl()   const { return flags[IsUncondControl]; }
+    bool isCondCtrl() const { return flags[IsCondControl]; }
+    bool isUncondCtrl() const { return flags[IsUncondControl]; }
 
-    bool isSerializing()  const { return flags[IsSerializing] ||
-                                      flags[IsSerializeBefore] ||
-                                      flags[IsSerializeAfter]; }
+    bool isSerializing() const { return flags[IsSerializing] ||
+                                        flags[IsSerializeBefore] ||
+                                        flags[IsSerializeAfter]; }
     bool isSerializeBefore() const { return flags[IsSerializeBefore]; }
     bool isSerializeAfter() const { return flags[IsSerializeAfter]; }
     bool isSquashAfter() const { return flags[IsSquashAfter]; }
     bool
     isFullMemBarrier() const
     {
-        return flags[IsReadBarrier] && flags[IsWriteBarrier];
+      return flags[IsReadBarrier] && flags[IsWriteBarrier];
     }
     bool isReadBarrier() const { return flags[IsReadBarrier]; }
     bool isWriteBarrier() const { return flags[IsWriteBarrier]; }
@@ -183,6 +181,9 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isUnverifiable() const { return flags[IsUnverifiable]; }
     bool isSyscall() const { return flags[IsSyscall]; }
     bool isMacroop() const { return flags[IsMacroop]; }
+    bool isSenduipi() const { return flags[IsSendUipi]; }
+    bool isUiret() const { return flags[IsUiret]; }
+    bool isUintUcode() const { return flags[IsUintUcode]; }
     bool isMicroop() const { return flags[IsMicroop]; }
     bool isDelayedCommit() const { return flags[IsDelayedCommit]; }
     bool isLastMicroop() const { return flags[IsLastMicroop]; }
@@ -194,10 +195,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isHtmStop() const { return flags[IsHtmStop]; }
     bool isHtmCancel() const { return flags[IsHtmCancel]; }
 
+    mutable bool commitCallbackExists = false;
+    mutable std::function<void()> _commitCallback;
+
     bool
     isHtmCmd() const
     {
-        return isHtmStart() || isHtmStop() || isHtmCancel();
+      return isHtmStart() || isHtmStop() || isHtmCancel();
     }
     //@}
 
@@ -209,7 +213,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /// Operation class.  Used to select appropriate function unit in issue.
     OpClass opClass() const { return _opClass; }
 
-
     /// Return logical index (architectural reg num) of i'th destination reg.
     /// Only the entries from 0 through numDestRegs()-1 are valid.
     const RegId &destRegIdx(int i) const { return (this->*_destRegIdxPtr)[i]; }
@@ -217,7 +220,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     void
     setDestRegIdx(int i, const RegId &val)
     {
-        (this->*_destRegIdxPtr)[i] = val;
+      (this->*_destRegIdxPtr)[i] = val;
     }
 
     /// Return logical index (architectural reg num) of i'th source reg.
@@ -227,7 +230,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     void
     setSrcRegIdx(int i, const RegId &val)
     {
-        (this->*_srcRegIdxPtr)[i] = val;
+      (this->*_srcRegIdxPtr)[i] = val;
     }
 
     /// Pointer to a statically allocated "null" instruction object.
@@ -236,7 +239,6 @@ class StaticInst : public RefCounted, public StaticInstFlags
     virtual uint64_t getEMI() const { return 0; }
 
   protected:
-
     /**
      * Set the pointers which point to the arrays of source and destination
      * register indices. These will be defined in derived classes which know
@@ -246,8 +248,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     void
     setRegIdxArrays(RegIdArrayPtr src, RegIdArrayPtr dest)
     {
-        _srcRegIdxPtr = src;
-        _destRegIdxPtr = dest;
+      _srcRegIdxPtr = src;
+      _destRegIdxPtr = dest;
     }
 
     /**
@@ -268,7 +270,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * Internal function to generate disassembly string.
      */
     virtual std::string generateDisassembly(
-            Addr pc, const loader::SymbolTable *symtab) const = 0;
+        Addr pc, const loader::SymbolTable *symtab) const = 0;
 
     /// Constructor.
     /// It's important to initialize everything here to a sane
@@ -277,25 +279,26 @@ class StaticInst : public RefCounted, public StaticInstFlags
     /// instruction.
     StaticInst(const char *_mnemonic, OpClass op_class)
         : _opClass(op_class), mnemonic(_mnemonic)
-    {}
+    {
+    }
 
   public:
-    virtual ~StaticInst() {};
+    virtual ~StaticInst(){};
 
     virtual Fault execute(ExecContext *xc,
-            trace::InstRecord *traceData) const = 0;
+                          trace::InstRecord *traceData) const = 0;
 
     virtual Fault
     initiateAcc(ExecContext *xc, trace::InstRecord *traceData) const
     {
-        panic("initiateAcc not defined!");
+      panic("initiateAcc not defined!");
     }
 
     virtual Fault
     completeAcc(Packet *pkt, ExecContext *xc,
-            trace::InstRecord *trace_data) const
+                trace::InstRecord *trace_data) const
     {
-        panic("completeAcc not defined!");
+      panic("completeAcc not defined!");
     }
 
     virtual void advancePC(PCStateBase &pc_state) const = 0;
@@ -304,7 +307,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
     virtual std::unique_ptr<PCStateBase>
     buildRetPC(const PCStateBase &cur_pc, const PCStateBase &call_pc) const
     {
-        panic("buildRetPC not defined!");
+      panic("buildRetPC not defined!");
     }
 
     /**
@@ -319,7 +322,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * should be true).
      */
     virtual std::unique_ptr<PCStateBase> branchTarget(
-            const PCStateBase &pc) const;
+        const PCStateBase &pc) const;
 
     /**
      * Return the target address for an indirect branch (jump).  The
@@ -329,7 +332,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * branch (i.e. isIndirectCtrl() should be true).
      */
     virtual std::unique_ptr<PCStateBase> branchTarget(
-            ThreadContext *tc) const;
+        ThreadContext *tc) const;
 
     /**
      * Return string representation of disassembled instruction.
@@ -339,7 +342,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * should not be cached, this function should be overridden directly.
      */
     virtual const std::string &disassemble(Addr pc,
-        const loader::SymbolTable *symtab=nullptr) const;
+                                           const loader::SymbolTable *symtab = nullptr) const;
 
     /**
      * Print a separator separated list of this instruction's set flag
@@ -351,14 +354,14 @@ class StaticInst : public RefCounted, public StaticInstFlags
     std::string getName() { return mnemonic; }
 
   protected:
-    template<typename T>
+    template <typename T>
     size_t
     simpleAsBytes(void *buf, size_t max_size, const T &t)
     {
-        size_t size = sizeof(T);
-        if (size <= max_size)
-            *reinterpret_cast<T *>(buf) = htole<T>(t);
-        return size;
+      size_t size = sizeof(T);
+      if (size <= max_size)
+        *reinterpret_cast<T *>(buf) = htole<T>(t);
+      return size;
     }
 
   public:
@@ -374,7 +377,7 @@ class StaticInst : public RefCounted, public StaticInstFlags
      * buffer if there wasn't enough space.
      */
     virtual size_t asBytes(void *buf, size_t max_size) { return 0; }
-};
+  };
 
 } // namespace gem5
 

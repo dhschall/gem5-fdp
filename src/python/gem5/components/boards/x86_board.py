@@ -50,17 +50,58 @@ from m5.objects import (
     RawDiskImage,
     BaseXBar,
     Port,
+    IGbE_e1000,
+    EtherLink,
+    CopyEngine,
+    LoadGenerator,
+    Accelerator
 )
 
 from m5.util.convert import toMemorySize
+from m5.util import *
 
 from ..processors.abstract_processor import AbstractProcessor
 from ..memory.abstract_memory_system import AbstractMemorySystem
 from ..cachehierarchies.abstract_cache_hierarchy import AbstractCacheHierarchy
 
 from typing import List, Sequence
-
-
+class PacketRate:
+    packet_rate_in_Gbps = 6.0
+class AlternatingRate:
+    alternating_rate = 10
+class IsAccel:
+    accelerator = False
+class Vmr:
+    vmr = 1
+class MaxError:
+    max_error = 1
+class NumNics:
+    num_nics = 1
+#this is for the attribute error 
+def getPacketRateHack():
+    return PacketRate.packet_rate_in_Gbps
+def setPacketRateHack(val):
+    PacketRate.packet_rate_in_Gbps = val
+def getAlternatingHack():
+    return AlternatingRate.alternating_rate
+def setAlternatingHack(val):
+    AlternatingRate.alternating_rate = val
+def getIsAccelHack():
+    return IsAccel.accelerator
+def setIsAccelHack(val):
+    IsAccel.accelerator = val
+def getVmrHack():
+    return Vmr.vmr
+def setVmrHack(val):
+    Vmr.vmr = val
+def getMaxErrorHack():
+    return MaxError.max_error
+def setMaxErrorHack(val):
+    MaxError.max_error = val
+def setNumNics(val):
+    NumNics.num_nics = val
+def getNumNics():
+    return NumNics.num_nics
 class X86Board(AbstractSystemBoard, KernelDiskWorkload):
     """
     A board capable of full system simulation for X86.
@@ -69,13 +110,14 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
     * Currently, this board's memory is hardcoded to 3GB
     * Much of the I/O subsystem is hard coded
     """
-
+    
     def __init__(
         self,
         clk_freq: str,
         processor: AbstractProcessor,
         memory: AbstractMemorySystem,
         cache_hierarchy: AbstractCacheHierarchy,
+        packet_rate: float
     ) -> None:
         super().__init__(
             clk_freq=clk_freq,
@@ -83,7 +125,7 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
             memory=memory,
             cache_hierarchy=cache_hierarchy,
         )
-
+        setPacketRateHack(packet_rate)
         if self.get_processor().get_isa() != ISA.X86:
             raise Exception(
                 "The X86Board requires a processor using the X86 "
@@ -92,10 +134,59 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
 
     @overrides(AbstractSystemBoard)
     def _setup_board(self) -> None:
-        self.pc = Pc()
+        print("PACKET RATE: " +str(getPacketRateHack()))
+        print("Alternation Rate: "+str(getAlternatingHack()))
+        num_nics = getNumNics()
+        nics = []
+        loadgens = []
+        ethifs = []
+        if num_nics > 3:
+            nics_enum = list(range(0,4))+ list(range(5,num_nics+1)) #skip 4 IDE controller on 4
+        else:
+            nics_enum = list(range(0,num_nics))
+        if getIsAccelHack():
+            for i,devid in enumerate(nics_enum):
+                loadgens.append(Accelerator(accel_id = devid, packet_size = 1514, vmr=getVmrHack(),max_error=getMaxErrorHack(),mode='Normal'))
+        else:
+            for i,devid in enumerate(nics_enum):
+                loadgens.append(LoadGenerator(loadgen_id = devid,packet_rate = getPacketRateHack()*88650, packet_size = 1514, start_tick=30097127313142, stop_tick=45000000000000000,burst_gap=getAlternatingHack(),burst_width=500*100000 ,mode='Poisson'))
+        ioat = CopyEngine(pci_bus=0,pci_dev=num_nics+1,pci_func=0)
+        
+        for i,devid in enumerate(nics_enum):
+            # nics.append(IGbE_e1000(pci_bus=0, pci_dev=i, pci_func=0,
+                            #  InterruptLine=(16+i), InterruptPin=1))
+            nics.append(IGbE_e1000(adq_idx=devid,pci_bus=0, pci_dev=devid, pci_func=0,
+                              InterruptLine=(16+devid), InterruptPin=1))
+            ethifs.append(EtherLink(speed = '1000Gbps'))
+            ethifs[i].int0 = nics[i].interface
+            ethifs[i].int1 = loadgens[i].interface
+        self.ethifs = ethifs
+        self.loadgens = loadgens
+        class ModifiedPc(Pc):
+            def __init__(self,nics,ioat):
+                super(ModifiedPc, self).__init__()
+                self.nics = nics
+                self.ioat = ioat
+
+
+            def attachIO(self, bus, dma_ports = []):
+                super(ModifiedPc, self).attachIO(bus, dma_ports)
+                for dev in self.nics:
+                    dev.host = self.pci_host
+                    dev.dma = bus.cpu_side_ports
+                    dev.pio = bus.mem_side_ports
+                #print("DMA CONNECTING")
+                self.ioat.host = self.pci_host
+                for i in range(4):
+                   self.ioat.dma_local[i] = bus.cpu_side_ports
+                self.ioat.dma = bus.cpu_side_ports
+                self.ioat.pio = bus.mem_side_ports
+                    
+
+        self.pc = ModifiedPc(nics,ioat)
 
         self.workload = X86FsLinux()
-
+        
         # North Bridge
         self.iobus = IOXBar()
 
@@ -158,7 +249,7 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
 
         # Add in a Bios information structure.
         self.workload.smbios_table.structures = [X86SMBiosBiosInformation()]
-
+        
         # Set up the Intel MP table
         base_entries = []
         ext_entries = []
@@ -189,17 +280,17 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
         )
         ext_entries.append(connect_busses)
 
-        pci_dev4_inta = X86IntelMPIOIntAssignment(
-            interrupt_type="INT",
-            polarity="ConformPolarity",
-            trigger="ConformTrigger",
-            source_bus_id=0,
-            source_bus_irq=0 + (4 << 2),
-            dest_io_apic_id=io_apic.id,
-            dest_io_apic_intin=16,
-        )
-
-        base_entries.append(pci_dev4_inta)
+        for dev in range(0, 10):
+            pci_dev_inta = X86IntelMPIOIntAssignment(
+                interrupt_type="INT",
+                polarity="ConformPolarity",
+                trigger="ConformTrigger",
+                source_bus_id=0,
+                source_bus_irq=0 + (dev << 2),
+                dest_io_apic_id=io_apic.id,
+                dest_io_apic_intin=16 + dev,
+            )
+            base_entries.append(pci_dev_inta)
 
         def assignISAInt(irq, apicPin):
 
@@ -250,7 +341,15 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
         entries.append(
             X86E820Entry(addr=0xFFFF0000, size="64kB", range_type=2)
         )
-
+        if len(self.mem_ranges) == 3:
+            print("x")
+            entries.append(
+                X86E820Entry(
+                    addr=0x100000000,
+                    size="%dB" % (self.mem_ranges[1].size()),
+                    range_type=1,
+                )
+            )
         self.workload.e820_table.entries = entries
 
     @overrides(AbstractSystemBoard)
@@ -281,23 +380,42 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
     def _setup_memory_ranges(self):
         memory = self.get_memory()
 
-        if memory.get_size() > toMemorySize("3GB"):
-            raise Exception(
-                "X86Board currently only supports memory sizes up "
-                "to 3GB because of the I/O hole."
-            )
-        data_range = AddrRange(memory.get_size())
-        memory.set_memory_range([data_range])
+        excess_mem_size = memory.get_size() - toMemorySize("3GB")
+        if excess_mem_size <= 0:
+            data_range = AddrRange(memory.get_size())
+            memory.set_memory_range([data_range])
 
-        # Add the address range for the IO
-        self.mem_ranges = [
-            data_range,  # All data
-            AddrRange(0xC0000000, size=0x100000),  # For I/0
-        ]
+            # Add the address range for the IO
+            self.mem_ranges = [
+                data_range,  # All data
+                AddrRange(0xC0000000, size=0x100000),  # For I/0
+            ]
+        else:
+            warn(
+                "Physical memory size specified is %s which is greater than "
+                "3GB.  Twice the number of memory controllers would be "
+                "created." % (memory.get_size())
+            )
+
+            self.mem_ranges = [
+                AddrRange("3GB"),
+                AddrRange(Addr("4GB"), size=excess_mem_size),
+                AddrRange(0xC0000000, size=0x100000),  # For I/0
+            ]
+            memory.set_memory_range([AddrRange("3GB"), AddrRange(Addr("4GB"), size=excess_mem_size)])
+
+
+        # if memory.get_size() > toMemorySize("3GB"):
+            # raise Exception(
+                # "X86Board currently only supports memory sizes up "
+                # "to 3GB because of the I/O hole."
+            # )
+
+        
 
     @overrides(KernelDiskWorkload)
     def get_disk_device(self):
-        return "/dev/hda"
+        return "/dev/sda"
 
     @overrides(KernelDiskWorkload)
     def _add_disk_to_board(self, disk_image: AbstractResource):
@@ -316,6 +434,9 @@ class X86Board(AbstractSystemBoard, KernelDiskWorkload):
         return [
             "earlyprintk=ttyS0",
             "console=ttyS0",
-            "lpj=7999923",
             "root={root_value}",
+            "intel_idle. max_cstate=0",
+            "idle=nomwait",
+            "lpj=7999923",
+            "notsc",
         ]

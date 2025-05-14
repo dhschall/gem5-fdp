@@ -66,8 +66,8 @@
 namespace gem5
 {
 
-class PciBar : public SimObject
-{
+  class PciBar : public SimObject
+  {
   protected:
     // The address and size of the region this decoder recognizes.
     Addr _addr = 0;
@@ -93,38 +93,38 @@ class PciBar : public SimObject
     // Don't use unless you have to, since this may not propogate properly
     // outside of a small window.
     void size(Addr value) { _size = value; }
-};
+  };
 
-class PciBarNone : public PciBar
-{
+  class PciBarNone : public PciBar
+  {
   public:
     PciBarNone(const PciBarNoneParams &p) : PciBar(p) {}
 
     uint32_t
     write(const PciHost::DeviceInterface &host, uint32_t val) override
     {
-        return 0;
+      return 0;
     }
-};
+  };
 
-class PciIoBar : public PciBar
-{
+  class PciIoBar : public PciBar
+  {
   protected:
     BitUnion32(Bar)
         Bitfield<31, 2> addr;
-        Bitfield<1> reserved;
-        Bitfield<0> io;
+    Bitfield<1> reserved;
+    Bitfield<0> io;
     EndBitUnion(Bar)
 
-  public:
-    PciIoBar(const PciIoBarParams &p, bool legacy=false) : PciBar(p)
+        public : PciIoBar(const PciIoBarParams &p, bool legacy = false) : PciBar(p)
     {
-        _size = p.size;
-        if (!legacy) {
-            Bar bar = _size;
-            fatal_if(!_size || !isPowerOf2(_size) || bar.io || bar.reserved,
-                    "Illegal size %d for bar %s.", _size, name());
-        }
+      _size = p.size;
+      if (!legacy)
+      {
+        Bar bar = _size;
+        fatal_if(!_size || !isPowerOf2(_size) || bar.io || bar.reserved,
+                 "Illegal size %d for bar %s.", _size, name());
+      }
     }
 
     bool isIo() const override { return true; }
@@ -132,65 +132,65 @@ class PciIoBar : public PciBar
     uint32_t
     write(const PciHost::DeviceInterface &host, uint32_t val) override
     {
-        // Mask away the bits fixed by hardware.
-        Bar bar = val & ~(_size - 1);
-        // Set the fixed bits to their correct values.
-        bar.reserved = 0;
-        bar.io = 1;
+      // Mask away the bits fixed by hardware.
+      Bar bar = val & ~(_size - 1);
+      // Set the fixed bits to their correct values.
+      bar.reserved = 0;
+      bar.io = 1;
 
-        // Update our address.
-        _addr = host.pioAddr(bar.addr << 2);
+      // Update our address.
+      _addr = host.pioAddr(bar.addr << 2);
 
-        // Return what should go into config space.
-        return bar;
+      // Return what should go into config space.
+      return bar;
     }
-};
+  };
 
-class PciLegacyIoBar : public PciIoBar
-{
+  class PciLegacyIoBar : public PciIoBar
+  {
   protected:
     Addr fixedAddr;
 
   public:
     PciLegacyIoBar(const PciLegacyIoBarParams &p) : PciIoBar(p, true)
     {
-        // Save the address until we get a host to translate it.
-        fixedAddr = p.addr;
+      // Save the address until we get a host to translate it.
+      fixedAddr = p.addr;
     }
 
     uint32_t
     write(const PciHost::DeviceInterface &host, uint32_t val) override
     {
-        // Update the address now that we have a host to translate it.
-        _addr = host.pioAddr(fixedAddr);
-        // Ignore writes.
-        return 0;
+      // Update the address now that we have a host to translate it.
+      _addr = host.pioAddr(fixedAddr);
+      // Ignore writes.
+      return 0;
     }
-};
+  };
 
-class PciMemBar : public PciBar
-{
+  class PciMemBar : public PciBar
+  {
   private:
     BitUnion32(Bar)
         Bitfield<31, 3> addr;
-        SubBitUnion(type, 2, 1)
-            Bitfield<2> wide;
-            Bitfield<1> reserved;
-        EndSubBitUnion(type)
+    SubBitUnion(type, 2, 1)
+        Bitfield<2> wide;
+    Bitfield<1> reserved;
+    EndSubBitUnion(type)
         Bitfield<0> io;
     EndBitUnion(Bar)
 
-    bool _wide = false;
+        bool _wide = false;
     uint64_t _lower = 0;
     uint64_t _upper = 0;
 
   public:
     PciMemBar(const PciMemBarParams &p) : PciBar(p)
     {
-        _size = p.size;
-        Bar bar = _size;
-        fatal_if(!_size || !isPowerOf2(_size) || bar.io || bar.type,
-                "Illegal size %d for bar %s.", _size, name());
+      _size = p.size;
+      Bar bar = _size;
+      fatal_if(!_size || !isPowerOf2(_size) || bar.io || bar.type,
+               "Illegal size %d for bar %s.", _size, name());
     }
 
     bool isMem() const override { return true; }
@@ -198,21 +198,21 @@ class PciMemBar : public PciBar
     uint32_t
     write(const PciHost::DeviceInterface &host, uint32_t val) override
     {
-        // Mask away the bits fixed by hardware.
-        Bar bar = val & ~(_size - 1);
-        // Set the fixed bits to their correct values.
-        bar.type.wide = wide() ? 1 : 0;
-        bar.type.reserved = 0;
-        bar.io = 0;
+      // Mask away the bits fixed by hardware.
+      Bar bar = val & ~(_size - 1);
+      // Set the fixed bits to their correct values.
+      bar.type.wide = wide() ? 1 : 0;
+      bar.type.reserved = 0;
+      bar.io = 0;
 
-        // Keep track of our lower 32 bits.
-        _lower = bar.addr << 3;
+      // Keep track of our lower 32 bits.
+      _lower = bar.addr << 3;
 
-        // Update our address.
-        _addr = host.memAddr(upper() + lower());
+      // Update our address.
+      _addr = host.memAddr(upper() + lower());
 
-        // Return what should go into config space.
-        return bar;
+      // Return what should go into config space.
+      return bar;
     }
 
     bool wide() const { return _wide; }
@@ -222,52 +222,53 @@ class PciMemBar : public PciBar
     void
     upper(const PciHost::DeviceInterface &host, uint32_t val)
     {
-        _upper = (uint64_t)val << 32;
+      _upper = (uint64_t)val << 32;
 
-        // Update our address.
-        _addr = host.memAddr(upper() + lower());
+      // Update our address.
+      _addr = host.memAddr(upper() + lower());
     }
 
     uint64_t lower() const { return _lower; }
-};
+  };
 
-class PciMemUpperBar : public PciBar
-{
+  class PciMemUpperBar : public PciBar
+  {
   private:
     PciMemBar *_lower = nullptr;
 
   public:
     PciMemUpperBar(const PciMemUpperBarParams &p) : PciBar(p)
-    {}
+    {
+    }
 
     void
     lower(PciMemBar *val)
     {
-        _lower = val;
-        // Let our lower half know we're up here.
-        _lower->wide(true);
+      _lower = val;
+      // Let our lower half know we're up here.
+      _lower->wide(true);
     }
 
     uint32_t
     write(const PciHost::DeviceInterface &host, uint32_t val) override
     {
-        assert(_lower);
+      assert(_lower);
 
-        // Mask away bits fixed by hardware, if any.
-        Addr upper = val & ~((_lower->size() - 1) >> 32);
+      // Mask away bits fixed by hardware, if any.
+      Addr upper = val & ~((_lower->size() - 1) >> 32);
 
-        // Let our lower half know about the update.
-        _lower->upper(host, upper);
+      // Let our lower half know about the update.
+      _lower->upper(host, upper);
 
-        return upper;
+      return upper;
     }
-};
+  };
 
-/**
- * PCI device, base implementation is only config space.
- */
-class PciDevice : public DmaDevice
-{
+  /**
+   * PCI device, base implementation is only config space.
+   */
+  class PciDevice : public DmaDevice
+  {
   protected:
     const PciBusAddr _busAddr;
 
@@ -319,15 +320,16 @@ class PciDevice : public DmaDevice
     bool
     getBAR(Addr addr, int &num, Addr &offs)
     {
-        for (int i = 0; i < BARs.size(); i++) {
-            auto *bar = BARs[i];
-            if (!bar || !bar->range().contains(addr))
-                continue;
-            num = i;
-            offs = addr - bar->addr();
-            return true;
-        }
-        return false;
+      for (int i = 0; i < BARs.size(); i++)
+      {
+        auto *bar = BARs[i];
+        if (!bar || !bar->range().contains(addr))
+          continue;
+        num = i;
+        offs = addr - bar->addr();
+        return true;
+      }
+      return false;
     }
 
   public: // Host configuration interface
@@ -338,7 +340,6 @@ class PciDevice : public DmaDevice
      * @param pkt packet containing the write the offset into config space
      */
     virtual Tick writeConfig(PacketPtr pkt);
-
 
     /**
      * Read from the PCI config space data that is stored locally. This may be
@@ -358,10 +359,11 @@ class PciDevice : public DmaDevice
     Addr
     pciToDma(Addr pci_addr) const
     {
-        return hostInterface.dmaAddr(pci_addr);
+      return hostInterface.dmaAddr(pci_addr);
     }
 
     void intrPost() { hostInterface.postInt(); }
+    void uintrPost() { hostInterface.postUInt(); }
     void intrClear() { hostInterface.clearInt(); }
 
     uint8_t interruptLine() const { return letoh(config.interruptLine); }
@@ -394,7 +396,7 @@ class PciDevice : public DmaDevice
     void unserialize(CheckpointIn &cp) override;
 
     const PciBusAddr &busAddr() const { return _busAddr; }
-};
+  };
 
 } // namespace gem5
 

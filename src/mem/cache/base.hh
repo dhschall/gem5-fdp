@@ -93,7 +93,7 @@ struct BaseCacheParams;
  */
 class BaseCache : public ClockedObject
 {
-  protected:
+protected:
     /**
      * Indexes to enumerate the MSHR queues.
      */
@@ -102,8 +102,12 @@ class BaseCache : public ClockedObject
         MSHRQueue_MSHRs,
         MSHRQueue_WriteBuffer
     };
+    int mlc_idx;
+    bool isMLC;
+    bool isIOCache;
+    bool send_header_only;
 
-  public:
+public:
     /**
      * Reasons for caches to be blocked.
      */
@@ -132,13 +136,12 @@ class BaseCache : public ClockedObject
         std::vector<uint64_t> newData;
 
         DataUpdate(Addr _addr, bool is_secure)
-          : addr(_addr), isSecure(is_secure), oldData(), newData()
+            : addr(_addr), isSecure(is_secure), oldData(), newData()
         {
         }
     };
 
-  protected:
-
+protected:
     /**
      * A cache request port is used for the memory-side port of the
      * cache, and in addition to the basic timing port that only sends
@@ -151,8 +154,7 @@ class BaseCache : public ClockedObject
     class CacheRequestPort : public QueuedRequestPort
     {
 
-      public:
-
+    public:
         /**
          * Schedule a send of a request packet (from the MSHR). Note
          * that we could already have a retry outstanding.
@@ -163,13 +165,12 @@ class BaseCache : public ClockedObject
             reqQueue.schedSendEvent(time);
         }
 
-      protected:
-
+    protected:
         CacheRequestPort(const std::string &_name,
-                        ReqPacketQueue &_reqQueue,
-                        SnoopRespPacketQueue &_snoopRespQueue) :
-            QueuedRequestPort(_name, _reqQueue, _snoopRespQueue)
-        { }
+                            ReqPacketQueue &_reqQueue,
+                            SnoopRespPacketQueue &_snoopRespQueue) : QueuedRequestPort(_name, _reqQueue, _snoopRespQueue)
+        {
+        }
 
         /**
          * Memory-side port always snoops.
@@ -188,18 +189,15 @@ class BaseCache : public ClockedObject
     class CacheReqPacketQueue : public ReqPacketQueue
     {
 
-      protected:
-
+    protected:
         BaseCache &cache;
         SnoopRespPacketQueue &snoopRespQueue;
 
-      public:
-
+    public:
         CacheReqPacketQueue(BaseCache &cache, RequestPort &port,
                             SnoopRespPacketQueue &snoop_resp_queue,
-                            const std::string &label) :
-            ReqPacketQueue(cache, port, label), cache(cache),
-            snoopRespQueue(snoop_resp_queue) { }
+                            const std::string &label) : ReqPacketQueue(cache, port, label), cache(cache),
+                                                        snoopRespQueue(snoop_resp_queue) {}
 
         /**
          * Override the normal sendDeferredPacket and do not only
@@ -218,9 +216,10 @@ class BaseCache : public ClockedObject
          */
         bool checkConflictingSnoop(const PacketPtr pkt)
         {
-            if (snoopRespQueue.checkConflict(pkt, cache.blkSize)) {
+            if (snoopRespQueue.checkConflict(pkt, cache.blkSize))
+            {
                 DPRINTF(CachePort, "Waiting for snoop response to be "
-                        "sent\n");
+                                    "sent\n");
                 Tick when = snoopRespQueue.deferredPacketReadyTime();
                 schedSendEvent(when);
                 return true;
@@ -229,15 +228,13 @@ class BaseCache : public ClockedObject
         }
     };
 
-
     /**
      * The memory-side port extends the base cache request port with
      * access functions for functional, atomic and timing snoops.
      */
     class MemSidePort : public CacheRequestPort
     {
-      private:
-
+    private:
         /** The cache-specific queue. */
         CacheReqPacketQueue _reqQueue;
 
@@ -246,8 +243,7 @@ class BaseCache : public ClockedObject
         // a pointer to our specific cache implementation
         BaseCache *cache;
 
-      protected:
-
+    protected:
         virtual void recvTimingSnoopReq(PacketPtr pkt);
 
         virtual bool recvTimingResp(PacketPtr pkt);
@@ -256,8 +252,7 @@ class BaseCache : public ClockedObject
 
         virtual void recvFunctionalSnoop(PacketPtr pkt);
 
-      public:
-
+    public:
         MemSidePort(const std::string &_name, BaseCache *_cache,
                     const std::string &_label);
     };
@@ -273,8 +268,7 @@ class BaseCache : public ClockedObject
     class CacheResponsePort : public QueuedResponsePort
     {
 
-      public:
-
+    public:
         /** Do not accept any new requests. */
         void setBlocked();
 
@@ -283,12 +277,11 @@ class BaseCache : public ClockedObject
 
         bool isBlocked() const { return blocked; }
 
-      protected:
+    protected:
+        CacheResponsePort(const std::string &_name, BaseCache &_cache,
+                            const std::string &_label);
 
-        CacheResponsePort(const std::string &_name, BaseCache& _cache,
-                       const std::string &_label);
-
-        BaseCache& cache;
+        BaseCache &cache;
 
         /** A normal packet queue used to store responses. */
         RespPacketQueue queue;
@@ -297,12 +290,10 @@ class BaseCache : public ClockedObject
 
         bool mustSendRetry;
 
-      private:
-
+    private:
         void processSendRetry();
 
         EventFunctionWrapper sendRetryEvent;
-
     };
 
     /**
@@ -311,7 +302,7 @@ class BaseCache : public ClockedObject
      */
     class CpuSidePort : public CacheResponsePort
     {
-      protected:
+    protected:
         virtual bool recvTimingSnoopResp(PacketPtr pkt) override;
 
         virtual bool tryTiming(PacketPtr pkt) override;
@@ -324,18 +315,16 @@ class BaseCache : public ClockedObject
 
         virtual AddrRangeList getAddrRanges() const override;
 
-      public:
-
-        CpuSidePort(const std::string &_name, BaseCache& _cache,
+    public:
+        CpuSidePort(const std::string &_name, BaseCache &_cache,
                     const std::string &_label);
-
     };
 
     CpuSidePort cpuSidePort;
+    std::vector<CpuSidePort *> ddioHintPort;
     MemSidePort memSidePort;
 
-  protected:
-
+protected:
     /** Miss status registers */
     MSHRQueue mshrQueue;
 
@@ -346,7 +335,7 @@ class BaseCache : public ClockedObject
     BaseTags *tags;
 
     /** Compression method being used. */
-    compression::Base* compressor;
+    compression::Base *compressor;
 
     /** Prefetcher */
     prefetch::Base *prefetcher;
@@ -359,7 +348,7 @@ class BaseCache : public ClockedObject
 
     /** To probe when a cache fill occurs */
     ProbePointArg<PacketPtr> *ppFill;
-
+    ProbePointArg<PacketPtr> *ppDdioHint;
     /**
      * To probe when the contents of a block are updated. Content updates
      * include data fills, overwrites, and invalidations, which means that
@@ -381,7 +370,7 @@ class BaseCache : public ClockedObject
      * end up not allocating the line, and instead turning the
      * whole-line write into a writeback straight away.
      */
-    WriteAllocator * const writeAllocator;
+    WriteAllocator *const writeAllocator;
 
     /**
      * Temporary cache block for occasional transitory use.  We use
@@ -406,7 +395,8 @@ class BaseCache : public ClockedObject
         bool wasFull = mshrQueue.isFull();
         mshrQueue.markInService(mshr, pending_modified_resp);
 
-        if (wasFull && !mshrQueue.isFull()) {
+        if (wasFull && !mshrQueue.isFull())
+        {
             clearBlocked(Blocked_NoMSHRs);
         }
     }
@@ -416,7 +406,8 @@ class BaseCache : public ClockedObject
         bool wasFull = writeBuffer.isFull();
         writeBuffer.markInService(entry);
 
-        if (wasFull && !writeBuffer.isFull()) {
+        if (wasFull && !writeBuffer.isFull())
+        {
             clearBlocked(Blocked_NoWBBuffers);
         }
     }
@@ -437,11 +428,11 @@ class BaseCache : public ClockedObject
     inline bool allocOnFill(MemCmd cmd) const
     {
         return clusivity == enums::mostly_incl ||
-            cmd == MemCmd::WriteLineReq ||
-            cmd == MemCmd::ReadReq ||
-            cmd == MemCmd::WriteReq ||
-            cmd.isPrefetch() ||
-            cmd.isLLSC();
+                cmd == MemCmd::WriteLineReq ||
+                cmd == MemCmd::ReadReq ||
+                cmd == MemCmd::WriteReq ||
+                cmd.isPrefetch() ||
+                cmd.isLLSC();
     }
 
     /**
@@ -452,7 +443,7 @@ class BaseCache : public ClockedObject
      * @param blk The block to regenerate address.
      * @return The block's address.
      */
-    Addr regenerateBlkAddr(CacheBlk* blk);
+    Addr regenerateBlkAddr(CacheBlk *blk);
 
     /**
      * Calculate latency of accesses that only touch the tag array.
@@ -463,7 +454,7 @@ class BaseCache : public ClockedObject
      * @return The number of ticks that pass due to a tag-only access.
      */
     Cycles calculateTagOnlyLatency(const uint32_t delay,
-                                   const Cycles lookup_lat) const;
+                                    const Cycles lookup_lat) const;
     /**
      * Calculate access latency in ticks given a tag lookup latency, and
      * whether access was a hit or miss.
@@ -473,8 +464,8 @@ class BaseCache : public ClockedObject
      * @param lookup_lat Latency of the respective tag lookup.
      * @return The number of ticks that pass due to a block access.
      */
-    Cycles calculateAccessLatency(const CacheBlk* blk, const uint32_t delay,
-                                  const Cycles lookup_lat) const;
+    Cycles calculateAccessLatency(const CacheBlk *blk, const uint32_t delay,
+                                    const Cycles lookup_lat) const;
 
     /**
      * Does all the processing necessary to perform the provided request.
@@ -485,46 +476,46 @@ class BaseCache : public ClockedObject
      * @return Boolean indicating whether the request was satisfied.
      */
     virtual bool access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
-                        PacketList &writebacks);
+                        PacketList &writebacks, bool is_ddio = false);
 
     /*
-     * Handle a timing request that hit in the cache
-     *
-     * @param ptk The request packet
-     * @param blk The referenced block
-     * @param request_time The tick at which the block lookup is compete
-     */
+        * Handle a timing request that hit in the cache
+        *
+        * @param ptk The request packet
+        * @param blk The referenced block
+        * @param request_time The tick at which the block lookup is compete
+        */
     virtual void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk,
                                     Tick request_time);
 
     /*
-     * Handle a timing request that missed in the cache
-     *
-     * Implementation specific handling for different cache
-     * implementations
-     *
-     * @param ptk The request packet
-     * @param blk The referenced block
-     * @param forward_time The tick at which we can process dependent requests
-     * @param request_time The tick at which the block lookup is compete
-     */
+        * Handle a timing request that missed in the cache
+        *
+        * Implementation specific handling for different cache
+        * implementations
+        *
+        * @param ptk The request packet
+        * @param blk The referenced block
+        * @param forward_time The tick at which we can process dependent requests
+        * @param request_time The tick at which the block lookup is compete
+        */
     virtual void handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk,
-                                     Tick forward_time,
-                                     Tick request_time) = 0;
+                                        Tick forward_time,
+                                        Tick request_time) = 0;
 
     /*
-     * Handle a timing request that missed in the cache
-     *
-     * Common functionality across different cache implementations
-     *
-     * @param ptk The request packet
-     * @param blk The referenced block
-     * @param mshr Any existing mshr for the referenced cache block
-     * @param forward_time The tick at which we can process dependent requests
-     * @param request_time The tick at which the block lookup is compete
-     */
+        * Handle a timing request that missed in the cache
+        *
+        * Common functionality across different cache implementations
+        *
+        * @param ptk The request packet
+        * @param blk The referenced block
+        * @param mshr Any existing mshr for the referenced cache block
+        * @param forward_time The tick at which we can process dependent requests
+        * @param request_time The tick at which the block lookup is compete
+        */
     void handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
-                             Tick forward_time, Tick request_time);
+                                Tick forward_time, Tick request_time);
 
     /**
      * Performs the access specified by the request.
@@ -582,7 +573,7 @@ class BaseCache : public ClockedObject
      * @return Cycles for handling the request
      */
     virtual Cycles handleAtomicReqMiss(PacketPtr pkt, CacheBlk *&blk,
-                                       PacketList &writebacks) = 0;
+                                        PacketList &writebacks) = 0;
 
     /**
      * Performs the access specified by the request.
@@ -617,7 +608,7 @@ class BaseCache : public ClockedObject
      * @param has_old_data Whether this block had data previously.
      */
     void updateBlockData(CacheBlk *blk, const PacketPtr cpkt,
-        bool has_old_data);
+                            bool has_old_data);
 
     /**
      * Handle doing the Compare and Swap function for SPARC.
@@ -630,17 +621,17 @@ class BaseCache : public ClockedObject
      * something from the prefetcher. This function is responsible
      * for prioritizing among those sources on the fly.
      */
-    QueueEntry* getNextQueueEntry();
+    QueueEntry *getNextQueueEntry();
 
     /**
      * Insert writebacks into the write buffer
      */
-    virtual void doWritebacks(PacketList& writebacks, Tick forward_time) = 0;
+    virtual void doWritebacks(PacketList &writebacks, Tick forward_time) = 0;
 
     /**
      * Send writebacks down the memory hierarchy in atomic mode
      */
-    virtual void doWritebacksAtomic(PacketList& writebacks) = 0;
+    virtual void doWritebacksAtomic(PacketList &writebacks) = 0;
 
     /**
      * Create an appropriate downstream bus request packet.
@@ -658,8 +649,8 @@ class BaseCache : public ClockedObject
      * @return A packet send to the memory below
      */
     virtual PacketPtr createMissPacket(PacketPtr cpu_pkt, CacheBlk *blk,
-                                       bool needs_writable,
-                                       bool is_whole_line_write) const = 0;
+                                        bool needs_writable,
+                                        bool is_whole_line_write) const = 0;
 
     /**
      * Determine if clean lines should be written back or not. In
@@ -684,7 +675,8 @@ class BaseCache : public ClockedObject
      * recvAtomic finishes in cases where the block we filled is in
      * fact the tempBlock, and now needs to be written back.
      */
-    void writebackTempBlockAtomic() {
+    void writebackTempBlockAtomic()
+    {
         assert(tempBlockWriteback != nullptr);
         PacketList writebacks{tempBlockWriteback};
         doWritebacksAtomic(writebacks);
@@ -722,8 +714,8 @@ class BaseCache : public ClockedObject
      * @param writebacks List for any writebacks that need to be performed.
      * @return Whether operation is successful or not.
      */
-    bool updateCompressionData(CacheBlk *&blk, const uint64_t* data,
-                               PacketList &writebacks);
+    bool updateCompressionData(CacheBlk *&blk, const uint64_t *data,
+                                PacketList &writebacks);
 
     /**
      * Perform any necessary updates to the block and perform any data
@@ -759,8 +751,8 @@ class BaseCache : public ClockedObject
      * @param writebacks List for any writebacks that need to be performed.
      * @return False if any of the evicted blocks is in transient state.
      */
-    bool handleEvictions(std::vector<CacheBlk*> &evict_blks,
-        PacketList &writebacks);
+    bool handleEvictions(std::vector<CacheBlk *> &evict_blks,
+                            PacketList &writebacks);
 
     /**
      * Handle a fill operation caused by a received packet.
@@ -781,7 +773,7 @@ class BaseCache : public ClockedObject
      * @return Pointer to the new cache block.
      */
     CacheBlk *handleFill(PacketPtr pkt, CacheBlk *blk,
-                         PacketList &writebacks, bool allocate);
+                            PacketList &writebacks, bool allocate, bool is_ddio = false);
 
     /**
      * Allocate a new block and perform any necessary writebacks
@@ -795,7 +787,7 @@ class BaseCache : public ClockedObject
      * @param writebacks A list of writeback packets for the evicted blocks
      * @return the allocated block
      */
-    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks);
+    CacheBlk *allocateBlock(const PacketPtr pkt, PacketList &writebacks, bool is_ddio = false);
     /**
      * Evict a cache block.
      *
@@ -821,7 +813,7 @@ class BaseCache : public ClockedObject
      *
      * @param blk Block to invalidate
      */
-    void invalidateBlock(CacheBlk *blk);
+    void invalidateBlock(CacheBlk *blk, bool is_llc_inv = false);
 
     /**
      * Create a writeback request for the given block.
@@ -977,7 +969,7 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
-  public:
+public:
     /** System we are currently operating in. */
     System *system;
 
@@ -1041,7 +1033,8 @@ class BaseCache : public ClockedObject
 
         void regStats() override;
 
-        CacheCmdStats &cmdStats(const PacketPtr p) {
+        CacheCmdStats &cmdStats(const PacketPtr p)
+        {
             return *cmd[p->cmdToIndex()];
         }
 
@@ -1145,14 +1138,14 @@ class BaseCache : public ClockedObject
     /** Registers probes. */
     void regProbePoints() override;
 
-  public:
+public:
     BaseCache(const BaseCacheParams &p, unsigned blk_size);
     ~BaseCache();
 
     void init() override;
 
     Port &getPort(const std::string &if_name,
-                  PortID idx=InvalidPortID) override;
+                    PortID idx = InvalidPortID) override;
 
     /**
      * Query block size of a cache.
@@ -1172,11 +1165,13 @@ class BaseCache : public ClockedObject
                                         pkt, time, order++,
                                         allocOnFill(pkt->cmd));
 
-        if (mshrQueue.isFull()) {
+        if (mshrQueue.isFull())
+        {
             setBlocked((BlockedCause)MSHRQueue_MSHRs);
         }
 
-        if (sched_send) {
+        if (sched_send)
+        {
             // schedule the send
             schedMemSideSendEvent(time);
         }
@@ -1195,20 +1190,23 @@ class BaseCache : public ClockedObject
         // the operation's latency is added to the payload delay. Consume
         // that payload delay here, meaning that the data is always stored
         // uncompressed in the writebuffer
-        if (compressor) {
+        if (compressor)
+        {
             time += pkt->payloadDelay;
             pkt->payloadDelay = 0;
         }
 
         WriteQueueEntry *wq_entry =
             writeBuffer.findMatch(blk_addr, pkt->isSecure());
-        if (wq_entry && !wq_entry->inService) {
+        if (wq_entry && !wq_entry->inService)
+        {
             DPRINTF(Cache, "Potential to merge writeback %s", pkt->print());
         }
 
         writeBuffer.allocate(blk_addr, blkSize, pkt, time, order++);
 
-        if (writeBuffer.isFull()) {
+        if (writeBuffer.isFull())
+        {
             setBlocked((BlockedCause)MSHRQueue_WriteBuffer);
         }
 
@@ -1232,13 +1230,14 @@ class BaseCache : public ClockedObject
     void setBlocked(BlockedCause cause)
     {
         uint8_t flag = 1 << cause;
-        if (blocked == 0) {
+        if (blocked == 0)
+        {
             stats.blockedCauses[cause]++;
             blockedCycle = curCycle();
             cpuSidePort.setBlocked();
         }
         blocked |= flag;
-        DPRINTF(Cache,"Blocking for cause %d, mask=%d\n", cause, blocked);
+        DPRINTF(Cache, "Blocking for cause %d, mask=%d\n", cause, blocked);
     }
 
     /**
@@ -1252,8 +1251,9 @@ class BaseCache : public ClockedObject
     {
         uint8_t flag = 1 << cause;
         blocked &= ~flag;
-        DPRINTF(Cache,"Unblocking for cause %d, mask=%d\n", cause, blocked);
-        if (blocked == 0) {
+        DPRINTF(Cache, "Unblocking for cause %d, mask=%d\n", cause, blocked);
+        if (blocked == 0)
+        {
             stats.blockedCycles[cause] += curCycle() - blockedCycle;
             cpuSidePort.clearBlocked();
         }
@@ -1272,20 +1272,26 @@ class BaseCache : public ClockedObject
         memSidePort.schedSendEvent(time);
     }
 
-    bool inCache(Addr addr, bool is_secure) const {
+    bool inCache(Addr addr, bool is_secure) const
+    {
         return tags->findBlock(addr, is_secure);
     }
 
-    bool hasBeenPrefetched(Addr addr, bool is_secure) const {
+    bool hasBeenPrefetched(Addr addr, bool is_secure) const
+    {
         CacheBlk *block = tags->findBlock(addr, is_secure);
-        if (block) {
+        if (block)
+        {
             return block->wasPrefetched();
-        } else {
+        }
+        else
+        {
             return false;
         }
     }
 
-    bool inMissQueue(Addr addr, bool is_secure) const {
+    bool inMissQueue(Addr addr, bool is_secure) const
+    {
         return mshrQueue.findMatch(addr, is_secure);
     }
 
@@ -1294,7 +1300,8 @@ class BaseCache : public ClockedObject
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).misses[pkt->req->requestorId()]++;
         pkt->req->incAccessDepth();
-        if (missCount) {
+        if (missCount)
+        {
             --missCount;
             if (missCount == 0)
                 exitSimLoop("A cache reached the maximum miss count");
@@ -1312,7 +1319,6 @@ class BaseCache : public ClockedObject
      * @return True if the cache is coalescing writes
      */
     bool coalesce() const;
-
 
     /**
      * Cache block visitor that writes back dirty cache blocks using
@@ -1335,7 +1341,7 @@ class BaseCache : public ClockedObject
      * @param mshr The MSHR to turn into a packet and send
      * @return True if the port is waiting for a retry
      */
-    virtual bool sendMSHRQueuePacket(MSHR* mshr);
+    virtual bool sendMSHRQueuePacket(MSHR *mshr);
 
     /**
      * Similar to sendMSHR, but for a write-queue entry
@@ -1345,7 +1351,7 @@ class BaseCache : public ClockedObject
      * @param wq_entry The write-queue entry to turn into a packet and send
      * @return True if the port is waiting for a retry
      */
-    bool sendWriteQueuePacket(WriteQueueEntry* wq_entry);
+    bool sendWriteQueuePacket(WriteQueueEntry *wq_entry);
 
     /**
      * Serialize the state of the caches
@@ -1354,6 +1360,24 @@ class BaseCache : public ClockedObject
      */
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
+
+    bool isLLCIOInvalid(PacketPtr pkt)
+    {
+        return isLLC && pkt->isBlockIO() && pkt->cmd == MemCmd::InvalidateReq;
+    }
+
+    bool isLLCisMLCIOInvalid(PacketPtr pkt)
+    {
+
+        return ((isMLC && mlc_ddio) || isLLC) && pkt->isBlockIO() && pkt->cmd == MemCmd::InvalidateReq;
+    }
+
+    // SHIN.
+    bool ddioEnabled;
+    bool ddioDisabled;
+    int32_t ddioWayPart;
+    bool isLLC;
+    bool mlc_ddio;
 };
 
 /**
@@ -1373,12 +1397,11 @@ class BaseCache : public ClockedObject
  */
 class WriteAllocator : public SimObject
 {
-  public:
-    WriteAllocator(const WriteAllocatorParams &p) :
-        SimObject(p),
-        coalesceLimit(p.coalesce_limit * p.block_size),
-        noAllocateLimit(p.no_allocate_limit * p.block_size),
-        delayThreshold(p.delay_threshold)
+public:
+    WriteAllocator(const WriteAllocatorParams &p) : SimObject(p),
+                                                    coalesceLimit(p.coalesce_limit * p.block_size),
+                                                    noAllocateLimit(p.no_allocate_limit * p.block_size),
+                                                    delayThreshold(p.delay_threshold)
     {
         reset();
     }
@@ -1389,7 +1412,8 @@ class WriteAllocator : public SimObject
      *
      * @return return true if the cache should coalesce writes.
      */
-    bool coalesce() const {
+    bool coalesce() const
+    {
         return mode != WriteMode::ALLOCATE;
     }
 
@@ -1398,7 +1422,8 @@ class WriteAllocator : public SimObject
      *
      * @return return true if the cache should not allocate for writes.
      */
-    bool allocate() const {
+    bool allocate() const
+    {
         return mode != WriteMode::NO_ALLOCATE;
     }
 
@@ -1408,7 +1433,8 @@ class WriteAllocator : public SimObject
      * writes that might trigger a switch to coalescing and later no
      * allocation.
      */
-    void reset() {
+    void reset()
+    {
         mode = WriteMode::ALLOCATE;
         byteCount = 0;
         nextAddr = 0;
@@ -1420,11 +1446,15 @@ class WriteAllocator : public SimObject
      * @param blk_addr The block address the packet writes to
      * @return true if the current packet should be delayed
      */
-    bool delay(Addr blk_addr) {
-        if (delayCtr[blk_addr] > 0) {
+    bool delay(Addr blk_addr)
+    {
+        if (delayCtr[blk_addr] > 0)
+        {
             --delayCtr[blk_addr];
             return true;
-        } else {
+        }
+        else
+        {
             return false;
         }
     }
@@ -1434,7 +1464,8 @@ class WriteAllocator : public SimObject
      *
      * @param blk_addr The accessed cache block
      */
-    void resetDelay(Addr blk_addr) {
+    void resetDelay(Addr blk_addr)
+    {
         delayCtr.erase(blk_addr);
     }
 
@@ -1450,7 +1481,7 @@ class WriteAllocator : public SimObject
      */
     void updateMode(Addr write_addr, unsigned write_size, Addr blk_addr);
 
-  private:
+private:
     /**
      * The current mode for write coalescing and allocation, either
      * normal operation (ALLOCATE), write coalescing (COALESCE), or

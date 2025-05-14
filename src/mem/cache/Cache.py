@@ -173,12 +173,30 @@ class BaseCache(ClockedObject):
     # data cache.
     write_allocator = Param.WriteAllocator(NULL, "Write allocator")
 
+    is_mlc = Param.Bool(False)
+    mlc_idx = Param.Int(-1)
+    is_iocache = Param.Bool(False)
+    send_header_only = Param.Bool(False)
+    mlc_ddio = Param.Bool(False)
+
+    
+    ddio_enabled = Param.Bool(True, "Enabled DDIO?")
+    ddio_disabled = Param.Bool(False, "Disabled DDIO?")
+    is_llc = Param.Bool(False, "Is this cache the llc?")
+    ddio_way_part = Param.Int(-1, "way partitioning for ddio; "
+                                  "-1 means all sets can be used")
+
 
 class Cache(BaseCache):
     type = "Cache"
     cxx_header = "mem/cache/cache.hh"
     cxx_class = "gem5::Cache"
 
+    is_mlc = False
+    mlc_idx = -1
+    is_iocache = False
+    send_header_only = False
+    mlc_ddio = False
 
 class NoncoherentCache(BaseCache):
     type = "NoncoherentCache"

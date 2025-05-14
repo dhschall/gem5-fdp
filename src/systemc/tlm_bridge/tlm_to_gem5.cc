@@ -122,6 +122,8 @@ payload2packet(RequestorID _id, tlm::tlm_generic_payload &trans)
         for (auto &step : extraPayloadToPacketSteps) {
             step(pkt, trans);
         }
+        pkt->tick = trans.tick;
+
         return std::make_pair(pkt, false);
     }
 
@@ -162,7 +164,6 @@ payload2packet(RequestorID _id, tlm::tlm_generic_payload &trans)
             trans.get_address(), trans.get_data_length(), flags, _id);
     }
 
-
     /*
      * Allocate a new Packet. The packet will be deleted when it returns from
      * the gem5 world as a response.
@@ -171,9 +172,11 @@ payload2packet(RequestorID _id, tlm::tlm_generic_payload &trans)
     pkt->dataStatic(trans.get_data_ptr());
 
     // Apply all conversion steps necessary in this specific setup.
-    for (auto &step : extraPayloadToPacketSteps) {
+    for (auto &step : extraPayloadToPacketSteps)
+    {
         step(pkt, trans);
     }
+    pkt->tick = trans.tick;
 
     return std::make_pair(pkt, true);
 }
@@ -181,11 +184,16 @@ payload2packet(RequestorID _id, tlm::tlm_generic_payload &trans)
 void
 setPayloadResponse(tlm::tlm_generic_payload &trans, PacketPtr pkt)
 {
-    if (!pkt->isError()) {
+    if (!pkt->isError())
+    {
         trans.set_response_status(tlm::TLM_OK_RESPONSE);
-    } else if (pkt->isRead() || pkt->isWrite()) {
+    }
+    else if (pkt->isRead() || pkt->isWrite())
+    {
         trans.set_response_status(tlm::TLM_COMMAND_ERROR_RESPONSE);
-    } else {
+    }
+    else
+    {
         trans.set_response_status(tlm::TLM_ADDRESS_ERROR_RESPONSE);
     }
 }
@@ -263,15 +271,19 @@ TlmToGem5Bridge<BITWIDTH>::handleBeginReq(tlm::tlm_generic_payload &trans)
     // If the packet doesn't need a response, we should send BEGIN_RESP by
     // ourselves.
     bool needsResponse = pkt->needsResponse();
-    if (bmp.sendTimingReq(pkt)) { // port is free -> send END_REQ immediately
+    if (bmp.sendTimingReq(pkt))
+    { // port is free -> send END_REQ immediately
         sendEndReq(trans);
-        if (!needsResponse) {
+        if (!needsResponse)
+        {
             auto delay = sc_core::SC_ZERO_TIME;
             setPayloadResponse(trans, pkt);
             sendBeginResp(trans, delay);
         }
         trans.release();
-    } else { // port is blocked -> wait for retry before sending END_REQ
+    }
+    else
+    { // port is blocked -> wait for retry before sending END_REQ
         waitForRetry = true;
         pendingRequest = &trans;
         pendingPacket = pkt;
@@ -286,7 +298,8 @@ TlmToGem5Bridge<BITWIDTH>::handleEndResp(tlm::tlm_generic_payload &trans)
 
     responseInProgress = false;
 
-    if (needToSendRetry) {
+    if (needToSendRetry)
+    {
         bmp.sendRetryResp();
         needToSendRetry = false;
     }
@@ -304,43 +317,46 @@ void
 TlmToGem5Bridge<BITWIDTH>::invalidateDmi(const gem5::MemBackdoor &backdoor)
 {
     socket->invalidate_direct_mem_ptr(
-            backdoor.range().start(), backdoor.range().end());
+        backdoor.range().start(), backdoor.range().end());
     requestedBackdoors.erase(const_cast<gem5::MemBackdoorPtr>(&backdoor));
 }
 
 template <unsigned int BITWIDTH>
 void
 TlmToGem5Bridge<BITWIDTH>::peq_cb(tlm::tlm_generic_payload &trans,
-                                  const tlm::tlm_phase &phase)
+                                    const tlm::tlm_phase &phase)
 {
-    switch (phase) {
-        case tlm::BEGIN_REQ:
-            handleBeginReq(trans);
-            break;
-        case tlm::END_RESP:
-            handleEndResp(trans);
-            break;
-        default:
-            panic("unimplemented phase in callback");
+    switch (phase)
+    {
+    case tlm::BEGIN_REQ:
+        handleBeginReq(trans);
+        break;
+    case tlm::END_RESP:
+        handleEndResp(trans);
+        break;
+    default:
+        panic("unimplemented phase in callback");
     }
 }
 
 template <unsigned int BITWIDTH>
 tlm::tlm_sync_enum
 TlmToGem5Bridge<BITWIDTH>::nb_transport_fw(
-        tlm::tlm_generic_payload &trans, tlm::tlm_phase &phase,
-        sc_core::sc_time &delay)
+    tlm::tlm_generic_payload &trans, tlm::tlm_phase &phase,
+    sc_core::sc_time &delay)
 {
     unsigned len = trans.get_data_length();
     unsigned char *byteEnable = trans.get_byte_enable_ptr();
     unsigned width = trans.get_streaming_width();
 
     // check the transaction attributes for unsupported features ...
-    if (byteEnable != 0) {
+    if (byteEnable != 0)
+    {
         trans.set_response_status(tlm::TLM_BYTE_ENABLE_ERROR_RESPONSE);
         return tlm::TLM_COMPLETED;
     }
-    if (width < len) { // is this a burst request?
+    if (width < len)
+    { // is this a burst request?
         trans.set_response_status(tlm::TLM_BURST_ERROR_RESPONSE);
         return tlm::TLM_COMPLETED;
     }
@@ -354,7 +370,7 @@ TlmToGem5Bridge<BITWIDTH>::nb_transport_fw(
 template <unsigned int BITWIDTH>
 void
 TlmToGem5Bridge<BITWIDTH>::b_transport(tlm::tlm_generic_payload &trans,
-                                       sc_core::sc_time &t)
+                                        sc_core::sc_time &t)
 {
     auto [pkt, pkt_created] = payload2packet(_id, trans);
     pkt->pushSenderState(new Gem5SystemC::TlmSenderState(trans));
@@ -366,18 +382,18 @@ TlmToGem5Bridge<BITWIDTH>::b_transport(tlm::tlm_generic_payload &trans,
 
     // send an atomic request to gem5
     panic_if(pkt->needsResponse() && !pkt->isResponse(),
-             "Packet sending failed!\n");
+                "Packet sending failed!\n");
 
     auto delay =
-      sc_core::sc_time((double)(ticks / sim_clock::as_int::ps),
-        sc_core::SC_PS);
+        sc_core::sc_time((double)(ticks / sim_clock::as_int::ps),
+                            sc_core::SC_PS);
 
     // update time
     t += delay;
 
     gem5::Packet::SenderState *senderState = pkt->popSenderState();
     sc_assert(
-        nullptr != dynamic_cast<Gem5SystemC::TlmSenderState*>(senderState));
+        nullptr != dynamic_cast<Gem5SystemC::TlmSenderState *>(senderState));
 
     // clean up
     delete senderState;
@@ -393,14 +409,15 @@ unsigned int
 TlmToGem5Bridge<BITWIDTH>::transport_dbg(tlm::tlm_generic_payload &trans)
 {
     auto [pkt, pkt_created] = payload2packet(_id, trans);
-    if (pkt != nullptr) {
+    if (pkt != nullptr)
+    {
         pkt->pushSenderState(new Gem5SystemC::TlmSenderState(trans));
 
         bmp.sendFunctional(pkt);
 
         gem5::Packet::SenderState *senderState = pkt->popSenderState();
         sc_assert(
-            nullptr != dynamic_cast<Gem5SystemC::TlmSenderState*>(senderState));
+            nullptr != dynamic_cast<Gem5SystemC::TlmSenderState *>(senderState));
 
         // clean up
         delete senderState;
@@ -415,17 +432,18 @@ TlmToGem5Bridge<BITWIDTH>::transport_dbg(tlm::tlm_generic_payload &trans)
 template <unsigned int BITWIDTH>
 bool
 TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr(tlm::tlm_generic_payload &trans,
-                                              tlm::tlm_dmi &dmi_data)
+                                                tlm::tlm_dmi &dmi_data)
 {
     MemBackdoor::Flags flags;
-    switch (trans.get_command()) {
-      case tlm::TLM_READ_COMMAND:
+    switch (trans.get_command())
+    {
+    case tlm::TLM_READ_COMMAND:
         flags = MemBackdoor::Readable;
         break;
-      case tlm::TLM_WRITE_COMMAND:
+    case tlm::TLM_WRITE_COMMAND:
         flags = MemBackdoor::Writeable;
         break;
-      default:
+    default:
         panic("TlmToGem5Bridge: "
                 "received transaction with unsupported command");
     }
@@ -437,7 +455,8 @@ TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr(tlm::tlm_generic_payload &trans,
 
     bmp.sendMemBackdoorReq(req, backdoor);
 
-    if (backdoor) {
+    if (backdoor)
+    {
         trans.set_dmi_allowed(true);
         dmi_data.set_dmi_ptr(backdoor->ptr());
         dmi_data.set_start_address(backdoor->range().start());
@@ -452,13 +471,13 @@ TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr(tlm::tlm_generic_payload &trans,
         dmi_data.set_granted_access(access);
 
         // We only need to register the callback at the first time.
-        if (requestedBackdoors.find(backdoor) == requestedBackdoors.end()) {
+        if (requestedBackdoors.find(backdoor) == requestedBackdoors.end())
+        {
             backdoor->addInvalidationCallback(
                 [this](const MemBackdoor &backdoor)
                 {
                     invalidateDmi(backdoor);
-                }
-            );
+                });
             requestedBackdoors.emplace(backdoor);
         }
     }
@@ -474,7 +493,8 @@ TlmToGem5Bridge<BITWIDTH>::recvTimingResp(PacketPtr pkt)
 {
     // exclusion rule
     // We need to Wait for END_RESP before sending next BEGIN_RESP
-    if (responseInProgress) {
+    if (responseInProgress)
+    {
         sc_assert(!needToSendRetry);
         needToSendRetry = true;
         return false;
@@ -483,17 +503,17 @@ TlmToGem5Bridge<BITWIDTH>::recvTimingResp(PacketPtr pkt)
     sc_assert(pkt->isResponse());
 
     /*
-     * Pay for annotated transport delays.
-     *
-     * See recvTimingReq in sc_slave_port.cc for a detailed description.
-     */
+        * Pay for annotated transport delays.
+        *
+        * See recvTimingReq in sc_slave_port.cc for a detailed description.
+        */
     auto delay = sc_core::sc_time::from_value(pkt->payloadDelay);
     // reset the delays
     pkt->payloadDelay = 0;
     pkt->headerDelay = 0;
 
     auto *tlmSenderState =
-        dynamic_cast<Gem5SystemC::TlmSenderState*>(pkt->popSenderState());
+        dynamic_cast<Gem5SystemC::TlmSenderState *>(pkt->popSenderState());
     sc_assert(tlmSenderState != nullptr);
 
     auto &trans = tlmSenderState->trans;
@@ -527,12 +547,14 @@ TlmToGem5Bridge<BITWIDTH>::recvReqRetry()
     // If the packet doesn't need a response, we should send BEGIN_RESP by
     // ourselves.
     bool needsResponse = pendingPacket->needsResponse();
-    if (bmp.sendTimingReq(pendingPacket)) {
+    if (bmp.sendTimingReq(pendingPacket))
+    {
         waitForRetry = false;
 
         auto &trans = *pendingRequest;
         sendEndReq(trans);
-        if (!needsResponse) {
+        if (!needsResponse)
+        {
             auto delay = sc_core::SC_ZERO_TIME;
             setPayloadResponse(trans, pendingPacket);
             sendBeginResp(trans, delay);
@@ -565,7 +587,7 @@ TlmToGem5Bridge<BITWIDTH>::gem5_getPort(const std::string &if_name, int idx)
 
 template <unsigned int BITWIDTH>
 TlmToGem5Bridge<BITWIDTH>::TlmToGem5Bridge(
-        const Params &params, const sc_core::sc_module_name &mn) :
+    const Params &params, const sc_core::sc_module_name &mn) :
     TlmToGem5BridgeBase(mn), peq(this, &TlmToGem5Bridge<BITWIDTH>::peq_cb),
     waitForRetry(false), pendingRequest(nullptr), pendingPacket(nullptr),
     needToSendRetry(false), responseInProgress(false),
@@ -582,29 +604,34 @@ void
 TlmToGem5Bridge<BITWIDTH>::before_end_of_elaboration()
 {
     /*
-     * Register the TLM non-blocking interface when using gem5 Timing mode and
-     * the TLM blocking interface when using the gem5 Atomic mode.
-     * Then the magic (TM) in simple_target_socket automatically transforms
-     * non-blocking in blocking transactions and vice versa.
-     *
-     * NOTE: The mode may change during execution.
-     */
-    if (system->isTimingMode()) {
+        * Register the TLM non-blocking interface when using gem5 Timing mode and
+        * the TLM blocking interface when using the gem5 Atomic mode.
+        * Then the magic (TM) in simple_target_socket automatically transforms
+        * non-blocking in blocking transactions and vice versa.
+        *
+        * NOTE: The mode may change during execution.
+        */
+    if (system->isTimingMode())
+    {
         DPRINTF(TlmBridge, "register non-blocking interface");
         socket.register_nb_transport_fw(
-                this, &TlmToGem5Bridge<BITWIDTH>::nb_transport_fw);
-    } else if (system->isAtomicMode()) {
+            this, &TlmToGem5Bridge<BITWIDTH>::nb_transport_fw);
+    }
+    else if (system->isAtomicMode())
+    {
         DPRINTF(TlmBridge, "register blocking interface");
         socket.register_b_transport(
-                this, &TlmToGem5Bridge<BITWIDTH>::b_transport);
-    } else {
+            this, &TlmToGem5Bridge<BITWIDTH>::b_transport);
+    }
+    else
+    {
         panic("gem5 operates neither in Timing nor in Atomic mode");
     }
 
     socket.register_get_direct_mem_ptr(
-            this, &TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr);
+        this, &TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr);
     socket.register_transport_dbg(
-            this, &TlmToGem5Bridge<BITWIDTH>::transport_dbg);
+        this, &TlmToGem5Bridge<BITWIDTH>::transport_dbg);
 
     sc_core::sc_module::before_end_of_elaboration();
 }
@@ -615,33 +642,33 @@ sc_gem5::TlmToGem5Bridge<32> *
 gem5::TlmToGem5Bridge32Params::create() const
 {
     return new sc_gem5::TlmToGem5Bridge<32>(
-            *this, sc_core::sc_module_name(name.c_str()));
+        *this, sc_core::sc_module_name(name.c_str()));
 }
 
 sc_gem5::TlmToGem5Bridge<64> *
 gem5::TlmToGem5Bridge64Params::create() const
 {
     return new sc_gem5::TlmToGem5Bridge<64>(
-            *this, sc_core::sc_module_name(name.c_str()));
+        *this, sc_core::sc_module_name(name.c_str()));
 }
 
 sc_gem5::TlmToGem5Bridge<128> *
 gem5::TlmToGem5Bridge128Params::create() const
 {
     return new sc_gem5::TlmToGem5Bridge<128>(
-            *this, sc_core::sc_module_name(name.c_str()));
+        *this, sc_core::sc_module_name(name.c_str()));
 }
 
 sc_gem5::TlmToGem5Bridge<256> *
 gem5::TlmToGem5Bridge256Params::create() const
 {
     return new sc_gem5::TlmToGem5Bridge<256>(
-            *this, sc_core::sc_module_name(name.c_str()));
+        *this, sc_core::sc_module_name(name.c_str()));
 }
 
 sc_gem5::TlmToGem5Bridge<512> *
 gem5::TlmToGem5Bridge512Params::create() const
 {
     return new sc_gem5::TlmToGem5Bridge<512>(
-            *this, sc_core::sc_module_name(name.c_str()));
+        *this, sc_core::sc_module_name(name.c_str()));
 }

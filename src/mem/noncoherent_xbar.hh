@@ -52,30 +52,29 @@
 namespace gem5
 {
 
-/**
- * A non-coherent crossbar connects a number of non-snooping memory-side ports
- * and cpu_sides, and routes the request and response packets based on
- * the address. The request packets issued by the memory-side port connected to
- * a non-coherent crossbar could still snoop in caches attached to a
- * coherent crossbar, as is the case with the I/O bus and memory bus
- * in most system configurations. No snoops will, however, reach any
- * memory-side port on the non-coherent crossbar itself.
- *
- * The non-coherent crossbar can be used as a template for modelling
- * PCIe, and non-coherent AMBA and OCP buses, and is typically used
- * for the I/O buses.
- */
-class NoncoherentXBar : public BaseXBar
-{
+  /**
+   * A non-coherent crossbar connects a number of non-snooping memory-side ports
+   * and cpu_sides, and routes the request and response packets based on
+   * the address. The request packets issued by the memory-side port connected to
+   * a non-coherent crossbar could still snoop in caches attached to a
+   * coherent crossbar, as is the case with the I/O bus and memory bus
+   * in most system configurations. No snoops will, however, reach any
+   * memory-side port on the non-coherent crossbar itself.
+   *
+   * The non-coherent crossbar can be used as a template for modelling
+   * PCIe, and non-coherent AMBA and OCP buses, and is typically used
+   * for the I/O buses.
+   */
+  class NoncoherentXBar : public BaseXBar
+  {
 
   protected:
-
     /**
      * Declare the layers of this crossbar, one vector for requests
      * and one for responses.
      */
-    std::vector<ReqLayer*> reqLayers;
-    std::vector<RespLayer*> respLayers;
+    std::vector<ReqLayer *> reqLayers;
+    std::vector<RespLayer *> respLayers;
 
     /**
      * Declaration of the non-coherent crossbar CPU-side port type, one
@@ -84,60 +83,58 @@ class NoncoherentXBar : public BaseXBar
      */
     class NoncoherentXBarResponsePort : public QueuedResponsePort
     {
-      private:
+    private:
+      /** A reference to the crossbar to which this port belongs. */
+      NoncoherentXBar &xbar;
 
-        /** A reference to the crossbar to which this port belongs. */
-        NoncoherentXBar &xbar;
+      /** A normal packet queue used to store responses. */
+      RespPacketQueue queue;
 
-        /** A normal packet queue used to store responses. */
-        RespPacketQueue queue;
+    public:
+      NoncoherentXBarResponsePort(const std::string &_name,
+                                  NoncoherentXBar &_xbar, PortID _id)
+          : QueuedResponsePort(_name, queue, _id), xbar(_xbar),
+            queue(_xbar, *this)
+      {
+      }
 
-      public:
+    protected:
+      bool
+      recvTimingReq(PacketPtr pkt) override
+      {
+        return xbar.recvTimingReq(pkt, id);
+      }
 
-        NoncoherentXBarResponsePort(const std::string &_name,
-                                NoncoherentXBar &_xbar, PortID _id)
-            : QueuedResponsePort(_name, queue, _id), xbar(_xbar),
-              queue(_xbar, *this)
-        { }
+      Tick
+      recvAtomic(PacketPtr pkt) override
+      {
+        return xbar.recvAtomicBackdoor(pkt, id);
+      }
 
-      protected:
+      Tick
+      recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &backdoor) override
+      {
+        return xbar.recvAtomicBackdoor(pkt, id, &backdoor);
+      }
 
-        bool
-        recvTimingReq(PacketPtr pkt) override
-        {
-            return xbar.recvTimingReq(pkt, id);
-        }
+      void
+      recvFunctional(PacketPtr pkt) override
+      {
+        xbar.recvFunctional(pkt, id);
+      }
 
-        Tick
-        recvAtomic(PacketPtr pkt) override
-        {
-            return xbar.recvAtomicBackdoor(pkt, id);
-        }
+      void
+      recvMemBackdoorReq(const MemBackdoorReq &req,
+                         MemBackdoorPtr &backdoor) override
+      {
+        xbar.recvMemBackdoorReq(req, backdoor);
+      }
 
-        Tick
-        recvAtomicBackdoor(PacketPtr pkt, MemBackdoorPtr &backdoor) override
-        {
-            return xbar.recvAtomicBackdoor(pkt, id, &backdoor);
-        }
-
-        void
-        recvFunctional(PacketPtr pkt) override
-        {
-            xbar.recvFunctional(pkt, id);
-        }
-
-        void
-        recvMemBackdoorReq(const MemBackdoorReq &req,
-                MemBackdoorPtr &backdoor) override
-        {
-            xbar.recvMemBackdoorReq(req, backdoor);
-        }
-
-        AddrRangeList
-        getAddrRanges() const override
-        {
-            return xbar.getAddrRanges();
-        }
+      AddrRangeList
+      getAddrRanges() const override
+      {
+        return xbar.getAddrRanges();
+      }
     };
 
     /**
@@ -147,54 +144,51 @@ class NoncoherentXBar : public BaseXBar
      */
     class NoncoherentXBarRequestPort : public RequestPort
     {
-      private:
+    private:
+      /** A reference to the crossbar to which this port belongs. */
+      NoncoherentXBar &xbar;
 
-        /** A reference to the crossbar to which this port belongs. */
-        NoncoherentXBar &xbar;
-
-      public:
-
-        NoncoherentXBarRequestPort(const std::string &_name,
+    public:
+      NoncoherentXBarRequestPort(const std::string &_name,
                                  NoncoherentXBar &_xbar, PortID _id)
-            : RequestPort(_name, _id), xbar(_xbar)
-        { }
+          : RequestPort(_name, _id), xbar(_xbar)
+      {
+      }
 
-      protected:
+    protected:
+      bool
+      recvTimingResp(PacketPtr pkt) override
+      {
+        return xbar.recvTimingResp(pkt, id);
+      }
 
-        bool
-        recvTimingResp(PacketPtr pkt) override
-        {
-            return xbar.recvTimingResp(pkt, id);
-        }
+      void
+      recvRangeChange() override
+      {
+        xbar.recvRangeChange(id);
+      }
 
-        void
-        recvRangeChange() override
-        {
-            xbar.recvRangeChange(id);
-        }
-
-        void
-        recvReqRetry() override
-        {
-            xbar.recvReqRetry(id);
-        }
+      void
+      recvReqRetry() override
+      {
+        xbar.recvReqRetry(id);
+      }
     };
 
     virtual bool recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id);
     virtual bool recvTimingResp(PacketPtr pkt, PortID mem_side_port_id);
     void recvReqRetry(PortID mem_side_port_id);
     Tick recvAtomicBackdoor(PacketPtr pkt, PortID cpu_side_port_id,
-                            MemBackdoorPtr *backdoor=nullptr);
+                            MemBackdoorPtr *backdoor = nullptr);
     void recvFunctional(PacketPtr pkt, PortID cpu_side_port_id);
     void recvMemBackdoorReq(const MemBackdoorReq &req,
-            MemBackdoorPtr &backdoor);
+                            MemBackdoorPtr &backdoor);
 
   public:
-
     NoncoherentXBar(const NoncoherentXBarParams &p);
 
     virtual ~NoncoherentXBar();
-};
+  };
 
 } // namespace gem5
 

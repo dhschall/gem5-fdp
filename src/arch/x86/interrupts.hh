@@ -77,7 +77,7 @@ ApicRegIndex decodeAddr(Addr paddr);
 
 class Interrupts : public BaseInterrupts
 {
-  protected:
+protected:
     System *sys = nullptr;
     ClockDomain &clockDomain;
 
@@ -86,25 +86,25 @@ class Interrupts : public BaseInterrupts
 
     BitUnion32(LVTEntry)
         Bitfield<7, 0> vector;
-        Bitfield<10, 8> deliveryMode;
-        Bitfield<12> status;
-        Bitfield<13> polarity;
-        Bitfield<14> remoteIRR;
-        Bitfield<15> trigger;
-        Bitfield<16> masked;
-        Bitfield<17> periodic;
+    Bitfield<10, 8> deliveryMode;
+    Bitfield<12> status;
+    Bitfield<13> polarity;
+    Bitfield<14> remoteIRR;
+    Bitfield<15> trigger;
+    Bitfield<16> masked;
+    Bitfield<17> periodic;
     EndBitUnion(LVTEntry)
 
-    /*
-     * Timing related stuff.
-     */
-    EventFunctionWrapper apicTimerEvent;
+        /*
+            * Timing related stuff.
+            */
+        EventFunctionWrapper apicTimerEvent;
     void processApicTimerEvent();
 
     /*
-     * A set of variables to keep track of interrupts that don't go through
-     * the IRR.
-     */
+        * A set of variables to keep track of interrupts that don't go through
+        * the IRR.
+        */
     bool pendingSmi = false;
     uint8_t smiVector = 0;
     bool pendingNmi = false;
@@ -124,17 +124,28 @@ class Interrupts : public BaseInterrupts
     int pendingIPIs = 0;
 
     /*
-     * IRR and ISR maintenance.
-     */
+        * IRR and ISR maintenance.
+        */
     uint8_t IRRV = 0;
     uint8_t ISRV = 0;
+    uint8_t IRRVUSER = 0;
+    uint8_t ISRVUSER = 0;
+    int printInterruptCount = 0;
+    int auxPending = 0;
+
+    EventFunctionWrapper pendingEvent;
+    void processPendingEvent();
+    EventFunctionWrapper unlockEvent;
+    void processUnlockEvent();
 
     int
     findRegArrayMSB(ApicRegIndex base)
     {
         int offset = 7;
-        do {
-            if (regs[base + offset] != 0) {
+        do
+        {
+            if (regs[base + offset] != 0)
+            {
                 return offset * 32 + findMsbSet(regs[base + offset]);
             }
         } while (offset--);
@@ -173,8 +184,13 @@ class Interrupts : public BaseInterrupts
 
     Tick clockPeriod() const { return clockDomain.clockPeriod(); }
 
+public:
     void requestInterrupt(uint8_t vector, uint8_t deliveryMode, bool level);
+    static inline Tick userPciTimeout = 1e12;
+    static inline uint8_t userPciThreshold = 32;
+    Tick userPciTimeStart = 0;
 
+protected:
     int initialApicId = 0;
 
     // Ports for interrupt messages.
@@ -191,25 +207,24 @@ class Interrupts : public BaseInterrupts
     Tick pioDelay = 0;
     Addr pioAddr = MaxAddr;
 
-  public:
-
+public:
     int getInitialApicId() { return initialApicId; }
 
     /*
-     * Params stuff.
-     */
+        * Params stuff.
+        */
     using Params = X86LocalApicParams;
 
     void setThreadContext(ThreadContext *_tc) override;
 
     /*
-     * Initialize this object by registering it with the IO APIC.
-     */
+        * Initialize this object by registering it with the IO APIC.
+        */
     void init() override;
 
     /*
-     * Functions to interact with the interrupt port.
-     */
+        * Functions to interact with the interrupt port.
+        */
     Tick read(PacketPtr pkt);
     Tick write(PacketPtr pkt);
     Tick recvMessage(PacketPtr pkt);
@@ -232,29 +247,40 @@ class Interrupts : public BaseInterrupts
 
     Port &
     getPort(const std::string &if_name,
-            PortID idx=InvalidPortID) override
+            PortID idx = InvalidPortID) override
     {
-        if (if_name == "int_requestor") {
+        if (if_name == "int_requestor")
+        {
             return intRequestPort;
-        } else if (if_name == "int_responder") {
+        }
+        else if (if_name == "int_responder")
+        {
             return intResponsePort;
-        } else if (if_name == "pio") {
+        }
+        else if (if_name == "pio")
+        {
             return pioPort;
-        } else if (if_name == "lint0") {
+        }
+        else if (if_name == "lint0")
+        {
             return lint0Pin;
-        } else if (if_name == "lint1") {
+        }
+        else if (if_name == "lint1")
+        {
             return lint1Pin;
-        } else {
+        }
+        else
+        {
             return SimObject::getPort(if_name, idx);
         }
     }
 
     /*
-     * Functions to access and manipulate the APIC's registers.
-     */
+        * Functions to access and manipulate the APIC's registers.
+        */
 
     uint32_t readReg(ApicRegIndex miscReg);
-    void setReg(ApicRegIndex reg, uint32_t val);
+    void setReg(ApicRegIndex reg, uint32_t val, Tick tick);
     void
     setRegNoEffect(ApicRegIndex reg, uint32_t val)
     {
@@ -262,16 +288,16 @@ class Interrupts : public BaseInterrupts
     }
 
     /*
-     * Constructor.
-     */
+        * Constructor.
+        */
 
     Interrupts(const Params &p);
 
     /*
-     * Functions for retrieving interrupts for the CPU to handle.
-     */
+        * Functions for retrieving interrupts for the CPU to handle.
+        */
 
-    bool checkInterrupts() const override;
+    bool checkInterrupts() override;
     /**
      * Check if there are pending interrupts without ignoring the
      * interrupts disabled flag.
@@ -287,17 +313,19 @@ class Interrupts : public BaseInterrupts
     bool hasPendingUnmaskable() const { return pendingUnmaskableInt; }
     Fault getInterrupt() override;
     void updateIntrInfo() override;
+    void updateIntrInfo(const Fault &interrupt);
+    void clearUser() { ISRVUSER = 0; }
 
     /*
-     * Serialization.
-     */
+        * Serialization.
+        */
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 
     /*
-     * Old functions needed for compatability but which will be phased out
-     * eventually.
-     */
+        * Old functions needed for compatability but which will be phased out
+        * eventually.
+        */
     void
     post(int int_num, int index) override
     {

@@ -96,7 +96,7 @@ class X86KvmCPU : public BaseKvmCPU
     void
     stutterPC(PCStateBase &pc) const override
     {
-        pc.as<X86ISA::PCState>().setNPC(pc.instAddr());
+      pc.as<X86ISA::PCState>().setNPC(pc.instAddr());
     }
 
     /**
@@ -238,6 +238,9 @@ class X86KvmCPU : public BaseKvmCPU
     void updateThreadContextMSRs();
     /** @} */
 
+    /** Setup MCE */
+    void setupMce();
+
     /** Transfer gem5's CPUID values into the virtual CPU. */
     void updateCPUID();
 
@@ -266,8 +269,11 @@ class X86KvmCPU : public BaseKvmCPU
     bool useXSave;
     /** Kvm::capXCRs() available? */
     bool haveXCRs;
+
+  public:
+    uint64_t jumping_rip = 0;
     /** @} */
-};
+  };
 
 } // namespace gem5
 

@@ -52,607 +52,748 @@
 #include "sim/clocked_object.hh"
 #include "sim/system.hh"
 
+#include "debug/AdaptiveDdioNic.hh"
+#include "debug/AdaptiveDdioOtf.hh"
+
 namespace gem5
 {
 
-DmaPort::DmaPort(ClockedObject *dev, System *s,
-                 uint32_t sid, uint32_t ssid)
-    : RequestPort(dev->name() + ".dma"),
-      device(dev), sys(s), requestorId(s->getRequestorId(dev)),
-      sendEvent([this]{ sendDma(); }, dev->name()),
-      defaultSid(sid), defaultSSid(ssid), cacheLineSize(s->cacheLineSize())
-{ }
+    DmaPort::DmaPort(ClockedObject *dev, System *s,
+                     uint32_t sid, uint32_t ssid)
+        : RequestPort(dev->name() + ".dma"),
+          device(dev), sys(s), requestorId(s->getRequestorId(dev)),
+          sendEvent([this]
+                    { sendDma(); },
+                    dev->name()),
+          defaultSid(sid), defaultSSid(ssid), cacheLineSize(s->cacheLineSize())
+    {
+    }
 
-void
-DmaPort::handleRespPacket(PacketPtr pkt, Tick delay)
-{
-    // Should always see a response with a sender state.
-    assert(pkt->isResponse());
+    void
+    DmaPort::handleRespPacket(PacketPtr pkt, Tick delay)
+    {
+        // Should always see a response with a sender state.
+        assert(pkt->isResponse());
 
-    // Get the DMA sender state.
-    auto *state = dynamic_cast<DmaReqState*>(pkt->senderState);
-    assert(state);
+        // Get the DMA sender state.
+        auto *state = dynamic_cast<DmaReqState *>(pkt->senderState);
+        assert(state);
 
-    handleResp(state, pkt->getAddr(), pkt->req->getSize(), delay);
+        handleResp(state, pkt->getAddr(), pkt->req->getSize(), delay);
 
-    delete pkt;
-}
+        delete pkt;
+    }
 
-void
-DmaPort::handleResp(DmaReqState *state, Addr addr, Addr size, Tick delay)
-{
-    assert(pendingCount != 0);
-    pendingCount--;
-    DPRINTF(DMA, "Received response %s for addr: %#x size: %d nb: %d,"  \
-            " tot: %d sched %d\n",
-            MemCmd(state->cmd).toString(), addr, size,
-            state->numBytes, state->totBytes,
-            state->completionEvent ?
-            state->completionEvent->scheduled() : 0);
+    void
+    DmaPort::handleResp(DmaReqState *state, Addr addr, Addr size, Tick delay)
+    {
+        assert(pendingCount != 0);
+        pendingCount--;
+        DPRINTF(DMA, "Received response %s for addr: %#x size: %d nb: %d,"
+                     " tot: %d sched %d\n",
+                MemCmd(state->cmd).toString(), addr, size,
+                state->numBytes, state->totBytes,
+                state->completionEvent ? state->completionEvent->scheduled() : 0);
 
-    // Update the number of bytes received based on the request rather
-    // than the packet as the latter could be rounded up to line sizes.
-    state->numBytes += size;
-    assert(state->totBytes >= state->numBytes);
+        // Update the number of bytes received based on the request rather
+        // than the packet as the latter could be rounded up to line sizes.
+        state->numBytes += size;
+        assert(state->totBytes >= state->numBytes);
 
-    bool all_bytes = (state->totBytes == state->numBytes);
-    if (state->aborted) {
-        // If this request was aborted, check to see if its in flight accesses
-        // have finished. There may be packets for more than one request in
-        // flight at a time, so check for finished requests, or no more
-        // packets.
-        if (all_bytes || pendingCount == 0) {
-            // If yes, signal its abort event (if any) and delete the state.
-            if (state->abortEvent) {
-                device->schedule(state->abortEvent, curTick());
+        bool all_bytes = (state->totBytes == state->numBytes);
+        if (state->aborted)
+        {
+            // If this request was aborted, check to see if its in flight accesses
+            // have finished. There may be packets for more than one request in
+            // flight at a time, so check for finished requests, or no more
+            // packets.
+            if (all_bytes || pendingCount == 0)
+            {
+                // If yes, signal its abort event (if any) and delete the state.
+                if (state->abortEvent)
+                {
+                    device->schedule(state->abortEvent, curTick());
+                }
+                delete state;
+            }
+        }
+        else if (all_bytes)
+        {
+            // If we have reached the end of this DMA request, then signal the
+            // completion and delete the sate.
+            if (state->completionEvent)
+            {
+                delay += state->delay;
+                device->schedule(state->completionEvent, curTick() + delay);
             }
             delete state;
         }
-    } else if (all_bytes) {
-        // If we have reached the end of this DMA request, then signal the
-        // completion and delete the sate.
-        if (state->completionEvent) {
-            delay += state->delay;
-            device->schedule(state->completionEvent, curTick() + delay);
-        }
-        delete state;
+
+        // We might be drained at this point, if so signal the drain event.
+        if (pendingCount == 0)
+            signalDrainDone();
     }
 
-    // We might be drained at this point, if so signal the drain event.
-    if (pendingCount == 0)
-        signalDrainDone();
-}
-
-PacketPtr
-DmaPort::DmaReqState::createPacket()
-{
-    RequestPtr req = std::make_shared<Request>(
+    PacketPtr
+    DmaPort::DmaReqState::createPacket()
+    {
+        RequestPtr req = std::make_shared<Request>(
             gen.addr(), gen.size(), flags, id);
-    req->setStreamId(sid);
-    req->setSubstreamId(ssid);
-    req->taskId(context_switch_task_id::DMA);
+        req->setStreamId(sid);
+        req->setSubstreamId(ssid);
+        req->taskId(context_switch_task_id::DMA);
 
-    PacketPtr pkt = new Packet(req, cmd);
+        PacketPtr pkt = new Packet(req, cmd);
+        if (is_ddio_req)
+        {
+            pkt->setDdioPrefetchId(adq_idx);
+            pkt->setDdioPrefetchDestination(adq_idx);
+            pkt->setDdioPkt();
 
-    if (data)
-        pkt->dataStatic(data + gen.complete());
-
-    pkt->senderState = this;
-    return pkt;
-}
-
-bool
-DmaPort::recvTimingResp(PacketPtr pkt)
-{
-    // We shouldn't ever get a cacheable block in Modified state.
-    assert(pkt->req->isUncacheable() ||
-           !(pkt->cacheResponding() && !pkt->hasSharers()));
-
-    handleRespPacket(pkt);
-
-    return true;
-}
-
-DmaDevice::DmaDevice(const Params &p)
-    : PioDevice(p), dmaPort(this, sys, p.sid, p.ssid)
-{ }
-
-void
-DmaDevice::init()
-{
-    panic_if(!dmaPort.isConnected(),
-             "DMA port of %s not connected to anything!", name());
-    PioDevice::init();
-}
-
-DrainState
-DmaPort::drain()
-{
-    if (pendingCount == 0) {
-        return DrainState::Drained;
-    } else {
-        DPRINTF(Drain, "DmaPort not drained\n");
-        return DrainState::Draining;
-    }
-}
-
-void
-DmaPort::recvReqRetry()
-{
-    retryPending = false;
-    if (transmitList.size())
-        trySendTimingReq();
-}
-
-void
-DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
-                   uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
-                   Request::Flags flag)
-{
-    DPRINTF(DMA, "Starting DMA for addr: %#x size: %d sched: %d\n", addr, size,
-            event ? event->scheduled() : -1);
-
-    // One DMA request sender state for every action, that is then
-    // split into many requests and packets based on the block size,
-    // i.e. cache line size.
-    transmitList.push_back(
-            new DmaReqState(cmd, addr, cacheLineSize, size,
-                data, flag, requestorId, sid, ssid, event, delay));
-
-    // In zero time, also initiate the sending of the packets for the request
-    // we have just created. For atomic this involves actually completing all
-    // the requests.
-    sendDma();
-}
-
-void
-DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
-                   uint8_t *data, Tick delay, Request::Flags flag)
-{
-    dmaAction(cmd, addr, size, event, data,
-              defaultSid, defaultSSid, delay, flag);
-}
-
-void
-DmaPort::abortPending()
-{
-    if (inRetry) {
-        delete inRetry;
-        inRetry = nullptr;
-    }
-
-    if (pendingCount && !transmitList.empty()) {
-        auto *state = transmitList.front();
-        if (state->numBytes != state->gen.complete()) {
-            // In flight packets refer to the transmission at the front of the
-            // list, and not a transmission whose packets have all been sent
-            // but not completed. Preserve the state so the packets don't have
-            // dangling pointers.
-            transmitList.pop_front();
-            state->aborted = true;
-        }
-    }
-
-    // Get rid of requests that haven't started yet.
-    while (!transmitList.empty()) {
-        auto *state = transmitList.front();
-        if (state->abortEvent)
-            device->schedule(state->abortEvent, curTick());
-        delete state;
-        transmitList.pop_front();
-    }
-
-    if (sendEvent.scheduled())
-        device->deschedule(sendEvent);
-
-    if (pendingCount == 0)
-        signalDrainDone();
-}
-
-void
-DmaPort::trySendTimingReq()
-{
-    // Send the next packet for the first DMA request on the transmit list,
-    // and schedule the following send if it is successful
-    DmaReqState *state = transmitList.front();
-
-    PacketPtr pkt = inRetry ? inRetry : state->createPacket();
-    inRetry = nullptr;
-
-    DPRINTF(DMA, "Trying to send %s addr %#x\n", pkt->cmdString(),
-            pkt->getAddr());
-
-    // Check if this was the last packet now, since hypothetically the packet
-    // response may come immediately, and state may be deleted.
-    bool last = state->gen.last();
-    if (sendTimingReq(pkt)) {
-        pendingCount++;
-    } else {
-        retryPending = true;
-        inRetry = pkt;
-    }
-    if (!retryPending) {
-        state->gen.next();
-        // If that was the last packet from this request, pop it from the list.
-        if (last)
-            transmitList.pop_front();
-        DPRINTF(DMA, "-- Done\n");
-        // If there is more to do, then do so.
-        if (!transmitList.empty()) {
-            // This should ultimately wait for as many cycles as the device
-            // needs to send the packet, but currently the port does not have
-            // any known width so simply wait a single cycle.
-            device->schedule(sendEvent, device->clockEdge(Cycles(1)));
-        }
-    } else {
-        DPRINTF(DMA, "-- Failed, waiting for retry\n");
-    }
-
-    DPRINTF(DMA, "TransmitList: %d, retryPending: %d\n",
-            transmitList.size(), retryPending ? 1 : 0);
-}
-
-bool
-DmaPort::sendAtomicReq(DmaReqState *state)
-{
-    PacketPtr pkt = state->createPacket();
-    DPRINTF(DMA, "Sending  DMA for addr: %#x size: %d\n",
-            state->gen.addr(), state->gen.size());
-    pendingCount++;
-    Tick lat = sendAtomic(pkt);
-
-    // Check if we're done, since handleResp may delete state.
-    bool done = !state->gen.next();
-    handleRespPacket(pkt, lat);
-    return done;
-}
-
-bool
-DmaPort::sendAtomicBdReq(DmaReqState *state)
-{
-    bool done = false;
-    pendingCount++;
-
-    auto bd_it = memBackdoors.contains(state->gen.addr());
-    if (bd_it == memBackdoors.end()) {
-        // We don't have a backdoor for this address, so use a packet.
-
-        PacketPtr pkt = state->createPacket();
-        DPRINTF(DMA, "Sending DMA for addr: %#x size: %d\n",
-                state->gen.addr(), state->gen.size());
-
-        MemBackdoorPtr bd = nullptr;
-        Tick lat = sendAtomicBackdoor(pkt, bd);
-
-        // If we got a backdoor, record it.
-        if (bd && memBackdoors.insert(bd->range(), bd) != memBackdoors.end()) {
-            // Invalidation callback which finds this backdoor and removes it.
-            auto callback = [this](const MemBackdoor &backdoor) {
-                for (auto it = memBackdoors.begin();
-                        it != memBackdoors.end(); it++) {
-                    if (it->second == &backdoor) {
-                        memBackdoors.erase(it);
-                        return;
-                    }
-                }
-                panic("Got invalidation for unknown memory backdoor.");
-            };
-            bd->addInvalidationCallback(callback);
+            if (adq_idx > -1)
+                pkt->setPrefetchHintPkt();
+            if (gen.isHead())
+            {
+                pkt->setDdioHeader();
+                // DPRINTF(AdaptiveDdioOtf, "Allow MLC DDIO for mlc %d, pkt %s\n", qnum, pkt->print());
+            }
         }
 
-        // Check if we're done now, since handleResp may delete state.
-        done = !state->gen.next();
-        handleRespPacket(pkt, lat);
-    } else {
-        // We have a backdoor that can at least partially satisfy this request.
-        DPRINTF(DMA, "Handling DMA for addr: %#x size %d through backdoor\n",
-                state->gen.addr(), state->gen.size());
+        if (data)
+            pkt->dataStatic(data + gen.complete());
 
-        const auto *bd = bd_it->second;
-        // Offset of this access into the backdoor.
-        const Addr offset = state->gen.addr() - bd->range().start();
-        // How many bytes we still need.
-        const Addr remaining = state->totBytes - state->gen.complete();
-        // How many bytes this backdoor can provide, starting from offset.
-        const Addr available = bd->range().size() - offset;
-
-        // How many bytes we're going to handle through this backdoor.
-        const Addr handled = std::min(remaining, available);
-
-        // If there's a buffer for data, read/write it.
-        if (state->data) {
-            uint8_t *bd_data = bd->ptr() + offset;
-            uint8_t *state_data = state->data + state->gen.complete();
-            if (MemCmd(state->cmd).isRead())
-                memcpy(state_data, bd_data, handled);
-            else
-                memcpy(bd_data, state_data, handled);
-        }
-
-        // Advance the chunk generator past this region of memory.
-        state->gen.setNext(state->gen.addr() + handled);
-
-        // Check if we're done now, since handleResp may delete state.
-        done = !state->gen.next();
-        handleResp(state, state->gen.addr(), handled);
+        pkt->senderState = this;
+        return pkt;
     }
 
-    return done;
-}
+    bool
+    DmaPort::recvTimingResp(PacketPtr pkt)
+    {
+        // We shouldn't ever get a cacheable block in Modified state.
+        assert(pkt->req->isUncacheable() ||
+               !(pkt->cacheResponding() && !pkt->hasSharers()));
 
-void
-DmaPort::sendDma()
-{
-    // Some kind of selection between access methods. More work is going to
-    // have to be done to make switching actually work.
-    assert(transmitList.size());
+        handleRespPacket(pkt);
 
-    if (sys->isTimingMode()) {
-        // If we are either waiting for a retry or are still waiting after
-        // sending the last packet, then do not proceed.
-        if (retryPending || sendEvent.scheduled()) {
-            DPRINTF(DMA, "Can't send immediately, waiting to send\n");
-            return;
-        }
-
-        trySendTimingReq();
-    } else if (sys->isAtomicMode()) {
-        const bool bypass = sys->bypassCaches();
-
-        // Send everything there is to send in zero time.
-        while (!transmitList.empty()) {
-            DmaReqState *state = transmitList.front();
-            transmitList.pop_front();
-
-            bool done = state->gen.done();
-            while (!done)
-                done = bypass ? sendAtomicBdReq(state) : sendAtomicReq(state);
-        }
-    } else {
-        panic("Unknown memory mode.");
-    }
-}
-
-Port &
-DmaDevice::getPort(const std::string &if_name, PortID idx)
-{
-    if (if_name == "dma") {
-        return dmaPort;
-    }
-    return PioDevice::getPort(if_name, idx);
-}
-
-DmaReadFifo::DmaReadFifo(DmaPort &_port, size_t size,
-                         unsigned max_req_size,
-                         unsigned max_pending,
-                         Request::Flags flags)
-    : maxReqSize(max_req_size), fifoSize(size),
-      reqFlags(flags), port(_port), cacheLineSize(port.sys->cacheLineSize()),
-      buffer(size)
-{
-    freeRequests.resize(max_pending);
-    for (auto &e : freeRequests)
-        e.reset(new DmaDoneEvent(this, max_req_size));
-
-}
-
-DmaReadFifo::~DmaReadFifo()
-{
-    for (auto &p : pendingRequests) {
-        DmaDoneEvent *e(p.release());
-
-        if (e->done()) {
-            delete e;
-        } else {
-            // We can't kill in-flight DMAs, so we'll just transfer
-            // ownership to the event queue so that they get freed
-            // when they are done.
-            e->kill();
-        }
-    }
-}
-
-void
-DmaReadFifo::serialize(CheckpointOut &cp) const
-{
-    assert(pendingRequests.empty());
-
-    SERIALIZE_CONTAINER(buffer);
-    SERIALIZE_SCALAR(endAddr);
-    SERIALIZE_SCALAR(nextAddr);
-}
-
-void
-DmaReadFifo::unserialize(CheckpointIn &cp)
-{
-    UNSERIALIZE_CONTAINER(buffer);
-    UNSERIALIZE_SCALAR(endAddr);
-    UNSERIALIZE_SCALAR(nextAddr);
-}
-
-bool
-DmaReadFifo::tryGet(uint8_t *dst, size_t len)
-{
-    if (buffer.size() >= len) {
-        buffer.read(dst, len);
-        resumeFill();
         return true;
-    } else {
-        return false;
     }
-}
 
-void
-DmaReadFifo::get(uint8_t *dst, size_t len)
-{
-    panic_if(!tryGet(dst, len), "Buffer underrun in DmaReadFifo::get()");
-}
+    DmaDevice::DmaDevice(const Params &p)
+        : PioDevice(p), dmaPort(this, sys, p.sid, p.ssid)
+    {
+    }
 
-void
-DmaReadFifo::startFill(Addr start, size_t size)
-{
-    assert(atEndOfBlock());
+    void
+    DmaDevice::init()
+    {
+        panic_if(!dmaPort.isConnected(),
+                 "DMA port of %s not connected to anything! %s", name(), dmaPort.name());
+        PioDevice::init();
+    }
 
-    nextAddr = start;
-    endAddr = start + size;
-    resumeFill();
-}
+    DrainState
+    DmaPort::drain()
+    {
+        if (pendingCount == 0)
+        {
+            return DrainState::Drained;
+        }
+        else
+        {
+            DPRINTF(Drain, "DmaPort not drained\n");
+            return DrainState::Draining;
+        }
+    }
 
-void
-DmaReadFifo::stopFill()
-{
-    // Prevent new DMA requests by setting the next address to the end
-    // address. Pending requests will still complete.
-    nextAddr = endAddr;
+    void
+    DmaPort::recvReqRetry()
+    {
+        retryPending = false;
+        if (transmitList.size())
+            trySendTimingReq();
+    }
 
-    // Flag in-flight accesses as canceled. This prevents their data
-    // from being written to the FIFO.
-    for (auto &p : pendingRequests)
-        p->cancel();
-}
+    // void
+    // DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
+    //                    uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
+    //                    Request::Flags flag)
+    // {
+    //     DPRINTF(DMA, "Starting DMA for addr: %#x size: %d sched: %d\n", addr, size,
+    //             event ? event->scheduled() : -1);
 
-void
-DmaReadFifo::resumeFill()
-{
-    // Don't try to fetch more data if we are draining. This ensures
-    // that the DMA engine settles down before we checkpoint it.
-    if (drainState() == DrainState::Draining)
-        return;
+    //     // One DMA request sender state for every action, that is then
+    //     // split into many requests and packets based on the block size,
+    //     // i.e. cache line size.
+    //     transmitList.push_back(
+    //         new DmaReqState(cmd, addr, cacheLineSize, size,
+    //                         data, flag, requestorId, sid, ssid, event, delay));
 
-    const bool old_eob(atEndOfBlock());
+    //     // In zero time, also initiate the sending of the packets for the request
+    //     // we have just created. For atomic this involves actually completing all
+    //     // the requests.
+    //     sendDma();
+    // }
 
-    if (port.sys->bypassCaches())
-        resumeFillBypass();
-    else
-        resumeFillTiming();
+    // void
+    // DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
+    //                    uint8_t *data, Tick delay, Request::Flags flag)
+    // {
+    //     dmaAction(cmd, addr, size, event, data,
+    //               defaultSid, defaultSSid, delay, flag);
+    // }
+    void
+    DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                       uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
+                       Request::Flags flag)
+    {
+        AdaptiveDdioFlag empty;
+        ddioActionAdq(cmd, addr, size, event, data, sid, ssid, delay, empty, flag, false, -1);
+    }
 
-    if (!old_eob && atEndOfBlock())
-        onEndOfBlock();
-}
+    void
+    DmaPort::dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                       uint8_t *data, Tick delay, Request::Flags flag)
+    {
+        AdaptiveDdioFlag empty;
+        ddioActionAdq(cmd, addr, size, event, data, delay, empty, flag, false, -1);
+    }
 
-void
-DmaReadFifo::resumeFillBypass()
-{
-    const size_t fifo_space = buffer.capacity() - buffer.size();
-    if (fifo_space >= cacheLineSize || buffer.capacity() < cacheLineSize) {
-        const size_t block_remaining = endAddr - nextAddr;
-        const size_t xfer_size = std::min(fifo_space, block_remaining);
-        std::vector<uint8_t> tmp_buffer(xfer_size);
+    // SHIN. For IDIO
+    void
+    DmaPort::ddioActionAdq(Packet::Command cmd, Addr addr, int size, Event *event,
+                           uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay, AdaptiveDdioFlag structDdioFlag,
+                           Request::Flags flag, bool is_ddio, int qnum)
+    {
+        DPRINTF(DMA, "Starting DMA(DDIO) for addr: %#x size: %d sched: %d\n", addr, size,
+                event ? event->scheduled() : -1);
 
+        // One DMA request sender state for every action, that is then
+        // split into many requests and packets based on the block size,
+        // i.e. cache line size.
+        transmitList.push_back(
+            new DmaReqState(cmd, addr, cacheLineSize, size,
+                            data, flag, requestorId, sid, ssid, event, delay, is_ddio, qnum));
+        // pendingCount++; This should be set when sending not when adding
+
+        // In zero time, also initiate the sending of the packets for the request
+        // we have just created. For atomic this involves actually completing all
+        // the requests.
+        sendDma();
+    }
+
+    void
+    DmaPort::ddioActionAdq(Packet::Command cmd, Addr addr, int size, Event *event,
+                           uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag,
+                           Request::Flags flag, bool is_ddio, int qnum)
+    {
+        ddioActionAdq(cmd, addr, size, event, data, defaultSid, defaultSSid, delay, structDdioFlag, flag, is_ddio, qnum);
+    }
+
+    void
+    DmaPort::IdioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                        uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag,
+                        Request::Flags flag, bool is_ddio, int qnum)
+    {
+        ddioActionAdq(cmd, addr, size, event, data, defaultSid, defaultSSid, delay, structDdioFlag, flag, is_ddio, qnum);
+    }
+
+    void
+    DmaPort::IdioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                        uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay, AdaptiveDdioFlag structDdioFlag,
+                        Request::Flags flag, bool is_ddio, int qnum)
+    {
+        ddioActionAdq(cmd, addr, size, event, data, sid, ssid, delay, structDdioFlag, flag, is_ddio, qnum);
+    }
+
+    // SHIN. Legacy Ddio (merged to IDIO function[ddioActionAdq])
+    void
+    DmaPort::ddioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                        uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag, Request::Flags flag)
+    {
+        ddioActionAdq(cmd, addr, size, event, data, delay, structDdioFlag, flag, true, -1);
+    }
+    void
+    DmaPort::ddioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+                        uint8_t *data, uint32_t sid, uint32_t ssid,
+                        Tick delay, AdaptiveDdioFlag structDdioFlag, Request::Flags flag)
+    {
+        ddioActionAdq(cmd, addr, size, event, data, defaultSid, defaultSSid, delay, structDdioFlag, flag, true, -1);
+    }
+
+    void
+    DmaPort::abortPending()
+    {
+        if (inRetry)
+        {
+            delete inRetry;
+            inRetry = nullptr;
+        }
+
+        if (pendingCount && !transmitList.empty())
+        {
+            auto *state = transmitList.front();
+            if (state->numBytes != state->gen.complete())
+            {
+                // In flight packets refer to the transmission at the front of the
+                // list, and not a transmission whose packets have all been sent
+                // but not completed. Preserve the state so the packets don't have
+                // dangling pointers.
+                transmitList.pop_front();
+                state->aborted = true;
+            }
+        }
+
+        // Get rid of requests that haven't started yet.
+        while (!transmitList.empty())
+        {
+            auto *state = transmitList.front();
+            if (state->abortEvent)
+                device->schedule(state->abortEvent, curTick());
+            delete state;
+            transmitList.pop_front();
+        }
+
+        if (sendEvent.scheduled())
+            device->deschedule(sendEvent);
+
+        if (pendingCount == 0)
+            signalDrainDone();
+    }
+
+    void
+    DmaPort::trySendTimingReq()
+    {
+        // Send the next packet for the first DMA request on the transmit list,
+        // and schedule the following send if it is successful
+        DmaReqState *state = transmitList.front();
+
+        PacketPtr pkt = inRetry ? inRetry : state->createPacket();
+        inRetry = nullptr;
+
+        DPRINTF(DMA, "Trying to send %s addr %#x\n", pkt->cmdString(),
+                pkt->getAddr());
+
+        // Check if this was the last packet now, since hypothetically the packet
+        // response may come immediately, and state may be deleted.
+        bool last = state->gen.last();
+        if (sendTimingReq(pkt))
+        {
+            pendingCount++;
+        }
+        else
+        {
+            retryPending = true;
+            inRetry = pkt;
+        }
+        if (!retryPending)
+        {
+            state->gen.next();
+            // If that was the last packet from this request, pop it from the list.
+            if (last)
+                transmitList.pop_front();
+            DPRINTF(DMA, "-- Done\n");
+            // If there is more to do, then do so.
+            if (!transmitList.empty())
+            {
+                // This should ultimately wait for as many cycles as the device
+                // needs to send the packet, but currently the port does not have
+                // any known width so simply wait a single cycle.
+                device->schedule(sendEvent, device->clockEdge(Cycles(1)));
+            }
+        }
+        else
+        {
+            DPRINTF(DMA, "-- Failed, waiting for retry\n");
+        }
+
+        DPRINTF(DMA, "TransmitList: %d, retryPending: %d\n",
+                transmitList.size(), retryPending ? 1 : 0);
+    }
+
+    bool
+    DmaPort::sendAtomicReq(DmaReqState *state)
+    {
+        PacketPtr pkt = state->createPacket();
+        DPRINTF(DMA, "Sending  DMA for addr: %#x size: %d\n",
+                state->gen.addr(), state->gen.size());
+        pendingCount++;
+        Tick lat = sendAtomic(pkt);
+
+        // Check if we're done, since handleResp may delete state.
+        bool done = !state->gen.next();
+        handleRespPacket(pkt, lat);
+        return done;
+    }
+
+    bool
+    DmaPort::sendAtomicBdReq(DmaReqState *state)
+    {
+        bool done = false;
+        pendingCount++;
+
+        auto bd_it = memBackdoors.contains(state->gen.addr());
+        if (bd_it == memBackdoors.end())
+        {
+            // We don't have a backdoor for this address, so use a packet.
+
+            PacketPtr pkt = state->createPacket();
+            DPRINTF(DMA, "Sending DMA for addr: %#x size: %d\n",
+                    state->gen.addr(), state->gen.size());
+
+            MemBackdoorPtr bd = nullptr;
+            Tick lat = sendAtomicBackdoor(pkt, bd);
+
+            // If we got a backdoor, record it.
+            if (bd && memBackdoors.insert(bd->range(), bd) != memBackdoors.end())
+            {
+                // Invalidation callback which finds this backdoor and removes it.
+                auto callback = [this](const MemBackdoor &backdoor)
+                {
+                    for (auto it = memBackdoors.begin();
+                         it != memBackdoors.end(); it++)
+                    {
+                        if (it->second == &backdoor)
+                        {
+                            memBackdoors.erase(it);
+                            return;
+                        }
+                    }
+                    panic("Got invalidation for unknown memory backdoor.");
+                };
+                bd->addInvalidationCallback(callback);
+            }
+
+            // Check if we're done now, since handleResp may delete state.
+            done = !state->gen.next();
+            handleRespPacket(pkt, lat);
+        }
+        else
+        {
+            // We have a backdoor that can at least partially satisfy this request.
+            DPRINTF(DMA, "Handling DMA for addr: %#x size %d through backdoor\n",
+                    state->gen.addr(), state->gen.size());
+
+            const auto *bd = bd_it->second;
+            // Offset of this access into the backdoor.
+            const Addr offset = state->gen.addr() - bd->range().start();
+            // How many bytes we still need.
+            const Addr remaining = state->totBytes - state->gen.complete();
+            // How many bytes this backdoor can provide, starting from offset.
+            const Addr available = bd->range().size() - offset;
+
+            // How many bytes we're going to handle through this backdoor.
+            const Addr handled = std::min(remaining, available);
+
+            // If there's a buffer for data, read/write it.
+            if (state->data)
+            {
+                uint8_t *bd_data = bd->ptr() + offset;
+                uint8_t *state_data = state->data + state->gen.complete();
+                if (MemCmd(state->cmd).isRead())
+                    memcpy(state_data, bd_data, handled);
+                else
+                    memcpy(bd_data, state_data, handled);
+            }
+
+            // Advance the chunk generator past this region of memory.
+            state->gen.setNext(state->gen.addr() + handled);
+
+            // Check if we're done now, since handleResp may delete state.
+            done = !state->gen.next();
+            handleResp(state, state->gen.addr(), handled);
+        }
+
+        return done;
+    }
+
+    void
+    DmaPort::sendDma()
+    {
+        // Some kind of selection between access methods. More work is going to
+        // have to be done to make switching actually work.
+        assert(transmitList.size());
+
+        if (sys->isTimingMode())
+        {
+            // If we are either waiting for a retry or are still waiting after
+            // sending the last packet, then do not proceed.
+            if (retryPending || sendEvent.scheduled())
+            {
+                DPRINTF(DMA, "Can't send immediately, waiting to send\n");
+                return;
+            }
+
+            trySendTimingReq();
+        }
+        else if (sys->isAtomicMode())
+        {
+            const bool bypass = sys->bypassCaches();
+
+            // Send everything there is to send in zero time.
+            while (!transmitList.empty())
+            {
+                DmaReqState *state = transmitList.front();
+                transmitList.pop_front();
+
+                bool done = state->gen.done();
+                while (!done)
+                    done = bypass ? sendAtomicBdReq(state) : sendAtomicReq(state);
+            }
+        }
+        else
+        {
+            panic("Unknown memory mode.");
+        }
+    }
+
+    Port &
+    DmaDevice::getPort(const std::string &if_name, PortID idx)
+    {
+        if (if_name == "dma")
+        {
+            return dmaPort;
+        }
+        return PioDevice::getPort(if_name, idx);
+    }
+
+    DmaReadFifo::DmaReadFifo(DmaPort &_port, size_t size,
+                             unsigned max_req_size,
+                             unsigned max_pending,
+                             Request::Flags flags)
+        : maxReqSize(max_req_size), fifoSize(size),
+          reqFlags(flags), port(_port), cacheLineSize(port.sys->cacheLineSize()),
+          buffer(size)
+    {
+        freeRequests.resize(max_pending);
+        for (auto &e : freeRequests)
+            e.reset(new DmaDoneEvent(this, max_req_size));
+    }
+
+    DmaReadFifo::~DmaReadFifo()
+    {
+        for (auto &p : pendingRequests)
+        {
+            DmaDoneEvent *e(p.release());
+
+            if (e->done())
+            {
+                delete e;
+            }
+            else
+            {
+                // We can't kill in-flight DMAs, so we'll just transfer
+                // ownership to the event queue so that they get freed
+                // when they are done.
+                e->kill();
+            }
+        }
+    }
+
+    void
+    DmaReadFifo::serialize(CheckpointOut &cp) const
+    {
         assert(pendingRequests.empty());
-        DPRINTF(DMA, "Direct bypass startAddr=%#x xfer_size=%#x " \
-                "fifo_space=%#x block_remaining=%#x\n",
-                nextAddr, xfer_size, fifo_space, block_remaining);
 
-        port.dmaAction(MemCmd::ReadReq, nextAddr, xfer_size, nullptr,
-                tmp_buffer.data(), 0, reqFlags);
-
-        buffer.write(tmp_buffer.begin(), xfer_size);
-        nextAddr += xfer_size;
-    }
-}
-
-void
-DmaReadFifo::resumeFillTiming()
-{
-    size_t size_pending(0);
-    for (auto &e : pendingRequests)
-        size_pending += e->requestSize();
-
-    while (!freeRequests.empty() && !atEndOfBlock()) {
-        const size_t req_size(std::min(maxReqSize, endAddr - nextAddr));
-        if (buffer.size() + size_pending + req_size > fifoSize)
-            break;
-
-        DmaDoneEventUPtr event(std::move(freeRequests.front()));
-        freeRequests.pop_front();
-        assert(event);
-
-        event->reset(req_size);
-        port.dmaAction(MemCmd::ReadReq, nextAddr, req_size, event.get(),
-                       event->data(), 0, reqFlags);
-        nextAddr += req_size;
-        size_pending += req_size;
-
-        pendingRequests.emplace_back(std::move(event));
-    }
-}
-
-void
-DmaReadFifo::dmaDone()
-{
-    const bool old_active(isActive());
-
-    handlePending();
-    resumeFill();
-
-    if (old_active && !isActive())
-        onIdle();
-}
-
-void
-DmaReadFifo::handlePending()
-{
-    while (!pendingRequests.empty() && pendingRequests.front()->done()) {
-        // Get the first finished pending request
-        DmaDoneEventUPtr event(std::move(pendingRequests.front()));
-        pendingRequests.pop_front();
-
-        if (!event->canceled())
-            buffer.write(event->data(), event->requestSize());
-
-        // Move the event to the list of free requests
-        freeRequests.emplace_back(std::move(event));
+        SERIALIZE_CONTAINER(buffer);
+        SERIALIZE_SCALAR(endAddr);
+        SERIALIZE_SCALAR(nextAddr);
     }
 
-    if (pendingRequests.empty())
-        signalDrainDone();
-}
+    void
+    DmaReadFifo::unserialize(CheckpointIn &cp)
+    {
+        UNSERIALIZE_CONTAINER(buffer);
+        UNSERIALIZE_SCALAR(endAddr);
+        UNSERIALIZE_SCALAR(nextAddr);
+    }
 
-DrainState
-DmaReadFifo::drain()
-{
-    return pendingRequests.empty() ?
-        DrainState::Drained : DrainState::Draining;
-}
+    bool
+    DmaReadFifo::tryGet(uint8_t *dst, size_t len)
+    {
+        if (buffer.size() >= len)
+        {
+            buffer.read(dst, len);
+            resumeFill();
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
 
+    void
+    DmaReadFifo::get(uint8_t *dst, size_t len)
+    {
+        panic_if(!tryGet(dst, len), "Buffer underrun in DmaReadFifo::get()");
+    }
 
-DmaReadFifo::DmaDoneEvent::DmaDoneEvent(DmaReadFifo *_parent, size_t max_size)
-    : parent(_parent), _data(max_size, 0)
-{
-}
+    void
+    DmaReadFifo::startFill(Addr start, size_t size)
+    {
+        assert(atEndOfBlock());
 
-void
-DmaReadFifo::DmaDoneEvent::kill()
-{
-    parent = nullptr;
-    setFlags(AutoDelete);
-}
+        nextAddr = start;
+        endAddr = start + size;
+        resumeFill();
+    }
 
-void
-DmaReadFifo::DmaDoneEvent::cancel()
-{
-    _canceled = true;
-}
+    void
+    DmaReadFifo::stopFill()
+    {
+        // Prevent new DMA requests by setting the next address to the end
+        // address. Pending requests will still complete.
+        nextAddr = endAddr;
 
-void
-DmaReadFifo::DmaDoneEvent::reset(size_t size)
-{
-    assert(size <= _data.size());
-    _done = false;
-    _canceled = false;
-    _requestSize = size;
-}
+        // Flag in-flight accesses as canceled. This prevents their data
+        // from being written to the FIFO.
+        for (auto &p : pendingRequests)
+            p->cancel();
+    }
 
-void
-DmaReadFifo::DmaDoneEvent::process()
-{
-    if (!parent)
-        return;
+    void
+    DmaReadFifo::resumeFill()
+    {
+        // Don't try to fetch more data if we are draining. This ensures
+        // that the DMA engine settles down before we checkpoint it.
+        if (drainState() == DrainState::Draining)
+            return;
 
-    assert(!_done);
-    _done = true;
-    parent->dmaDone();
-}
+        const bool old_eob(atEndOfBlock());
+
+        if (port.sys->bypassCaches())
+            resumeFillBypass();
+        else
+            resumeFillTiming();
+
+        if (!old_eob && atEndOfBlock())
+            onEndOfBlock();
+    }
+
+    void
+    DmaReadFifo::resumeFillBypass()
+    {
+        const size_t fifo_space = buffer.capacity() - buffer.size();
+        if (fifo_space >= cacheLineSize || buffer.capacity() < cacheLineSize)
+        {
+            const size_t block_remaining = endAddr - nextAddr;
+            const size_t xfer_size = std::min(fifo_space, block_remaining);
+            std::vector<uint8_t> tmp_buffer(xfer_size);
+
+            assert(pendingRequests.empty());
+            DPRINTF(DMA, "Direct bypass startAddr=%#x xfer_size=%#x "
+                         "fifo_space=%#x block_remaining=%#x\n",
+                    nextAddr, xfer_size, fifo_space, block_remaining);
+
+            port.dmaAction(MemCmd::ReadReq, nextAddr, xfer_size, nullptr,
+                           tmp_buffer.data(), 0, reqFlags);
+
+            buffer.write(tmp_buffer.begin(), xfer_size);
+            nextAddr += xfer_size;
+        }
+    }
+
+    void
+    DmaReadFifo::resumeFillTiming()
+    {
+        size_t size_pending(0);
+        for (auto &e : pendingRequests)
+            size_pending += e->requestSize();
+
+        while (!freeRequests.empty() && !atEndOfBlock())
+        {
+            const size_t req_size(std::min(maxReqSize, endAddr - nextAddr));
+            if (buffer.size() + size_pending + req_size > fifoSize)
+                break;
+
+            DmaDoneEventUPtr event(std::move(freeRequests.front()));
+            freeRequests.pop_front();
+            assert(event);
+
+            event->reset(req_size);
+            port.dmaAction(MemCmd::ReadReq, nextAddr, req_size, event.get(),
+                           event->data(), 0, reqFlags);
+            nextAddr += req_size;
+            size_pending += req_size;
+
+            pendingRequests.emplace_back(std::move(event));
+        }
+    }
+
+    void
+    DmaReadFifo::dmaDone()
+    {
+        const bool old_active(isActive());
+
+        handlePending();
+        resumeFill();
+
+        if (old_active && !isActive())
+            onIdle();
+    }
+
+    void
+    DmaReadFifo::handlePending()
+    {
+        while (!pendingRequests.empty() && pendingRequests.front()->done())
+        {
+            // Get the first finished pending request
+            DmaDoneEventUPtr event(std::move(pendingRequests.front()));
+            pendingRequests.pop_front();
+
+            if (!event->canceled())
+                buffer.write(event->data(), event->requestSize());
+
+            // Move the event to the list of free requests
+            freeRequests.emplace_back(std::move(event));
+        }
+
+        if (pendingRequests.empty())
+            signalDrainDone();
+    }
+
+    DrainState
+    DmaReadFifo::drain()
+    {
+        return pendingRequests.empty() ? DrainState::Drained : DrainState::Draining;
+    }
+
+    DmaReadFifo::DmaDoneEvent::DmaDoneEvent(DmaReadFifo *_parent, size_t max_size)
+        : parent(_parent), _data(max_size, 0)
+    {
+    }
+
+    void
+    DmaReadFifo::DmaDoneEvent::kill()
+    {
+        parent = nullptr;
+        setFlags(AutoDelete);
+    }
+
+    void
+    DmaReadFifo::DmaDoneEvent::cancel()
+    {
+        _canceled = true;
+    }
+
+    void
+    DmaReadFifo::DmaDoneEvent::reset(size_t size)
+    {
+        assert(size <= _data.size());
+        _done = false;
+        _canceled = false;
+        _requestSize = size;
+    }
+
+    void
+    DmaReadFifo::DmaDoneEvent::process()
+    {
+        if (!parent)
+            return;
+
+        assert(!_done);
+        _done = true;
+        parent->dmaDone();
+    }
 
 } // namespace gem5

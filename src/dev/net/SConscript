@@ -81,12 +81,19 @@ DebugFlag('DistEthernetCmd')
 Source('i8254xGBe.cc')
 Source('ns_gige.cc')
 Source('sinic.cc')
+Source('load_generator.cc')
+Source('accelerator.cc')
+SimObject('accelerator.py', sim_objects=['Accelerator'])
+SimObject('load_generator.py', sim_objects=['LoadGenerator'])
 
 
 
 CompoundFlag('EthernetAll', [ 'Ethernet', 'EthernetPIO', 'EthernetDMA',
     'EthernetData' , 'EthernetDesc', 'EthernetIntr', 'EthernetSM',
     'EthernetCksum', 'EthernetEEPROM' ])
+DebugFlag('LoadgenDebug')
+DebugFlag('AccelDebug')
+DebugFlag('LoadgenLatency')
 
 CompoundFlag('EthernetNoData', [ 'Ethernet', 'EthernetPIO', 'EthernetDesc',
     'EthernetIntr', 'EthernetSM', 'EthernetCksum' ])

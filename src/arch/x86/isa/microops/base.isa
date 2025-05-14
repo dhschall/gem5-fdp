@@ -239,10 +239,11 @@ let {{
             wrapped = ("(1ULL << StaticInst::%s)" % flag for flag in flags)
             return " | ".join(wrapped)
 
-        def getGeneratorDef(self, micropc):
+        def getGeneratorDef(self, micropc, flags=[]):
+            flags.extend(["IsMicroop", "IsDelayedCommit"])
             return self.generatorTemplate % \
                 (self.className, micropc, \
-                 self.getAllocator(["IsMicroop", "IsDelayedCommit"]))
+                 self.getAllocator(flags))
 
         def getGenerator(self, micropc):
             return self.generatorNameTemplate % (self.className, micropc)

@@ -57,130 +57,129 @@
 namespace gem5
 {
 
-struct SNHash
-{
+  struct SNHash
+  {
     size_t
     operator()(const InstSeqNum &seq_num) const
     {
-        unsigned a = (unsigned)seq_num;
-        unsigned hash = (((a >> 14) ^ ((a >> 2) & 0xffff))) & 0x7FFFFFFF;
-        return hash;
+      unsigned a = (unsigned)seq_num;
+      unsigned hash = (((a >> 14) ^ ((a >> 2) & 0xffff))) & 0x7FFFFFFF;
+      return hash;
     }
-};
+  };
 
-struct BaseO3CPUParams;
+  struct BaseO3CPUParams;
 
-namespace o3
-{
+  namespace o3
+  {
 
-class CPU;
-class InstructionQueue;
+    class CPU;
+    class InstructionQueue;
 
-/**
- * Memory dependency unit class.  This holds the memory dependence predictor.
- * As memory operations are issued to the IQ, they are also issued to this
- * unit, which then looks up the prediction as to what they are dependent
- * upon.  This unit must be checked prior to a memory operation being able
- * to issue.  Although this is templated, it's somewhat hard to make a generic
- * memory dependence unit.  This one is mostly for store sets; it will be
- * quite limited in what other memory dependence predictions it can also
- * utilize.  Thus this class should be most likely be rewritten for other
- * dependence prediction schemes.
- */
-class MemDepUnit
-{
-  protected:
-    std::string _name;
-
-  public:
-    /** Empty constructor. Must call init() prior to using in this case. */
-    MemDepUnit();
-
-    /** Constructs a MemDepUnit with given parameters. */
-    MemDepUnit(const BaseO3CPUParams &params);
-
-    /** Frees up any memory allocated. */
-    ~MemDepUnit();
-
-    /** Returns the name of the memory dependence unit. */
-    std::string name() const { return _name; }
-
-    /** Initializes the unit with parameters and a thread id. */
-    void init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu);
-
-    /** Determine if we are drained. */
-    bool isDrained() const;
-
-    /** Perform sanity checks after a drain. */
-    void drainSanityCheck() const;
-
-    /** Takes over from another CPU's thread. */
-    void takeOverFrom();
-
-    /** Sets the pointer to the IQ. */
-    void setIQ(InstructionQueue *iq_ptr);
-
-    /** Inserts a memory instruction. */
-    void insert(const DynInstPtr &inst);
-
-    /** Inserts a non-speculative memory instruction. */
-    void insertNonSpec(const DynInstPtr &inst);
-
-    /** Inserts a barrier instruction. */
-    void insertBarrier(const DynInstPtr &barr_inst);
-
-    /** Indicate that an instruction has its registers ready. */
-    void regsReady(const DynInstPtr &inst);
-
-    /** Indicate that a non-speculative instruction is ready. */
-    void nonSpecInstReady(const DynInstPtr &inst);
-
-    /** Reschedules an instruction to be re-executed. */
-    void reschedule(const DynInstPtr &inst);
-
-    /** Replays all instructions that have been rescheduled by moving them to
-     *  the ready list.
+    /**
+     * Memory dependency unit class.  This holds the memory dependence predictor.
+     * As memory operations are issued to the IQ, they are also issued to this
+     * unit, which then looks up the prediction as to what they are dependent
+     * upon.  This unit must be checked prior to a memory operation being able
+     * to issue.  Although this is templated, it's somewhat hard to make a generic
+     * memory dependence unit.  This one is mostly for store sets; it will be
+     * quite limited in what other memory dependence predictions it can also
+     * utilize.  Thus this class should be most likely be rewritten for other
+     * dependence prediction schemes.
      */
-    void replay();
-
-    /** Notifies completion of an instruction. */
-    void completeInst(const DynInstPtr &inst);
-
-    /** Squashes all instructions up until a given sequence number for a
-     *  specific thread.
-     */
-    void squash(const InstSeqNum &squashed_num, ThreadID tid);
-
-    /** Indicates an ordering violation between a store and a younger load. */
-    void violation(const DynInstPtr &store_inst,
-                   const DynInstPtr &violating_load);
-
-    /** Issues the given instruction */
-    void issue(const DynInstPtr &inst);
-
-    /** Debugging function to dump the lists of instructions. */
-    void dumpLists();
-
-  private:
-
-    /** Completes a memory instruction. */
-    void completed(const DynInstPtr &inst);
-
-    /** Wakes any dependents of a memory instruction. */
-    void wakeDependents(const DynInstPtr &inst);
-
-    typedef typename std::list<DynInstPtr>::iterator ListIt;
-
-    class MemDepEntry;
-
-    typedef std::shared_ptr<MemDepEntry> MemDepEntryPtr;
-
-    /** Memory dependence entries that track memory operations, marking
-     *  when the instruction is ready to execute and what instructions depend
-     *  upon it.
-     */
-    class MemDepEntry
+    class MemDepUnit
     {
+    protected:
+      std::string _name;
+
+    public:
+      /** Empty constructor. Must call init() prior to using in this case. */
+      MemDepUnit();
+
+      /** Constructs a MemDepUnit with given parameters. */
+      MemDepUnit(const BaseO3CPUParams &params);
+
+      /** Frees up any memory allocated. */
+      ~MemDepUnit();
+
+      /** Returns the name of the memory dependence unit. */
+      std::string name() const { return _name; }
+
+      /** Initializes the unit with parameters and a thread id. */
+      void init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu);
+
+      /** Determine if we are drained. */
+      bool isDrained() const;
+
+      /** Perform sanity checks after a drain. */
+      void drainSanityCheck() const;
+
+      /** Takes over from another CPU's thread. */
+      void takeOverFrom();
+
+      /** Sets the pointer to the IQ. */
+      void setIQ(InstructionQueue *iq_ptr);
+
+      /** Inserts a memory instruction. */
+      void insert(const DynInstPtr &inst);
+
+      /** Inserts a non-speculative memory instruction. */
+      void insertNonSpec(const DynInstPtr &inst);
+
+      /** Inserts a barrier instruction. */
+      void insertBarrier(const DynInstPtr &barr_inst);
+
+      /** Indicate that an instruction has its registers ready. */
+      void regsReady(const DynInstPtr &inst);
+
+      /** Indicate that a non-speculative instruction is ready. */
+      void nonSpecInstReady(const DynInstPtr &inst);
+
+      /** Reschedules an instruction to be re-executed. */
+      void reschedule(const DynInstPtr &inst);
+
+      /** Replays all instructions that have been rescheduled by moving them to
+       *  the ready list.
+       */
+      void replay();
+
+      /** Notifies completion of an instruction. */
+      void completeInst(const DynInstPtr &inst);
+
+      /** Squashes all instructions up until a given sequence number for a
+       *  specific thread.
+       */
+      void squash(const InstSeqNum &squashed_num, ThreadID tid);
+
+      /** Indicates an ordering violation between a store and a younger load. */
+      void violation(const DynInstPtr &store_inst,
+                     const DynInstPtr &violating_load);
+
+      /** Issues the given instruction */
+      void issue(const DynInstPtr &inst);
+
+      /** Debugging function to dump the lists of instructions. */
+      void dumpLists();
+
+    private:
+      /** Completes a memory instruction. */
+      void completed(const DynInstPtr &inst);
+
+      /** Wakes any dependents of a memory instruction. */
+      void wakeDependents(const DynInstPtr &inst);
+
+      typedef typename std::list<DynInstPtr>::iterator ListIt;
+
+      class MemDepEntry;
+
+      typedef std::shared_ptr<MemDepEntry> MemDepEntryPtr;
+
+      /** Memory dependence entries that track memory operations, marking
+       *  when the instruction is ready to execute and what instructions depend
+       *  upon it.
+       */
+      class MemDepEntry
+      {
       public:
         /** Constructs a memory dependence entry. */
         MemDepEntry(const DynInstPtr &new_inst);
@@ -215,56 +214,57 @@ class MemDepUnit
         static int memdep_insert;
         static int memdep_erase;
 #endif
-    };
+      };
 
-    /** Finds the memory dependence entry in the hash map. */
-    MemDepEntryPtr &findInHash(const DynInstConstPtr& inst);
+      /** Finds the memory dependence entry in the hash map. */
+      MemDepEntryPtr &findInHash(const DynInstConstPtr &inst);
 
-    /** Moves an entry to the ready list. */
-    void moveToReady(MemDepEntryPtr &ready_inst_entry);
+      /** Moves an entry to the ready list. */
+      void moveToReady(MemDepEntryPtr &ready_inst_entry);
 
-    typedef std::unordered_map<InstSeqNum, MemDepEntryPtr, SNHash> MemDepHash;
+      typedef std::unordered_map<InstSeqNum, MemDepEntryPtr, SNHash> MemDepHash;
 
-    typedef typename MemDepHash::iterator MemDepHashIt;
+      typedef typename MemDepHash::iterator MemDepHashIt;
 
-    /** A hash map of all memory dependence entries. */
-    MemDepHash memDepHash;
+      /** A hash map of all memory dependence entries. */
+      MemDepHash memDepHash;
 
-    /** A list of all instructions in the memory dependence unit. */
-    std::list<DynInstPtr> instList[MaxThreads];
+      /** A list of all instructions in the memory dependence unit. */
+      std::list<DynInstPtr>
+          instList[MaxThreads];
 
-    /** A list of all instructions that are going to be replayed. */
-    std::list<DynInstPtr> instsToReplay;
+      /** A list of all instructions that are going to be replayed. */
+      std::list<DynInstPtr> instsToReplay;
 
-    /** The memory dependence predictor.  It is accessed upon new
-     *  instructions being added to the IQ, and responds by telling
-     *  this unit what instruction the newly added instruction is dependent
-     *  upon.
-     */
-    StoreSet depPred;
+      /** The memory dependence predictor.  It is accessed upon new
+       *  instructions being added to the IQ, and responds by telling
+       *  this unit what instruction the newly added instruction is dependent
+       *  upon.
+       */
+      StoreSet depPred;
 
-    /** Sequence numbers of outstanding load barriers. */
-    std::unordered_set<InstSeqNum> loadBarrierSNs;
+      /** Sequence numbers of outstanding load barriers. */
+      std::unordered_set<InstSeqNum> loadBarrierSNs;
 
-    /** Sequence numbers of outstanding store barriers. */
-    std::unordered_set<InstSeqNum> storeBarrierSNs;
+      /** Sequence numbers of outstanding store barriers. */
+      std::unordered_set<InstSeqNum> storeBarrierSNs;
 
-    /** Is there an outstanding load barrier that loads must wait on. */
-    bool hasLoadBarrier() const { return !loadBarrierSNs.empty(); }
+      /** Is there an outstanding load barrier that loads must wait on. */
+      bool hasLoadBarrier() const { return !loadBarrierSNs.empty(); }
 
-    /** Is there an outstanding store barrier that loads must wait on. */
-    bool hasStoreBarrier() const { return !storeBarrierSNs.empty(); }
+      /** Is there an outstanding store barrier that loads must wait on. */
+      bool hasStoreBarrier() const { return !storeBarrierSNs.empty(); }
 
-    /** Inserts the SN of a barrier inst. to the list of tracked barriers */
-    void insertBarrierSN(const DynInstPtr &barr_inst);
+      /** Inserts the SN of a barrier inst. to the list of tracked barriers */
+      void insertBarrierSN(const DynInstPtr &barr_inst);
 
-    /** Pointer to the IQ. */
-    InstructionQueue *iqPtr;
+      /** Pointer to the IQ. */
+      InstructionQueue *iqPtr;
 
-    /** The thread id of this memory dependence unit. */
-    int id;
-    struct MemDepUnitStats : public statistics::Group
-    {
+      /** The thread id of this memory dependence unit. */
+      int id;
+      struct MemDepUnitStats : public statistics::Group
+      {
         MemDepUnitStats(statistics::Group *parent);
         /** Stat for number of inserted loads. */
         statistics::Scalar insertedLoads;
@@ -276,10 +276,10 @@ class MemDepUnit
         /** Stat for number of conflicting stores that had to wait for a
          *  store. */
         statistics::Scalar conflictingStores;
-    } stats;
-};
+      } stats;
+    };
 
-} // namespace o3
+  } // namespace o3
 } // namespace gem5
 
 #endif // __CPU_O3_MEM_DEP_UNIT_HH__

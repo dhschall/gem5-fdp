@@ -295,7 +295,7 @@ def template MicroLdStSplitOpConstructor {{
 let {{
     class LdStOp(X86Microop):
         def __init__(self, data, segment, addr, disp,
-                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec,
+                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec, physical,
                 uncacheable):
             self.data = data
             [self.scale, self.index, self.base] = addr
@@ -307,6 +307,8 @@ let {{
             if atCPL0:
                 self.memFlags += " | CPL0FlagBit"
             self.instFlags = ""
+            if physical:
+                self.memFlags += " | Request::PHYSICAL"
             if prefetch:
                 self.memFlags += " | Request::PREFETCH"
                 self.instFlags += " | (1ULL << StaticInst::IsDataPrefetch)"
@@ -335,7 +337,7 @@ let {{
 
     class BigLdStOp(X86Microop):
         def __init__(self, data, segment, addr, disp,
-                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec,
+                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec, physical,
                 uncacheable):
             self.data = data
             [self.scale, self.index, self.base] = addr
@@ -347,6 +349,8 @@ let {{
             if atCPL0:
                 self.memFlags += " | CPL0FlagBit"
             self.instFlags = ""
+            if physical:
+                self.memFlags += " | Request::PHYSICAL"
             if prefetch:
                 self.memFlags += " | Request::PREFETCH"
                 self.instFlags += " | (1ULL << StaticInst::IsDataPrefetch)"
@@ -383,10 +387,10 @@ let {{
 
     class LdStSplitOp(LdStOp):
         def __init__(self, data, segment, addr, disp,
-                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec,
+                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec, physical,
                 uncacheable):
             super().__init__(0, segment, addr, disp,
-                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec,
+                dataSize, addressSize, baseFlags, atCPL0, prefetch, nonSpec, physical,
                 uncacheable)
             (self.dataLow, self.dataHi) = data
 
@@ -490,11 +494,11 @@ let {{
             def __init__(self, data, segment, addr, disp = 0,
                     dataSize="env.dataSize",
                     addressSize="env.addressSize",
-                    atCPL0=False, prefetch=False, nonSpec=nonSpec,
+                    atCPL0=False, prefetch=False, nonSpec=nonSpec, physical=False,
                     uncacheable=False):
                 super().__init__(data, segment, addr,
                         disp, dataSize, addressSize, mem_flags,
-                        atCPL0, prefetch, nonSpec, uncacheable)
+                        atCPL0, prefetch, nonSpec, physical, uncacheable)
                 self.className = Name
                 self.mnemonic = name
 
@@ -569,11 +573,11 @@ let {{
             def __init__(self, data, segment, addr, disp = 0,
                     dataSize="env.dataSize",
                     addressSize="env.addressSize",
-                    atCPL0=False, prefetch=False, nonSpec=nonSpec,
+                    atCPL0=False, prefetch=False, nonSpec=nonSpec, physical=False,
                     uncacheable=False):
                 super().__init__(data, segment, addr,
                         disp, dataSize, addressSize, mem_flags,
-                        atCPL0, prefetch, nonSpec, uncacheable)
+                        atCPL0, prefetch, nonSpec,physical, uncacheable)
                 self.className = Name
                 self.mnemonic = name
 
@@ -623,10 +627,10 @@ let {{
             class StoreOp(LdStOp):
                 def __init__(self, data, segment, addr, disp=0,
                         dataSize="env.dataSize", addressSize="env.addressSize",
-                        atCPL0=False, nonSpec=False, uncacheable=False):
+                        atCPL0=False, nonSpec=False,physical=False, uncacheable=False):
                     super().__init__(data, segment, addr, disp,
                             dataSize, addressSize, mem_flags, atCPL0, False,
-                            nonSpec, uncacheable)
+                            nonSpec,physical, uncacheable)
                     self.className = Name
                     self.mnemonic = name
         else:
@@ -695,10 +699,10 @@ let {{
             def __init__(self, data, segment, addr, disp = 0,
                     dataSize="env.dataSize",
                     addressSize="env.addressSize",
-                    atCPL0=False, nonSpec=False, uncacheable=False):
+                    atCPL0=False, nonSpec=False, physical=False, uncacheable=False):
                 super().__init__(data, segment, addr, disp,
                         dataSize, addressSize, mem_flags, atCPL0, False,
-                        nonSpec, uncacheable)
+                        nonSpec, physical, uncacheable)
                 self.className = Name
                 self.mnemonic = name
 
@@ -726,7 +730,7 @@ let {{
                 dataSize="env.dataSize", addressSize="env.addressSize"):
             super().__init__(data, segment, addr, disp,
                     dataSize, addressSize, "0",
-                    False, False, False, False)
+                    False, False,False, False, False)
             self.className = "Lea"
             self.mnemonic = "lea"
 

@@ -60,3 +60,5 @@ class L2Cache(Cache):
         self.writeback_clean = writeback_clean
         self.clusivity = clusivity
         self.prefetcher = PrefetcherCls()
+        self.ddio_way_part = 4
+        self.is_llc = True

@@ -142,14 +142,17 @@ class ChanneledMemory(AbstractMemorySystem):
             )
 
         intlv_bits = log(self._num_channels, 2)
+        intlv_bits = 0
+        #ssert self._num_channels == 2
         for i, ctrl in enumerate(self.mem_ctrl):
+            print("start: " +str(self._mem_range[i].start)+" end: "+str(self._mem_range[i].start+self._mem_range[i].size())+", intlvhigh: "+str(intlv_low_bit + intlv_bits - 1)+" intlvbits:"+str(intlv_bits)+" intlvMatch: "+str(i)+" xorHigh: "+str(0))
             ctrl.dram.range = AddrRange(
-                start=self._mem_range.start,
-                size=self._mem_range.size(),
+                start=self._mem_range[i].start,
+                size=self._mem_range[i].size(),
                 intlvHighBit=intlv_low_bit + intlv_bits - 1,
                 xorHighBit=0,
                 intlvBits=intlv_bits,
-                intlvMatch=i,
+                intlvMatch=0,
             )
 
     @overrides(AbstractMemorySystem)
@@ -179,12 +182,12 @@ class ChanneledMemory(AbstractMemorySystem):
         """Need to add support for non-contiguous non overlapping ranges in
         the future.
         """
-        if len(ranges) != 1 or ranges[0].size() != self._size:
-            raise Exception(
-                "Multi channel memory controller requires a single range "
-                "which matches the memory's size.\n"
-                f"The range size: {range[0].size()}\n"
-                f"This memory's size: {self._size}"
-            )
-        self._mem_range = ranges[0]
+        # if len(ranges) != 1 or ranges[0].size() != self._size:
+            # raise Exception(
+                # "Multi channel memory controller requires a single range "
+                # "which matches the memory's size.\n"
+                # f"The range size: {ranges[0].size()}\n"
+                # f"This memory's size: {self._size}"
+            # )
+        self._mem_range = ranges
         self._interleave_addresses()

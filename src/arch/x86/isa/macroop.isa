@@ -212,6 +212,14 @@ let {{
             micropc = 0
             for op in self.microops:
                 flags = ["IsMicroop"]
+
+                if self.name == "SENDUIPI_R":
+                    flags.append("IsSendUipi")
+                    flags.append("IsUintUcode")
+                if self.name == "UIRET":
+                    flags.append("IsUiret")
+                    flags.append("IsUintUcode")
+
                 if micropc == 0:
                     flags.append("IsFirstMicroop")
 

@@ -66,6 +66,7 @@ breakpoint()
 #ifndef NDEBUG
     kill(getpid(), SIGTRAP);
 #else
+    kill(getpid(), SIGTRAP);
     cprintf("debug::breakpoint suppressed, compiled with NDEBUG\n");
 #endif
 }
@@ -77,7 +78,8 @@ allFlags()
     // Ensure that the special "All" compound debug flag has been created,
     // and avoid infinite recursion.
     static bool done = false;
-    if (!done) {
+    if (!done)
+    {
         done = true;
         AllFlagsFlag::instance();
     }
@@ -91,7 +93,8 @@ Flag *
 findFlag(const std::string &name)
 {
     FlagsMap::iterator i = allFlags().find(name);
-    if (i == allFlags().end()) {
+    if (i == allFlags().end())
+    {
         return NULL;
     }
     return i->second;
@@ -117,7 +120,7 @@ void
 Flag::globalEnable()
 {
     _globalEnable = true;
-    for (auto& i : allFlags())
+    for (auto &i : allFlags())
         i.second->sync();
 }
 
@@ -125,12 +128,12 @@ void
 Flag::globalDisable()
 {
     _globalEnable = false;
-    for (auto& i : allFlags())
+    for (auto &i : allFlags())
         i.second->sync();
 }
 
 SimpleFlag::SimpleFlag(const char *name, const char *desc, bool is_format)
-  : Flag(name, desc), _isFormat(is_format)
+    : Flag(name, desc), _isFormat(is_format)
 {
     // Add non-format flags to the special "All" compound flag.
     if (!isFormat())
@@ -140,20 +143,21 @@ SimpleFlag::SimpleFlag(const char *name, const char *desc, bool is_format)
 void
 CompoundFlag::enable()
 {
-    for (auto& k : _kids)
+    for (auto &k : _kids)
         k->enable();
 }
 
 void
 CompoundFlag::disable()
 {
-    for (auto& k : _kids)
+    for (auto &k : _kids)
         k->disable();
 }
 
 AllFlagsFlag::AllFlagsFlag() : CompoundFlag("All",
-        "Controls all debug flags. It should not be used within C++ code.", {})
-{}
+                                            "Controls all debug flags. It should not be used within C++ code.", {})
+{
+}
 
 void
 AllFlagsFlag::add(SimpleFlag *flag)
@@ -207,7 +211,8 @@ dumpDebugFlags(std::ostream &os)
     using namespace debug;
     FlagsMap::iterator i = allFlags().begin();
     FlagsMap::iterator end = allFlags().end();
-    for (; i != end; ++i) {
+    for (; i != end; ++i)
+    {
         SimpleFlag *f = dynamic_cast<SimpleFlag *>(i->second);
         if (f && f->tracing())
             ccprintf(os, "%s\n", f->name());

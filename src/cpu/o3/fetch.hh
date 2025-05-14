@@ -56,33 +56,34 @@
 #include "mem/port.hh"
 #include "sim/eventq.hh"
 #include "sim/probe/probe.hh"
+#include "cpu/o3/userinterrupt.hh"
 
 namespace gem5
 {
 
-struct BaseO3CPUParams;
+  struct BaseO3CPUParams;
 
-namespace o3
-{
+  namespace o3
+  {
 
-class CPU;
+    class CPU;
 
-/**
- * Fetch class handles both single threaded and SMT fetch. Its
- * width is specified by the parameters; each cycle it tries to fetch
- * that many instructions. It supports using a branch predictor to
- * predict direction and targets.
- * It supports the idling functionality of the CPU by indicating to
- * the CPU when it is active and inactive.
- */
-class Fetch
-{
-  public:
     /**
-     * IcachePort class for instruction fetch.
+     * Fetch class handles both single threaded and SMT fetch. Its
+     * width is specified by the parameters; each cycle it tries to fetch
+     * that many instructions. It supports using a branch predictor to
+     * predict direction and targets.
+     * It supports the idling functionality of the CPU by indicating to
+     * the CPU when it is active and inactive.
      */
-    class IcachePort : public RequestPort
+    class Fetch
     {
+    public:
+      /**
+       * IcachePort class for instruction fetch.
+       */
+      class IcachePort : public RequestPort
+      {
       protected:
         /** Pointer to fetch. */
         Fetch *fetch;
@@ -92,17 +93,16 @@ class Fetch
         IcachePort(Fetch *_fetch, CPU *_cpu);
 
       protected:
-
         /** Timing version of receive.  Handles setting fetch to the
          * proper status to start fetching. */
         virtual bool recvTimingResp(PacketPtr pkt);
 
         /** Handles doing a retry of a failed fetch. */
         virtual void recvReqRetry();
-    };
+      };
 
-    class FetchTranslation : public BaseMMU::Translation
-    {
+      class FetchTranslation : public BaseMMU::Translation
+      {
       protected:
         Fetch *fetch;
 
@@ -113,20 +113,20 @@ class Fetch
 
         void
         finish(const Fault &fault, const RequestPtr &req,
-            gem5::ThreadContext *tc, BaseMMU::Mode mode)
+               gem5::ThreadContext *tc, BaseMMU::Mode mode)
         {
-            assert(mode == BaseMMU::Execute);
-            fetch->finishTranslation(fault, req);
-            delete this;
+          assert(mode == BaseMMU::Execute);
+          fetch->finishTranslation(fault, req);
+          delete this;
         }
-    };
+      };
 
-  private:
-    /* Event to delay delivery of a fetch translation result in case of
-     * a fault and the nop to carry the fault cannot be generated
-     * immediately */
-    class FinishTranslationEvent : public Event
-    {
+    private:
+      /* Event to delay delivery of a fetch translation result in case of
+       * a fault and the nop to carry the fault cannot be generated
+       * immediately */
+      class FinishTranslationEvent : public Event
+      {
       private:
         Fetch *fetch;
         Fault fault;
@@ -135,7 +135,8 @@ class Fetch
       public:
         FinishTranslationEvent(Fetch *_fetch)
             : fetch(_fetch), req(nullptr)
-        {}
+        {
+        }
 
         void setFault(Fault _fault) { fault = _fault; }
         void setReq(const RequestPtr &_req) { req = _req; }
@@ -144,30 +145,30 @@ class Fetch
         void
         process()
         {
-            assert(fetch->numInst < fetch->fetchWidth);
-            fetch->finishTranslation(fault, req);
+          assert(fetch->numInst < fetch->fetchWidth);
+          fetch->finishTranslation(fault, req);
         }
 
         const char *
         description() const
         {
-            return "CPU FetchFinishTranslation";
+          return "CPU FetchFinishTranslation";
         }
       };
 
-  public:
-    /** Overall fetch status. Used to determine if the CPU can
-     * deschedule itsef due to a lack of activity.
-     */
-    enum FetchStatus
-    {
+    public:
+      /** Overall fetch status. Used to determine if the CPU can
+       * deschedule itsef due to a lack of activity.
+       */
+      enum FetchStatus
+      {
         Active,
         Inactive
-    };
+      };
 
-    /** Individual thread status. */
-    enum ThreadStatus
-    {
+      /** Individual thread status. */
+      enum ThreadStatus
+      {
         Running,
         Idle,
         Squashing,
@@ -180,356 +181,367 @@ class Fetch
         IcacheWaitRetry,
         IcacheAccessComplete,
         NoGoodAddr
-    };
+      };
 
-  private:
-    /** Fetch status. */
-    FetchStatus _status;
+    private:
+      /** Fetch status. */
+      FetchStatus _status;
 
-    /** Per-thread status. */
-    ThreadStatus fetchStatus[MaxThreads];
+      /** Per-thread status. */
+      ThreadStatus fetchStatus[MaxThreads];
 
-    /** Fetch policy. */
-    SMTFetchPolicy fetchPolicy;
+      /** Fetch policy. */
+      SMTFetchPolicy fetchPolicy;
 
-    /** List that has the threads organized by priority. */
-    std::list<ThreadID> priorityList;
+      /** List that has the threads organized by priority. */
+      std::list<ThreadID> priorityList;
 
-    /** Probe points. */
-    ProbePointArg<DynInstPtr> *ppFetch;
-    /** To probe when a fetch request is successfully sent. */
-    ProbePointArg<RequestPtr> *ppFetchRequestSent;
+      /** Probe points. */
+      ProbePointArg<DynInstPtr> *ppFetch;
+      /** To probe when a fetch request is successfully sent. */
+      ProbePointArg<RequestPtr> *ppFetchRequestSent;
 
-  public:
-    /** Fetch constructor. */
-    Fetch(CPU *_cpu, const BaseO3CPUParams &params);
+    public:
+      /** Fetch constructor. */
+      Fetch(CPU *_cpu, const BaseO3CPUParams &params);
 
-    /** Returns the name of fetch. */
-    std::string name() const;
+      /** Returns the name of fetch. */
+      std::string name() const;
 
+      /** Registers probes. */
+      void regProbePoints();
 
-    /** Registers probes. */
-    void regProbePoints();
+      /** Sets the main backwards communication time buffer pointer. */
+      void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
 
-    /** Sets the main backwards communication time buffer pointer. */
-    void setTimeBuffer(TimeBuffer<TimeStruct> *time_buffer);
+      /** Sets pointer to list of active threads. */
+      void setActiveThreads(std::list<ThreadID> *at_ptr);
 
-    /** Sets pointer to list of active threads. */
-    void setActiveThreads(std::list<ThreadID> *at_ptr);
+      /** Sets pointer to time buffer used to communicate to the next stage. */
+      void setFetchQueue(TimeBuffer<FetchStruct> *fq_ptr);
 
-    /** Sets pointer to time buffer used to communicate to the next stage. */
-    void setFetchQueue(TimeBuffer<FetchStruct> *fq_ptr);
+      /** Initialize stage. */
+      void startupStage();
 
-    /** Initialize stage. */
-    void startupStage();
+      /** Clear all thread-specific states*/
+      void clearStates(ThreadID tid);
 
-    /** Clear all thread-specific states*/
-    void clearStates(ThreadID tid);
+      /** Handles retrying the fetch access. */
+      void recvReqRetry();
 
-    /** Handles retrying the fetch access. */
-    void recvReqRetry();
+      /** Processes cache completion event. */
+      void processCacheCompletion(PacketPtr pkt);
 
-    /** Processes cache completion event. */
-    void processCacheCompletion(PacketPtr pkt);
+      /** Resume after a drain. */
+      void drainResume();
 
-    /** Resume after a drain. */
-    void drainResume();
+      /** Perform sanity checks after a drain. */
+      void drainSanityCheck() const;
 
-    /** Perform sanity checks after a drain. */
-    void drainSanityCheck() const;
+      /** Has the stage drained? */
+      bool isDrained() const;
 
-    /** Has the stage drained? */
-    bool isDrained() const;
+      /** Takes over from another CPU's thread. */
+      void takeOverFrom();
 
-    /** Takes over from another CPU's thread. */
-    void takeOverFrom();
+      /**
+       * Stall the fetch stage after reaching a safe drain point.
+       *
+       * The CPU uses this method to stop fetching instructions from a
+       * thread that has been drained. The drain stall is different from
+       * all other stalls in that it is signaled instantly from the
+       * commit stage (without the normal communication delay) when it
+       * has reached a safe point to drain from.
+       */
+      void drainStall(ThreadID tid);
 
-    /**
-     * Stall the fetch stage after reaching a safe drain point.
-     *
-     * The CPU uses this method to stop fetching instructions from a
-     * thread that has been drained. The drain stall is different from
-     * all other stalls in that it is signaled instantly from the
-     * commit stage (without the normal communication delay) when it
-     * has reached a safe point to drain from.
-     */
-    void drainStall(ThreadID tid);
+      /** Tells fetch to wake up from a quiesce instruction. */
+      void wakeFromQuiesce();
 
-    /** Tells fetch to wake up from a quiesce instruction. */
-    void wakeFromQuiesce();
+      /** For priority-based fetch policies, need to keep update priorityList */
+      void deactivateThread(ThreadID tid);
 
-    /** For priority-based fetch policies, need to keep update priorityList */
-    void deactivateThread(ThreadID tid);
-  private:
-    /** Reset this pipeline stage */
-    void resetStage();
+    private:
+      /** Reset this pipeline stage */
+      void resetStage();
 
-    /** Changes the status of this stage to active, and indicates this
-     * to the CPU.
-     */
-    void switchToActive();
+      /** Changes the status of this stage to active, and indicates this
+       * to the CPU.
+       */
+      void switchToActive();
 
-    /** Changes the status of this stage to inactive, and indicates
-     * this to the CPU.
-     */
-    void switchToInactive();
+      /** Changes the status of this stage to inactive, and indicates
+       * this to the CPU.
+       */
+      void switchToInactive();
 
-    /**
-     * Looks up in the branch predictor to see if the next PC should be
-     * either next PC+=MachInst or a branch target.
-     * @param next_PC Next PC variable passed in by reference.  It is
-     * expected to be set to the current PC; it will be updated with what
-     * the next PC will be.
-     * @param next_NPC Used for ISAs which use delay slots.
-     * @return Whether or not a branch was predicted as taken.
-     */
-    bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &pc);
+      /**
+       * Looks up in the branch predictor to see if the next PC should be
+       * either next PC+=MachInst or a branch target.
+       * @param next_PC Next PC variable passed in by reference.  It is
+       * expected to be set to the current PC; it will be updated with what
+       * the next PC will be.
+       * @param next_NPC Used for ISAs which use delay slots.
+       * @return Whether or not a branch was predicted as taken.
+       */
+      bool lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &pc);
 
-    /**
-     * Fetches the cache line that contains the fetch PC.  Returns any
-     * fault that happened.  Puts the data into the class variable
-     * fetchBuffer, which may not hold the entire fetched cache line.
-     * @param vaddr The memory address that is being fetched from.
-     * @param ret_fault The fault reference that will be set to the result of
-     * the icache access.
-     * @param tid Thread id.
-     * @param pc The actual PC of the current instruction.
-     * @return Any fault that occured.
-     */
-    bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
-    void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
+      /**
+       * Fetches the cache line that contains the fetch PC.  Returns any
+       * fault that happened.  Puts the data into the class variable
+       * fetchBuffer, which may not hold the entire fetched cache line.
+       * @param vaddr The memory address that is being fetched from.
+       * @param ret_fault The fault reference that will be set to the result of
+       * the icache access.
+       * @param tid Thread id.
+       * @param pc The actual PC of the current instruction.
+       * @return Any fault that occured.
+       */
+      bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
+      void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
+      /** Check if an interrupt is pending and that we need to handle
+       */
+      bool checkInterrupt(Addr pc) { return interruptPending; }
 
-    /** Check if an interrupt is pending and that we need to handle
-     */
-    bool checkInterrupt(Addr pc) { return interruptPending; }
+      void wastedUserInterrupt(ThreadID tid, Addr pc);
 
-    /** Squashes a specific thread and resets the PC. */
-    void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
-            ThreadID tid);
+      /** Squashes a specific thread and resets the PC. */
+      void doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
+                    ThreadID tid);
 
-    /** Squashes a specific thread and resets the PC. Also tells the CPU to
-     * remove any instructions between fetch and decode
-     *  that should be sqaushed.
-     */
-    void squashFromDecode(const PCStateBase &new_pc,
-                          const DynInstPtr squashInst,
-                          const InstSeqNum seq_num, ThreadID tid);
+      void updatePCWithoutSquash(const PCStateBase &new_pc, ThreadID tid);
 
-    /** Checks if a thread is stalled. */
-    bool checkStall(ThreadID tid) const;
+      void doSquashInterrupt(const PCStateBase &new_pc, const DynInstPtr squashInst,
+                             ThreadID tid);
 
-    /** Updates overall fetch stage status; to be called at the end of each
-     * cycle. */
-    FetchStatus updateFetchStatus();
+      /** Squashes a specific thread and resets the PC. Also tells the CPU to
+       * remove any instructions between fetch and decode
+       *  that should be sqaushed.
+       */
+      void squashFromDecode(const PCStateBase &new_pc,
+                            const DynInstPtr squashInst,
+                            const InstSeqNum seq_num, ThreadID tid);
 
-  public:
-    /** Squashes a specific thread and resets the PC. Also tells the CPU to
-     * remove any instructions that are not in the ROB. The source of this
-     * squash should be the commit stage.
-     */
-    void squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
-                DynInstPtr squashInst, ThreadID tid);
+      /** Checks if a thread is stalled. */
+      bool checkStall(ThreadID tid) const;
 
-    /** Ticks the fetch stage, processing all inputs signals and fetching
-     * as many instructions as possible.
-     */
-    void tick();
+      /** Updates overall fetch stage status; to be called at the end of each
+       * cycle. */
+      FetchStatus updateFetchStatus();
 
-    /** Checks all input signals and updates the status as necessary.
-     *  @return: Returns if the status has changed due to input signals.
-     */
-    bool checkSignalsAndUpdate(ThreadID tid);
+    public:
+      /** Squashes a specific thread and resets the PC. Also tells the CPU to
+       * remove any instructions that are not in the ROB. The source of this
+       * squash should be the commit stage.
+       */
+      void squash(const PCStateBase &new_pc, const InstSeqNum seq_num,
+                  DynInstPtr squashInst, ThreadID tid);
+      void squashInterrupt(const PCStateBase &new_pc, const InstSeqNum seq_num,
+                           DynInstPtr squashInst, ThreadID tid);
+      /** Ticks the fetch stage, processing all inputs signals and fetching
+       * as many instructions as possible.
+       */
+      void tick();
 
-    /** Does the actual fetching of instructions and passing them on to the
-     * next stage.
-     * @param status_change fetch() sets this variable if there was a status
-     * change (ie switching to IcacheMissStall).
-     */
-    void fetch(bool &status_change);
+      /** Checks all input signals and updates the status as necessary.
+       *  @return: Returns if the status has changed due to input signals.
+       */
+      bool checkSignalsAndUpdate(ThreadID tid);
 
-    /** Align a PC to the start of a fetch buffer block. */
-    Addr fetchBufferAlignPC(Addr addr)
-    {
+      /** Does the actual fetching of instructions and passing them on to the
+       * next stage.
+       * @param status_change fetch() sets this variable if there was a status
+       * change (ie switching to IcacheMissStall).
+       */
+      void fetch(bool &status_change);
+
+      /** Align a PC to the start of a fetch buffer block. */
+      Addr fetchBufferAlignPC(Addr addr)
+      {
         return (addr & ~(fetchBufferMask));
-    }
+      }
 
-    /** The decoder. */
-    InstDecoder *decoder[MaxThreads];
+      /** The decoder. */
+      InstDecoder *decoder[MaxThreads];
 
-    RequestPort &getInstPort() { return icachePort; }
+      RequestPort &getInstPort() { return icachePort; }
 
-  private:
-    DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
-            StaticInstPtr curMacroop, const PCStateBase &this_pc,
-            const PCStateBase &next_pc, bool trace);
+      uint64_t fetchedWhileWaiting = 0;
 
-    /** Returns the appropriate thread to fetch, given the fetch policy. */
-    ThreadID getFetchingThread();
+    private:
+      DynInstPtr buildInst(ThreadID tid, StaticInstPtr staticInst,
+                           StaticInstPtr curMacroop, const PCStateBase &this_pc,
+                           const PCStateBase &next_pc, bool trace);
 
-    /** Returns the appropriate thread to fetch using a round robin policy. */
-    ThreadID roundRobin();
+      /** Returns the appropriate thread to fetch, given the fetch policy. */
+      ThreadID getFetchingThread();
 
-    /** Returns the appropriate thread to fetch using the IQ count policy. */
-    ThreadID iqCount();
+      /** Returns the appropriate thread to fetch using a round robin policy. */
+      ThreadID roundRobin();
 
-    /** Returns the appropriate thread to fetch using the LSQ count policy. */
-    ThreadID lsqCount();
+      /** Returns the appropriate thread to fetch using the IQ count policy. */
+      ThreadID iqCount();
 
-    /** Returns the appropriate thread to fetch using the branch count
-     * policy. */
-    ThreadID branchCount();
+      /** Returns the appropriate thread to fetch using the LSQ count policy. */
+      ThreadID lsqCount();
 
-    /** Pipeline the next I-cache access to the current one. */
-    void pipelineIcacheAccesses(ThreadID tid);
+      /** Returns the appropriate thread to fetch using the branch count
+       * policy. */
+      ThreadID branchCount();
 
-    /** Profile the reasons of fetch stall. */
-    void profileStall(ThreadID tid);
+      /** Pipeline the next I-cache access to the current one. */
+      void pipelineIcacheAccesses(ThreadID tid);
 
-  private:
-    /** Pointer to the O3CPU. */
-    CPU *cpu;
+      /** Profile the reasons of fetch stall. */
+      void profileStall(ThreadID tid);
 
-    /** Time buffer interface. */
-    TimeBuffer<TimeStruct> *timeBuffer;
+    private:
+      /** Pointer to the O3CPU. */
+      CPU *cpu;
 
-    /** Wire to get decode's information from backwards time buffer. */
-    TimeBuffer<TimeStruct>::wire fromDecode;
+      /** Time buffer interface. */
+      TimeBuffer<TimeStruct> *timeBuffer;
 
-    /** Wire to get rename's information from backwards time buffer. */
-    TimeBuffer<TimeStruct>::wire fromRename;
+      /** Wire to get decode's information from backwards time buffer. */
+      TimeBuffer<TimeStruct>::wire fromDecode;
 
-    /** Wire to get iew's information from backwards time buffer. */
-    TimeBuffer<TimeStruct>::wire fromIEW;
+      /** Wire to get rename's information from backwards time buffer. */
+      TimeBuffer<TimeStruct>::wire fromRename;
 
-    /** Wire to get commit's information from backwards time buffer. */
-    TimeBuffer<TimeStruct>::wire fromCommit;
+      /** Wire to get iew's information from backwards time buffer. */
+      TimeBuffer<TimeStruct>::wire fromIEW;
 
-    //Might be annoying how this name is different than the queue.
-    /** Wire used to write any information heading to decode. */
-    TimeBuffer<FetchStruct>::wire toDecode;
+      /** Wire to get commit's information from backwards time buffer. */
+      TimeBuffer<TimeStruct>::wire fromCommit;
 
-    /** BPredUnit. */
-    branch_prediction::BPredUnit *branchPred;
+      // Might be annoying how this name is different than the queue.
+      /** Wire used to write any information heading to decode. */
+      TimeBuffer<FetchStruct>::wire toDecode;
 
-    std::unique_ptr<PCStateBase> pc[MaxThreads];
+      /** BPredUnit. */
+      branch_prediction::BPredUnit *branchPred;
 
-    Addr fetchOffset[MaxThreads];
+      std::unique_ptr<PCStateBase> pc[MaxThreads];
 
-    StaticInstPtr macroop[MaxThreads];
+      Addr fetchOffset[MaxThreads];
 
-    /** Can the fetch stage redirect from an interrupt on this instruction? */
-    bool delayedCommit[MaxThreads];
+      StaticInstPtr macroop[MaxThreads];
 
-    /** Memory request used to access cache. */
-    RequestPtr memReq[MaxThreads];
+      /** Can the fetch stage redirect from an interrupt on this instruction? */
+      bool delayedCommit[MaxThreads];
 
-    /** Variable that tracks if fetch has written to the time buffer this
-     * cycle. Used to tell CPU if there is activity this cycle.
-     */
-    bool wroteToTimeBuffer;
+      /** Memory request used to access cache. */
+      RequestPtr memReq[MaxThreads];
 
-    /** Tracks how many instructions has been fetched this cycle. */
-    int numInst;
+      /** Variable that tracks if fetch has written to the time buffer this
+       * cycle. Used to tell CPU if there is activity this cycle.
+       */
+      bool wroteToTimeBuffer;
 
-    /** Source of possible stalls. */
-    struct Stalls
-    {
+      /** Tracks how many instructions has been fetched this cycle. */
+      int numInst;
+
+      /** Source of possible stalls. */
+      struct Stalls
+      {
         bool decode;
         bool drain;
-    };
+      };
 
-    /** Tracks which stages are telling fetch to stall. */
-    Stalls stalls[MaxThreads];
+      /** Tracks which stages are telling fetch to stall. */
+      Stalls stalls[MaxThreads];
 
-    /** Decode to fetch delay. */
-    Cycles decodeToFetchDelay;
+      /** Decode to fetch delay. */
+      Cycles decodeToFetchDelay;
 
-    /** Rename to fetch delay. */
-    Cycles renameToFetchDelay;
+      /** Rename to fetch delay. */
+      Cycles renameToFetchDelay;
 
-    /** IEW to fetch delay. */
-    Cycles iewToFetchDelay;
+      /** IEW to fetch delay. */
+      Cycles iewToFetchDelay;
 
-    /** Commit to fetch delay. */
-    Cycles commitToFetchDelay;
+      /** Commit to fetch delay. */
+      Cycles commitToFetchDelay;
 
-    /** The width of fetch in instructions. */
-    unsigned fetchWidth;
+      /** The width of fetch in instructions. */
+      unsigned fetchWidth;
 
-    /** The width of decode in instructions. */
-    unsigned decodeWidth;
+      /** The width of decode in instructions. */
+      unsigned decodeWidth;
 
-    /** Is the cache blocked?  If so no threads can access it. */
-    bool cacheBlocked;
+      /** Is the cache blocked?  If so no threads can access it. */
+      bool cacheBlocked;
 
-    /** The packet that is waiting to be retried. */
-    PacketPtr retryPkt;
+      /** The packet that is waiting to be retried. */
+      PacketPtr retryPkt;
 
-    /** The thread that is waiting on the cache to tell fetch to retry. */
-    ThreadID retryTid;
+      /** The thread that is waiting on the cache to tell fetch to retry. */
+      ThreadID retryTid;
 
-    /** Cache block size. */
-    unsigned int cacheBlkSize;
+      /** Cache block size. */
+      unsigned int cacheBlkSize;
 
-    /** The size of the fetch buffer in bytes. The fetch buffer
-     *  itself may be smaller than a cache line.
-     */
-    unsigned fetchBufferSize;
+      /** The size of the fetch buffer in bytes. The fetch buffer
+       *  itself may be smaller than a cache line.
+       */
+      unsigned fetchBufferSize;
 
-    /** Mask to align a fetch address to a fetch buffer boundary. */
-    Addr fetchBufferMask;
+      /** Mask to align a fetch address to a fetch buffer boundary. */
+      Addr fetchBufferMask;
 
-    /** The fetch data that is being fetched and buffered. */
-    uint8_t *fetchBuffer[MaxThreads];
+      /** The fetch data that is being fetched and buffered. */
+      uint8_t *fetchBuffer[MaxThreads];
 
-    /** The PC of the first instruction loaded into the fetch buffer. */
-    Addr fetchBufferPC[MaxThreads];
+      /** The PC of the first instruction loaded into the fetch buffer. */
+      Addr fetchBufferPC[MaxThreads];
 
-    /** The size of the fetch queue in micro-ops */
-    unsigned fetchQueueSize;
+      /** The size of the fetch queue in micro-ops */
+      unsigned fetchQueueSize;
 
-    /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
-    std::deque<DynInstPtr> fetchQueue[MaxThreads];
+      /** Queue of fetched instructions. Per-thread to prevent HoL blocking. */
+      std::deque<DynInstPtr> fetchQueue[MaxThreads];
 
-    /** Whether or not the fetch buffer data is valid. */
-    bool fetchBufferValid[MaxThreads];
+      /** Whether or not the fetch buffer data is valid. */
+      bool fetchBufferValid[MaxThreads];
 
-    /** Size of instructions. */
-    int instSize;
+      /** Size of instructions. */
+      int instSize;
 
-    /** Icache stall statistics. */
-    Counter lastIcacheStall[MaxThreads];
+      /** Icache stall statistics. */
+      Counter lastIcacheStall[MaxThreads];
 
-    /** List of Active Threads */
-    std::list<ThreadID> *activeThreads;
+      /** List of Active Threads */
+      std::list<ThreadID> *activeThreads;
 
-    /** Number of threads. */
-    ThreadID numThreads;
+      /** Number of threads. */
+      ThreadID numThreads;
 
-    /** Number of threads that are actively fetching. */
-    ThreadID numFetchingThreads;
+      /** Number of threads that are actively fetching. */
+      ThreadID numFetchingThreads;
 
-    /** Thread ID being fetched. */
-    ThreadID threadFetched;
+      /** Thread ID being fetched. */
+      ThreadID threadFetched;
 
-    /** Checks if there is an interrupt pending.  If there is, fetch
-     * must stop once it is not fetching PAL instructions.
-     */
-    bool interruptPending;
+      /** Checks if there is an interrupt pending.  If there is, fetch
+       * must stop once it is not fetching PAL instructions.
+       */
+      bool interruptPending;
 
-    /** Instruction port. Note that it has to appear after the fetch stage. */
-    IcachePort icachePort;
+      /** Instruction port. Note that it has to appear after the fetch stage. */
+      IcachePort icachePort;
 
-    /** Set to true if a pipelined I-cache request should be issued. */
-    bool issuePipelinedIfetch[MaxThreads];
+      /** Set to true if a pipelined I-cache request should be issued. */
+      bool issuePipelinedIfetch[MaxThreads];
 
-    /** Event used to delay fault generation of translation faults */
-    FinishTranslationEvent finishTranslationEvent;
+      /** Event used to delay fault generation of translation faults */
+      FinishTranslationEvent finishTranslationEvent;
 
-  protected:
-    struct FetchStatGroup : public statistics::Group
-    {
+      UserInterruptProcessor userInterruptProcessor;
+
+    protected:
+      struct FetchStatGroup : public statistics::Group
+      {
         FetchStatGroup(CPU *cpu, Fetch *fetch);
         // @todo: Consider making these
         // vectors and tracking on a per thread basis.
@@ -575,10 +587,10 @@ class Fetch
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
-    } fetchStats;
-};
+      } fetchStats;
+    };
 
-} // namespace o3
+  } // namespace o3
 } // namespace gem5
 
 #endif //__CPU_O3_FETCH_HH__

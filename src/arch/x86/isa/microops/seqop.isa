@@ -171,7 +171,12 @@ let {{
 
         iop = InstObjParams("eret", "Eret" + suffix,
                 "X86ISA::InstOperands<X86ISA::MicroCondBase>",
-                {"code": "", "else_code": "", "cond_test": cond}, flags)
+                {"code": "if(reinterpret_cast<o3::CPU*>(xc->tcBase()->getCpuPtr())->inDelivery){ \
+                    auto ptr = reinterpret_cast<o3::CPU*>(xc->tcBase()->getCpuPtr()); \
+                    _commitCallback = [ptr](){ \
+                    ptr->calculateTicks();}; \
+                    commitCallbackExists = true; \
+                }", "else_code": "", "cond_test": cond}, flags)
         exec_output += SeqOpExecute.subst(iop)
         header_output += EretDeclare.subst(iop)
 }};

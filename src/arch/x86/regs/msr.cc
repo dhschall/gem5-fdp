@@ -96,6 +96,7 @@ const MsrMap::value_type msrMapData[] = {
     MsrVal(0x415, misc_reg::Mc5Status),
     MsrVal(0x419, misc_reg::Mc6Status),
     MsrVal(0x41D, misc_reg::Mc7Status),
+    MsrVal(0x421, misc_reg::Mc8Status),
     MsrVal(0x402, misc_reg::Mc0Addr),
     MsrVal(0x406, misc_reg::Mc1Addr),
     MsrVal(0x40A, misc_reg::Mc2Addr),
@@ -104,6 +105,7 @@ const MsrMap::value_type msrMapData[] = {
     MsrVal(0x416, misc_reg::Mc5Addr),
     MsrVal(0x41A, misc_reg::Mc6Addr),
     MsrVal(0x41E, misc_reg::Mc7Addr),
+    MsrVal(0x426, misc_reg::Mc8Addr),
     MsrVal(0x403, misc_reg::Mc0Misc),
     MsrVal(0x407, misc_reg::Mc1Misc),
     MsrVal(0x40B, misc_reg::Mc2Misc),
@@ -112,6 +114,28 @@ const MsrMap::value_type msrMapData[] = {
     MsrVal(0x417, misc_reg::Mc5Misc),
     MsrVal(0x41B, misc_reg::Mc6Misc),
     MsrVal(0x41F, misc_reg::Mc7Misc),
+    MsrVal(0x423, misc_reg::Mc8Misc),
+    MsrVal(0x985, misc_reg::UintrRR),
+    MsrVal(0x986, misc_reg::UintrHandler),
+    MsrVal(0x987, misc_reg::UintrStackAdjust),
+    MsrVal(0x988, misc_reg::UintrMisc),
+    MsrVal(0x989, misc_reg::UintrPD),
+    MsrVal(0x98A, misc_reg::UintrTT),
+    MsrVal(0x990, misc_reg::UintrPC),
+    MsrVal(0x991, misc_reg::UintrOngoing),
+    MsrVal(0x992, misc_reg::UintrPCNotConsumed),
+    MsrVal(0x993, misc_reg::UintrVec),
+    MsrVal(0x994, misc_reg::UintrTimerStatus),
+    MsrVal(0x995, misc_reg::UintrPciPC),
+    MsrVal(0x996, misc_reg::UintrPciRFLAGS),
+    MsrVal(0x997, misc_reg::UintrPciRSP),
+    MsrVal(0x998, misc_reg::UintrPciPending),
+    MsrVal(0x998, misc_reg::UintrPciON),
+    MsrVal(0x999, misc_reg::UintrPciLock),
+    MsrVal(0x99A, misc_reg::UintrPciConsumed),
+    MsrVal(0x99B, misc_reg::UintrPciDisable),
+    MsrVal(0x99C, misc_reg::UintrPciEarlyExit),
+
     MsrVal(0xC0000080, misc_reg::Efer),
     MsrVal(0xC0000081, misc_reg::Star),
     MsrVal(0xC0000082, misc_reg::Lstar),
@@ -139,8 +163,7 @@ const MsrMap::value_type msrMapData[] = {
     MsrVal(0xC0010114, misc_reg::VmCr),
     MsrVal(0xC0010115, misc_reg::Ignne),
     MsrVal(0xC0010116, misc_reg::SmmCtl),
-    MsrVal(0xC0010117, misc_reg::VmHsavePa)
-};
+    MsrVal(0xC0010117, misc_reg::VmHsavePa)};
 
 static const unsigned msrMapSize = sizeof(msrMapData) / sizeof(msrMapData[0]);
 

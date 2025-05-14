@@ -51,6 +51,7 @@ class tlm_extension_base
     virtual tlm_extension_base *clone() const = 0;
     virtual void free() { delete this; }
     virtual void copy_from(tlm_extension_base const &) = 0;
+
   protected:
     virtual ~tlm_extension_base() {}
     static unsigned int register_extension(const std::type_info &);
@@ -115,23 +116,23 @@ extern template class tlm_array<tlm_extension_base *>;
 
 class tlm_generic_payload
 {
-  public:
-    tlm_generic_payload();
-    explicit tlm_generic_payload(tlm_mm_interface *mm);
+public:
+  tlm_generic_payload();
+  explicit tlm_generic_payload(tlm_mm_interface *mm);
 
-    void
-    acquire()
-    {
-        sc_assert(m_mm != 0);
-        m_ref_count++;
-    }
+  void
+  acquire()
+  {
+    sc_assert(m_mm != 0);
+    m_ref_count++;
+  }
 
-    void
-    release()
-    {
-        sc_assert(m_mm != 0 && m_ref_count > 0);
-        if (--m_ref_count == 0)
-            m_mm->free(this);
+  void
+  release()
+  {
+    sc_assert(m_mm != 0 && m_ref_count > 0);
+    if (--m_ref_count == 0)
+      m_mm->free(this);
     }
 
     int get_ref_count() const { return m_ref_count; }
@@ -144,9 +145,11 @@ class tlm_generic_payload
   private:
     // Disabled copy ctor and assignment operator.
     tlm_generic_payload(const tlm_generic_payload &x);
-    tlm_generic_payload &operator = (const tlm_generic_payload &x);
+    tlm_generic_payload &operator=(const tlm_generic_payload &x);
 
   public:
+    uint64_t tick;
+    void *cpu;
     // Non-virtual deep-copying of the object.
     void deep_copy_from(const tlm_generic_payload &other);
 
@@ -157,7 +160,7 @@ class tlm_generic_payload
     // command.
 
     void update_original_from(const tlm_generic_payload &other,
-                              bool use_byte_enable_on_read=true);
+                              bool use_byte_enable_on_read = true);
 
     void update_extensions_from(const tlm_generic_payload &other);
 
@@ -198,12 +201,12 @@ class tlm_generic_payload
     tlm_response_status
     get_response_status() const
     {
-        return m_response_status;
+      return m_response_status;
     }
     void
     set_response_status(const tlm_response_status response_status)
     {
-        m_response_status = response_status;
+      m_response_status = response_status;
     }
     std::string get_response_string() const;
 
@@ -212,7 +215,7 @@ class tlm_generic_payload
     void
     set_streaming_width(const unsigned int streaming_width)
     {
-        m_streaming_width = streaming_width;
+      m_streaming_width = streaming_width;
     }
 
     // Byte enable related methods.
@@ -220,17 +223,17 @@ class tlm_generic_payload
     void
     set_byte_enable_ptr(unsigned char *byte_enable)
     {
-        m_byte_enable = byte_enable;
+      m_byte_enable = byte_enable;
     }
     unsigned int
     get_byte_enable_length() const
     {
-        return m_byte_enable_length;
+      return m_byte_enable_length;
     }
     void
     set_byte_enable_length(const unsigned int byte_enable_length)
     {
-        m_byte_enable_length = byte_enable_length;
+      m_byte_enable_length = byte_enable_length;
     }
 
     // This is the "DMI-hint" a slave can set this to true if it
@@ -238,12 +241,12 @@ class tlm_generic_payload
     void
     set_dmi_allowed(bool dmi_allowed)
     {
-        m_dmi = dmi_allowed;
+      m_dmi = dmi_allowed;
     }
     bool
     is_dmi_allowed() const
     {
-        return m_dmi;
+      return m_dmi;
     }
 
     // Use full set of attributes in DMI/debug?
@@ -339,12 +342,12 @@ class tlm_generic_payload
     T *
     set_extension(T *ext)
     {
-        return static_cast<T *>(set_extension(T::ID, ext));
+      return static_cast<T *>(set_extension(T::ID, ext));
     }
 
     // Non-templatized version with manual index:
     tlm_extension_base *set_extension(
-            unsigned int index, tlm_extension_base *ext);
+        unsigned int index, tlm_extension_base *ext);
 
     // Stick the pointer to an extension into the vector, return the
     // previous value and schedule its release.
@@ -352,21 +355,21 @@ class tlm_generic_payload
     T *
     set_auto_extension(T *ext)
     {
-        return static_cast<T *>(set_auto_extension(T::ID, ext));
+      return static_cast<T *>(set_auto_extension(T::ID, ext));
     }
 
     // Non-templatized version with manual index:
     tlm_extension_base *set_auto_extension(
-            unsigned int index, tlm_extension_base *ext);
+        unsigned int index, tlm_extension_base *ext);
 
     // Check for an extension, ext will point to 0 if not present.
     template <typename T>
-    void get_extension(T *& ext) const { ext = get_extension<T>(); }
+    void get_extension(T *&ext) const { ext = get_extension<T>(); }
     template <typename T>
     T *
     get_extension() const
     {
-        return static_cast<T*>(get_extension(T::ID));
+      return static_cast<T *>(get_extension(T::ID));
     }
     // Non-templatized version with manual index:
     tlm_extension_base *get_extension(unsigned int index) const;
@@ -391,7 +394,7 @@ class tlm_generic_payload
     template <typename T>
     void release_extension(T *ext)
     {
-        release_extension<T>();
+      release_extension<T>();
     }
 
     // This call removes the extension from the txn and does call free() or
@@ -400,7 +403,7 @@ class tlm_generic_payload
     template <typename T>
     void release_extension()
     {
-        release_extension(T::ID);
+      release_extension(T::ID);
     }
 
   private:
@@ -421,7 +424,7 @@ class tlm_generic_payload
     tlm_array<tlm_extension_base *> m_extensions;
     tlm_mm_interface *m_mm;
     unsigned int m_ref_count;
-};
+  };
 
 } // namespace tlm
 

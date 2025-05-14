@@ -55,11 +55,16 @@
 
 namespace gem5
 {
+  struct AdaptiveDdioFlag
+  {
+    bool bypassMlc = false;
+    bool bypassLlc = false;
+    bool bypassCache = false;
+  };
+  class ClockedObject;
 
-class ClockedObject;
-
-class DmaPort : public RequestPort, public Drainable
-{
+  class DmaPort : public RequestPort, public Drainable
+  {
   private:
     AddrRangeMap<MemBackdoorPtr, 1> memBackdoors;
 
@@ -81,54 +86,55 @@ class DmaPort : public RequestPort, public Drainable
 
     struct DmaReqState : public Packet::SenderState
     {
-        /** Event to call on the device when this transaction (all packets)
-         * complete. */
-        Event *completionEvent;
+      /** Event to call on the device when this transaction (all packets)
+       * complete. */
+      Event *completionEvent;
 
-        /** Event to call on the device when this transaction is aborted. */
-        Event *abortEvent;
+      /** Event to call on the device when this transaction is aborted. */
+      Event *abortEvent;
 
-        /** Whether this request was aborted. */
-        bool aborted = false;
+      /** Whether this request was aborted. */
+      bool aborted = false;
 
-        /** Total number of bytes that this transaction involves. */
-        const Addr totBytes;
+      /** Total number of bytes that this transaction involves. */
+      const Addr totBytes;
 
-        /** Number of bytes that have been acked for this transaction. */
-        Addr numBytes = 0;
+      /** Number of bytes that have been acked for this transaction. */
+      Addr numBytes = 0;
 
-        /** Amount to delay completion of dma by */
-        const Tick delay;
+      /** Amount to delay completion of dma by */
+      const Tick delay;
 
-        /** Object to track what chunks of bytes to send at a time. */
-        ChunkGenerator gen;
+      /** Object to track what chunks of bytes to send at a time. */
+      ChunkGenerator gen;
 
-        /** Pointer to a buffer for the data. */
-        uint8_t *const data = nullptr;
+      /** Pointer to a buffer for the data. */
+      uint8_t *const data = nullptr;
 
-        /** The flags to use for requests. */
-        const Request::Flags flags;
+      /** The flags to use for requests. */
+      const Request::Flags flags;
 
-        /** The requestor ID to use for requests. */
-        const RequestorID id;
+      /** The requestor ID to use for requests. */
+      const RequestorID id;
 
-        /** Stream IDs. */
-        const uint32_t sid;
-        const uint32_t ssid;
+      /** Stream IDs. */
+      const uint32_t sid;
+      const uint32_t ssid;
 
-        /** Command for the request. */
-        const Packet::Command cmd;
+      /** Command for the request. */
+      const Packet::Command cmd;
+      bool is_ddio_req = false;
+      int adq_idx = -1; // -1 is for Not IDIO mode (legacy DDIO)
+      DmaReqState(Packet::Command _cmd, Addr addr, Addr chunk_sz, Addr tb,
+                  uint8_t *_data, Request::Flags _flags, RequestorID _id,
+                  uint32_t _sid, uint32_t _ssid, Event *ce, Tick _delay, bool _is_ddio_req, int _adq_idx, Event *ae = nullptr)
+          : completionEvent(ce), abortEvent(ae), totBytes(tb), delay(_delay),
+            gen(addr, tb, chunk_sz), data(_data), flags(_flags), id(_id),
+            sid(_sid), ssid(_ssid), cmd(_cmd), is_ddio_req(_is_ddio_req), adq_idx(_adq_idx)
+      {
+      }
 
-        DmaReqState(Packet::Command _cmd, Addr addr, Addr chunk_sz, Addr tb,
-                    uint8_t *_data, Request::Flags _flags, RequestorID _id,
-                    uint32_t _sid, uint32_t _ssid, Event *ce, Tick _delay,
-                    Event *ae=nullptr)
-            : completionEvent(ce), abortEvent(ae), totBytes(tb), delay(_delay),
-              gen(addr, tb, chunk_sz), data(_data), flags(_flags), id(_id),
-              sid(_sid), ssid(_ssid), cmd(_cmd)
-        {}
-
-        PacketPtr createPacket();
+      PacketPtr createPacket();
     };
 
     /** Send the next packet from a DMA request in atomic mode. */
@@ -149,8 +155,8 @@ class DmaPort : public RequestPort, public Drainable
      * @param pkt Response packet to handler
      * @param delay Additional delay for scheduling the completion event
      */
-    void handleRespPacket(PacketPtr pkt, Tick delay=0);
-    void handleResp(DmaReqState *state, Addr addr, Addr size, Tick delay=0);
+    void handleRespPacket(PacketPtr pkt, Tick delay = 0);
+    void handleResp(DmaReqState *state, Addr addr, Addr size, Tick delay = 0);
 
   public:
     /** The device that owns this port. */
@@ -190,22 +196,51 @@ class DmaPort : public RequestPort, public Drainable
     const int cacheLineSize;
 
   protected:
-
     bool recvTimingResp(PacketPtr pkt) override;
     void recvReqRetry() override;
 
   public:
-
-    DmaPort(ClockedObject *dev, System *s, uint32_t sid=0, uint32_t ssid=0);
+    DmaPort(ClockedObject *dev, System *s, uint32_t sid = 0, uint32_t ssid = 0);
 
     void
     dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
-              uint8_t *data, Tick delay, Request::Flags flag=0);
+              uint8_t *data, Tick delay, Request::Flags flag = 0);
 
     void
     dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
               uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
-              Request::Flags flag=0);
+              Request::Flags flag = 0);
+
+    void
+    ddioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+               uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag, Request::Flags flag = 0);
+
+    void
+    ddioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+               uint8_t *data, uint32_t sid, uint32_t ssid,
+               Tick delay, AdaptiveDdioFlag structDdioFlag, Request::Flags flag = 0);
+
+    void
+    ddioActionAdq(Packet::Command cmd, Addr addr, int size, Event *event,
+                  uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag,
+                  Request::Flags flag = 0, bool is_ddio = false, int qnum = -1);
+
+    void
+    ddioActionAdq(Packet::Command cmd, Addr addr, int size, Event *event,
+                  uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
+                  AdaptiveDdioFlag structDdioFlag,
+                  Request::Flags flag = 0, bool is_ddio = false, int qnum = -1);
+
+    void
+    IdioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+               uint8_t *data, Tick delay, AdaptiveDdioFlag structDdioFlag,
+               Request::Flags flag = 0, bool is_ddio = false, int qnum = -1);
+
+    void
+    IdioAction(Packet::Command cmd, Addr addr, int size, Event *event,
+               uint8_t *data, uint32_t sid, uint32_t ssid, Tick delay,
+               AdaptiveDdioFlag structDdioFlag,
+               Request::Flags flag = 0, bool is_ddio = false, int qnum = -1);
 
     // Abort and remove any pending DMA transmissions.
     void abortPending();
@@ -213,46 +248,98 @@ class DmaPort : public RequestPort, public Drainable
     bool dmaPending() const { return pendingCount > 0; }
 
     DrainState drain() override;
-};
+  };
 
-class DmaDevice : public PioDevice
-{
-   protected:
+  class DmaDevice : public PioDevice
+  {
+  protected:
     DmaPort dmaPort;
 
   public:
     typedef DmaDeviceParams Params;
     DmaDevice(const Params &p);
     virtual ~DmaDevice() = default;
-
+    virtual AdaptiveDdioFlag getAdaptiveDdioFlag(void *opts)
+    {
+      AdaptiveDdioFlag res;
+      return res;
+    }
     void
     dmaWrite(Addr addr, int size, Event *event, uint8_t *data,
-             uint32_t sid, uint32_t ssid, Tick delay=0)
+             uint32_t sid, uint32_t ssid, Tick delay = 0)
     {
-        dmaPort.dmaAction(MemCmd::WriteReq, addr, size, event, data,
-                          sid, ssid, delay);
+      dmaPort.dmaAction(MemCmd::WriteReq, addr, size, event, data,
+                        sid, ssid, delay);
     }
 
     void
-    dmaWrite(Addr addr, int size, Event *event, uint8_t *data, Tick delay=0)
+    dmaWrite(Addr addr, int size, Event *event, uint8_t *data, Tick delay = 0)
     {
-        dmaPort.dmaAction(MemCmd::WriteReq, addr, size, event, data, delay);
+      dmaPort.dmaAction(MemCmd::WriteReq, addr, size, event, data, delay);
     }
 
     void
     dmaRead(Addr addr, int size, Event *event, uint8_t *data,
-            uint32_t sid, uint32_t ssid, Tick delay=0)
+            uint32_t sid, uint32_t ssid, Tick delay = 0)
     {
-        dmaPort.dmaAction(MemCmd::ReadReq, addr, size, event, data,
-                          sid, ssid, delay);
+      dmaPort.dmaAction(MemCmd::ReadReq, addr, size, event, data,
+                        sid, ssid, delay);
     }
 
     void
-    dmaRead(Addr addr, int size, Event *event, uint8_t *data, Tick delay=0)
+    dmaRead(Addr addr, int size, Event *event, uint8_t *data, Tick delay = 0)
     {
-        dmaPort.dmaAction(MemCmd::ReadReq, addr, size, event, data, delay);
+      dmaPort.dmaAction(MemCmd::ReadReq, addr, size, event, data, delay);
+    }
+    void ddioWrite(Addr addr, int size, Event *event, uint8_t *data,
+                   Tick delay = 0, void *ddioflag = 0)
+    {
+      dmaPort.ddioAction(MemCmd::WriteReq, addr, size, event, data, delay, getAdaptiveDdioFlag(ddioflag), 0);
     }
 
+    void ddioWrite(Addr addr, int size, Event *event, uint8_t *data, uint32_t sid, uint32_t ssid,
+                   Tick delay = 0, void *ddioflag = 0)
+    {
+      dmaPort.ddioAction(MemCmd::WriteReq, addr, size, event, data, sid, ssid, delay, getAdaptiveDdioFlag(ddioflag), 0);
+    }
+
+    void ddioRead(Addr addr, int size, Event *event, uint8_t *data,
+                  Tick delay = 0, void *ddioflag = 0)
+    {
+      dmaPort.ddioAction(MemCmd::ReadReq, addr, size, event, data, delay, getAdaptiveDdioFlag(ddioflag), 0);
+    }
+
+    void ddioRead(Addr addr, int size, Event *event, uint8_t *data, uint32_t sid, uint32_t ssid,
+                  Tick delay = 0, void *ddioflag = 0)
+    {
+      dmaPort.ddioAction(MemCmd::ReadReq, addr, size, event, data, sid, ssid, delay, getAdaptiveDdioFlag(ddioflag), 0);
+    }
+
+    void IdioWrite(Addr addr, int size, Event *event, uint8_t *data, uint32_t sid, uint32_t ssid,
+                   Tick delay = 0, void *ddioflag = 0, int qnum = -1)
+    {
+      // DPRINTF(AdaptiveDdioOtf, "ddioWriteAdq qnum %d\n", qnum);
+      dmaPort.IdioAction(MemCmd::WriteReq, addr, size, event, data, sid, ssid, delay, getAdaptiveDdioFlag(ddioflag), 0, true, qnum);
+    }
+
+    void IdioWrite(Addr addr, int size, Event *event, uint8_t *data,
+                   Tick delay = 0, void *ddioflag = 0, int qnum = -1)
+    {
+      // DPRINTF(AdaptiveDdioOtf, "ddioWriteAdq qnum %d\n", qnum);
+      dmaPort.IdioAction(MemCmd::WriteReq, addr, size, event, data, delay, getAdaptiveDdioFlag(ddioflag), 0, true, qnum);
+    }
+
+    void IdioRead(Addr addr, int size, Event *event, uint8_t *data, uint32_t sid, uint32_t ssid,
+                  Tick delay = 0, void *ddioflag = 0, int qnum = -1)
+    {
+      dmaPort.IdioAction(MemCmd::ReadReq, addr, size, event, data, sid, ssid, delay, getAdaptiveDdioFlag(ddioflag), 0, true, qnum);
+    }
+
+    void IdioRead(Addr addr, int size, Event *event, uint8_t *data,
+                  Tick delay = 0, void *ddioflag = 0, int qnum = -1)
+    {
+      dmaPort.IdioAction(MemCmd::ReadReq, addr, size, event, data, delay, getAdaptiveDdioFlag(ddioflag), 0, true, qnum);
+    }
     bool dmaPending() const { return dmaPort.dmaPending(); }
 
     void init() override;
@@ -260,20 +347,19 @@ class DmaDevice : public PioDevice
     unsigned int cacheBlockSize() const { return sys->cacheLineSize(); }
 
     Port &getPort(const std::string &if_name,
-                  PortID idx=InvalidPortID) override;
+                  PortID idx = InvalidPortID) override;
+  };
 
-};
-
-/**
- * DMA callback class.
- *
- * Allows one to register for a callback event after a sequence of (potentially
- * non-contiguous) DMA transfers on a DmaPort completes.  Derived classes must
- * implement the process() method and use getChunkEvent() to allocate a
- * callback event for each participating DMA.
- */
-class DmaCallback : public Drainable
-{
+  /**
+   * DMA callback class.
+   *
+   * Allows one to register for a callback event after a sequence of (potentially
+   * non-contiguous) DMA transfers on a DmaPort completes.  Derived classes must
+   * implement the process() method and use getChunkEvent() to allocate a
+   * callback event for each participating DMA.
+   */
+  class DmaCallback : public Drainable
+  {
   public:
     virtual const std::string name() const { return "DmaCallback"; }
 
@@ -287,7 +373,7 @@ class DmaCallback : public Drainable
     DrainState
     drain() override
     {
-        return count ? DrainState::Draining : DrainState::Drained;
+      return count ? DrainState::Draining : DrainState::Drained;
     }
 
   protected:
@@ -309,17 +395,17 @@ class DmaCallback : public Drainable
     void
     chunkComplete()
     {
-        if (--count == 0) {
-            process();
-            // Need to notify DrainManager that this object is finished
-            // draining, even though it is immediately deleted.
-            signalDrainDone();
-            delete this;
-        }
+      if (--count == 0)
+      {
+        process();
+        // Need to notify DrainManager that this object is finished
+        // draining, even though it is immediately deleted.
+        signalDrainDone();
+        delete this;
+      }
     }
 
   public:
-
     /**
      * Request a chunk event.  Chunks events should be provided to each DMA
      * request that wishes to participate in this DmaCallback.
@@ -327,62 +413,64 @@ class DmaCallback : public Drainable
     Event *
     getChunkEvent()
     {
-        ++count;
-        return new EventFunctionWrapper([this]{ chunkComplete(); }, name(),
-                                        true);
+      ++count;
+      return new EventFunctionWrapper([this]
+                                      { chunkComplete(); },
+                                      name(),
+                                      true);
     }
-};
+  };
 
-/**
- * Buffered DMA engine helper class
- *
- * This class implements a simple DMA engine that feeds a FIFO
- * buffer. The size of the buffer, the maximum number of pending
- * requests and the maximum request size are all set when the engine
- * is instantiated.
- *
- * An <i>asynchronous</i> transfer of a <i>block</i> of data
- * (designated by a start address and a size) is started by calling
- * the startFill() method. The DMA engine will aggressively try to
- * keep the internal FIFO full. As soon as there is room in the FIFO
- * for more data <i>and</i> there are free request slots, a new fill
- * will be started.
- *
- * Data in the FIFO can be read back using the get() and tryGet()
- * methods. Both request a block of data from the FIFO. However, get()
- * panics if the block cannot be satisfied, while tryGet() simply
- * returns false. The latter call makes it possible to implement
- * custom buffer underrun handling.
- *
- * A simple use case would be something like this:
- * \code{.cpp}
- *     // Create a DMA engine with a 1KiB buffer. Issue up to 8 concurrent
- *     // uncacheable 64 byte (maximum) requests.
- *     DmaReadFifo *dma = new DmaReadFifo(port, 1024, 64, 8,
- *                                        Request::UNCACHEABLE);
- *
- *     // Start copying 4KiB data from 0xFF000000
- *     dma->startFill(0xFF000000, 0x1000);
- *
- *     // Some time later when there is data in the FIFO.
- *     uint8_t data[8];
- *     dma->get(data, sizeof(data))
- * \endcode
- *
- *
- * The DMA engine allows new blocks to be requested as soon as the
- * last request for a block has been sent (i.e., there is no need to
- * wait for pending requests to complete). This can be queried with
- * the atEndOfBlock() method and more advanced implementations may
- * override the onEndOfBlock() callback.
- */
-class DmaReadFifo : public Drainable, public Serializable
-{
+  /**
+   * Buffered DMA engine helper class
+   *
+   * This class implements a simple DMA engine that feeds a FIFO
+   * buffer. The size of the buffer, the maximum number of pending
+   * requests and the maximum request size are all set when the engine
+   * is instantiated.
+   *
+   * An <i>asynchronous</i> transfer of a <i>block</i> of data
+   * (designated by a start address and a size) is started by calling
+   * the startFill() method. The DMA engine will aggressively try to
+   * keep the internal FIFO full. As soon as there is room in the FIFO
+   * for more data <i>and</i> there are free request slots, a new fill
+   * will be started.
+   *
+   * Data in the FIFO can be read back using the get() and tryGet()
+   * methods. Both request a block of data from the FIFO. However, get()
+   * panics if the block cannot be satisfied, while tryGet() simply
+   * returns false. The latter call makes it possible to implement
+   * custom buffer underrun handling.
+   *
+   * A simple use case would be something like this:
+   * \code{.cpp}
+   *     // Create a DMA engine with a 1KiB buffer. Issue up to 8 concurrent
+   *     // uncacheable 64 byte (maximum) requests.
+   *     DmaReadFifo *dma = new DmaReadFifo(port, 1024, 64, 8,
+   *                                        Request::UNCACHEABLE);
+   *
+   *     // Start copying 4KiB data from 0xFF000000
+   *     dma->startFill(0xFF000000, 0x1000);
+   *
+   *     // Some time later when there is data in the FIFO.
+   *     uint8_t data[8];
+   *     dma->get(data, sizeof(data))
+   * \endcode
+   *
+   *
+   * The DMA engine allows new blocks to be requested as soon as the
+   * last request for a block has been sent (i.e., there is no need to
+   * wait for pending requests to complete). This can be queried with
+   * the atEndOfBlock() method and more advanced implementations may
+   * override the onEndOfBlock() callback.
+   */
+  class DmaReadFifo : public Drainable, public Serializable
+  {
   public:
     DmaReadFifo(DmaPort &port, size_t size,
                 unsigned max_req_size,
                 unsigned max_pending,
-                Request::Flags flags=0);
+                Request::Flags flags = 0);
 
     ~DmaReadFifo();
 
@@ -412,11 +500,11 @@ class DmaReadFifo : public Drainable, public Serializable
      */
     bool tryGet(uint8_t *dst, size_t len);
 
-    template<typename T>
+    template <typename T>
     bool
     tryGet(T &value)
     {
-        return tryGet(static_cast<T *>(&value), sizeof(T));
+      return tryGet(static_cast<T *>(&value), sizeof(T));
     };
 
     /**
@@ -429,13 +517,12 @@ class DmaReadFifo : public Drainable, public Serializable
      */
     void get(uint8_t *dst, size_t len);
 
-    template<typename T>
-    T
-    get()
+    template <typename T>
+    T get()
     {
-        T value;
-        get(static_cast<uint8_t *>(&value), sizeof(T));
-        return value;
+      T value;
+      get(static_cast<uint8_t *>(&value), sizeof(T));
+      return value;
     };
 
     /** Get the amount of data stored in the FIFO */
@@ -484,7 +571,7 @@ class DmaReadFifo : public Drainable, public Serializable
     bool
     isActive() const
     {
-        return !(pendingRequests.empty() && atEndOfBlock());
+      return !(pendingRequests.empty() && atEndOfBlock());
     }
 
     /** @} */
@@ -500,7 +587,7 @@ class DmaReadFifo : public Drainable, public Serializable
      * block has been sent. It is legal for a derived class to call
      * startFill() from this method to initiate a transfer.
      */
-    virtual void onEndOfBlock() {};
+    virtual void onEndOfBlock(){};
 
     /**
      * Last response received callback
@@ -513,7 +600,7 @@ class DmaReadFifo : public Drainable, public Serializable
      * onEndOfBlock() callback will be called first. This callback
      * will <i>NOT</i> be called if that callback initiates a new DMA transfer.
      */
-    virtual void onIdle() {};
+    virtual void onIdle(){};
 
     /** @} */
   private: // Configuration
@@ -531,26 +618,26 @@ class DmaReadFifo : public Drainable, public Serializable
   private:
     class DmaDoneEvent : public Event
     {
-      public:
-        DmaDoneEvent(DmaReadFifo *_parent, size_t max_size);
+    public:
+      DmaDoneEvent(DmaReadFifo *_parent, size_t max_size);
 
-        void kill();
-        void cancel();
-        bool canceled() const { return _canceled; }
-        void reset(size_t size);
-        void process();
+      void kill();
+      void cancel();
+      bool canceled() const { return _canceled; }
+      void reset(size_t size);
+      void process();
 
-        bool done() const { return _done; }
-        size_t requestSize() const { return _requestSize; }
-        const uint8_t *data() const { return _data.data(); }
-        uint8_t *data() { return _data.data(); }
+      bool done() const { return _done; }
+      size_t requestSize() const { return _requestSize; }
+      const uint8_t *data() const { return _data.data(); }
+      uint8_t *data() { return _data.data(); }
 
-      private:
-        DmaReadFifo *parent;
-        bool _done = false;
-        bool _canceled = false;
-        size_t _requestSize;
-        std::vector<uint8_t> _data;
+    private:
+      DmaReadFifo *parent;
+      bool _done = false;
+      bool _canceled = false;
+      size_t _requestSize;
+      std::vector<uint8_t> _data;
     };
 
     typedef std::unique_ptr<DmaDoneEvent> DmaDoneEventUPtr;
@@ -581,7 +668,7 @@ class DmaReadFifo : public Drainable, public Serializable
 
     std::deque<DmaDoneEventUPtr> pendingRequests;
     std::deque<DmaDoneEventUPtr> freeRequests;
-};
+  };
 
 } // namespace gem5
 

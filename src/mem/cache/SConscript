@@ -51,6 +51,23 @@ DebugFlag('HWPrefetch')
 DebugFlag('MSHR')
 DebugFlag('HWPrefetchQueue')
 
+DebugFlag('AdaptiveDdioCache')
+DebugFlag('AdaptiveDdioBridge')
+DebugFlag('AdaptiveDdioBridgeHint')
+DebugFlag('AdaptiveDdioXBar')
+DebugFlag('DDIO')
+
+
+DebugFlag('AdaptiveDdioOtf')
+DebugFlag('AdaptiveDdioOtfInfo')
+CompoundFlag('DDIOAll', ['AdaptiveDdioCache',
+'AdaptiveDdioBridge',
+'AdaptiveDdioBridgeHint',
+'AdaptiveDdioXBar',
+'DDIO',
+'AdaptiveDdioOtf',
+'AdaptiveDdioOtfInfo'])
+
 # CacheTags is so outrageously verbose, printing the cache's entire tag
 # array on each timing access, that you should probably have to ask for
 # it explicitly even above and beyond CacheAll.

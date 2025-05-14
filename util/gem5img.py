@@ -51,7 +51,7 @@ from sys import exit, argv
 import re
 
 # Some constants.
-MaxLBACylinders = 16383
+MaxLBACylinders = 16383 * 2 
 MaxLBAHeads = 16
 MaxLBASectors = 63
 MaxLBABlocks = MaxLBACylinders * MaxLBAHeads * MaxLBASectors

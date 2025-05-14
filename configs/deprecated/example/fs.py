@@ -177,10 +177,12 @@ def build_test_system(np):
     else:
         if args.caches or args.l2cache:
             # By default the IOCache runs at the system clock
+            print("A")
             test_sys.iocache = IOCache(addr_ranges=test_sys.mem_ranges)
             test_sys.iocache.cpu_side = test_sys.iobus.mem_side_ports
             test_sys.iocache.mem_side = test_sys.membus.cpu_side_ports
         elif not args.external_memory_system:
+            print("B")
             test_sys.iobridge = Bridge(
                 delay="50ns", ranges=test_sys.mem_ranges
             )

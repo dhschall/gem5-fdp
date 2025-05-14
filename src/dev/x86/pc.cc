@@ -42,92 +42,101 @@
 
 namespace gem5
 {
+    Tick *timer_tix = nullptr;
 
-Pc::Pc(const Params &p) : Platform(p), southBridge(p.south_bridge)
-{}
+    Pc::Pc(const Params &p) : Platform(p), southBridge(p.south_bridge)
+    {
+    }
 
-void
-Pc::init()
-{
-    assert(southBridge);
+    void
+    Pc::init()
+    {
+        assert(southBridge);
 
-    /*
-     * Initialize the timer.
-     */
-    auto &timer = *southBridge->pit;
-    //Timer 0, mode 2, no bcd, 16 bit count
-    timer.writeControl(0x34);
-    //Timer 0, latch command
-    timer.writeControl(0x00);
-    //Write a 16 bit count of 0
-    timer.writeCounter(0, 0);
-    timer.writeCounter(0, 0);
+        /*
+         * Initialize the timer.
+         */
+        auto &timer = *southBridge->pit;
+        timer_tix = &(timer.eventQueue()->_curTick);
+        // Timer 0, mode 2, no bcd, 16 bit count
+        timer.writeControl(0x34);
+        // Timer 0, latch command
+        timer.writeControl(0x00);
+        // Write a 16 bit count of 0
+        timer.writeCounter(0, 0);
+        timer.writeCounter(0, 0);
 
-    /*
-     * Initialize the I/O APIC.
-     */
-    X86ISA::I82094AA &ioApic = *southBridge->ioApic;
-    X86ISA::I82094AA::RedirTableEntry entry = 0;
-    entry.mask = 1;
-    entry.deliveryMode = X86ISA::delivery_mode::ExtInt;
-    entry.vector = 0x20;
-    ioApic.writeReg(0x10, entry.bottomDW);
-    ioApic.writeReg(0x11, entry.topDW);
-    entry.deliveryMode = X86ISA::delivery_mode::Fixed;
-    entry.vector = 0x24;
-    ioApic.writeReg(0x18, entry.bottomDW);
-    ioApic.writeReg(0x19, entry.topDW);
-    entry.vector = 0x21;
-    ioApic.writeReg(0x12, entry.bottomDW);
-    ioApic.writeReg(0x13, entry.topDW);
-    entry.vector = 0x20;
-    ioApic.writeReg(0x14, entry.bottomDW);
-    ioApic.writeReg(0x15, entry.topDW);
-    entry.vector = 0x28;
-    ioApic.writeReg(0x20, entry.bottomDW);
-    ioApic.writeReg(0x21, entry.topDW);
-    entry.vector = 0x2C;
-    ioApic.writeReg(0x28, entry.bottomDW);
-    ioApic.writeReg(0x29, entry.topDW);
-    entry.vector = 0x2E;
-    ioApic.writeReg(0x2C, entry.bottomDW);
-    ioApic.writeReg(0x2D, entry.topDW);
-    entry.vector = 0x30;
-    ioApic.writeReg(0x30, entry.bottomDW);
-    ioApic.writeReg(0x31, entry.topDW);
+        /*
+         * Initialize the I/O APIC.
+         */
+        X86ISA::I82094AA &ioApic = *southBridge->ioApic;
+        X86ISA::I82094AA::RedirTableEntry entry = 0;
+        entry.mask = 1;
+        entry.deliveryMode = X86ISA::delivery_mode::ExtInt;
+        entry.vector = 0x20;
+        ioApic.writeReg(0x10, entry.bottomDW);
+        ioApic.writeReg(0x11, entry.topDW);
+        entry.deliveryMode = X86ISA::delivery_mode::Fixed;
+        entry.vector = 0x24;
+        ioApic.writeReg(0x18, entry.bottomDW);
+        ioApic.writeReg(0x19, entry.topDW);
+        entry.vector = 0x21;
+        ioApic.writeReg(0x12, entry.bottomDW);
+        ioApic.writeReg(0x13, entry.topDW);
+        entry.vector = 0x20;
+        ioApic.writeReg(0x14, entry.bottomDW);
+        ioApic.writeReg(0x15, entry.topDW);
+        entry.vector = 0x28;
+        ioApic.writeReg(0x20, entry.bottomDW);
+        ioApic.writeReg(0x21, entry.topDW);
+        entry.vector = 0x2C;
+        ioApic.writeReg(0x28, entry.bottomDW);
+        ioApic.writeReg(0x29, entry.topDW);
+        entry.vector = 0x2E;
+        ioApic.writeReg(0x2C, entry.bottomDW);
+        ioApic.writeReg(0x2D, entry.topDW);
+        entry.vector = 0x30;
+        ioApic.writeReg(0x30, entry.bottomDW);
+        ioApic.writeReg(0x31, entry.topDW);
 
-    /*
-     * Mask the PICs. I'm presuming the BIOS/bootloader would have cleared
-     * these out and masked them before passing control to the OS.
-     */
-    southBridge->pic1->maskAll();
-    southBridge->pic2->maskAll();
-}
+        /*
+         * Mask the PICs. I'm presuming the BIOS/bootloader would have cleared
+         * these out and masked them before passing control to the OS.
+         */
+        southBridge->pic1->maskAll();
+        southBridge->pic2->maskAll();
+    }
 
-void
-Pc::postConsoleInt()
-{
-    southBridge->ioApic->requestInterrupt(4);
-    southBridge->pic1->signalInterrupt(4);
-}
+    void
+    Pc::postConsoleInt()
+    {
+        southBridge->ioApic->requestInterrupt(4);
+        southBridge->pic1->signalInterrupt(4);
+    }
 
-void
-Pc::clearConsoleInt()
-{
-    warn_once("Don't know what interrupt to clear for console.\n");
-    //panic("Need implementation\n");
-}
+    void
+    Pc::clearConsoleInt()
+    {
+        warn_once("Don't know what interrupt to clear for console.\n");
+        // panic("Need implementation\n");
+    }
 
-void
-Pc::postPciInt(int line)
-{
-    southBridge->ioApic->requestInterrupt(line);
-}
+    void
+    Pc::postPciInt(int line)
+    {
+        southBridge->ioApic->requestInterrupt(line);
+    }
 
-void
-Pc::clearPciInt(int line)
-{
-    warn_once("Tried to clear PCI interrupt %d\n", line);
-}
+    void
+    Pc::postPciUInt()
+    {
+        southBridge->ioApic->requestInterrupt(-1);
+    }
+
+    void
+    Pc::clearPciInt(int line)
+    {
+        warn_once("Tried to clear PCI interrupt %d\n", line);
+    }
 
 } // namespace gem5

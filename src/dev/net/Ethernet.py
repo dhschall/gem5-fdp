@@ -107,7 +107,7 @@ class EtherSwitch(SimObject):
 
     dump = Param.EtherDump(NULL, "dump object")
     fabric_speed = Param.NetworkBandwidth(
-        "10Gbps", "switch fabric speed in bits per second"
+        "1000Gbps", "switch fabric speed in bits per second"
     )
     interface = VectorEtherInt("Ethernet Interface")
     output_buffer_size = Param.MemorySize(
@@ -205,6 +205,7 @@ class IGbE(EtherDevice):
     rx_write_delay = Param.Latency("0ns", "delay after rx dma read")
     phy_pid = Param.UInt16("Phy PID that corresponds to device ID")
     phy_epid = Param.UInt16("Phy EPID that corresponds to device ID")
+    adq_idx = Param.Int('-1', "target mlc")
 
 
 class IGbE_e1000(IGbE):
@@ -213,6 +214,7 @@ class IGbE_e1000(IGbE):
     DeviceID = 0x1075
     phy_pid = 0x02A8
     phy_epid = 0x0380
+    adq_idx = -1
 
 
 class IGbE_igb(IGbE):

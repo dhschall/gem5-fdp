@@ -47,6 +47,8 @@ def macroop IRET_REAL {
     # Update RSP now that all memory accesses have succeeded.
     addi rsp, rsp, "3 * env.dataSize", dataSize=ssz
 
+    #@TODO do the pushes this way.
+
     # Update CS.
     wrsel cs, t2
     # Make sure there isn't any junk in the upper bits of the base.
@@ -341,6 +343,224 @@ def macroop INT_REAL_I {
 def macroop INT_VIRT_I {
     panic "Virtual mode int3 isn't implemented!"
 };
+
+
+def macroop STUI {
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc")
+    limm t7, 1<<63,dataSize=8
+    or t1, t1, t7, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrMisc"), t1
+};
+def macroop TESTUI {
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc")
+    sexti t1, t1, 63, flags=(CF,)
+};
+def macroop CLUI {
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc")
+    limm t7, ~(1<<63),dataSize=8
+    and t1, t1, t7, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrMisc"), t1
+};
+def macroop UIRET {
+    # if PciON=1
+    rdval t1, ctrlRegIdx("misc_reg::UintrPciON"),dataSize=8
+    andi t0, t1, 1,dataSize=8, flags=(ZF,)
+    br label("notpci"), flags=(CZF,)
+    trylock:
+    rdval t2, ctrlRegIdx("misc_reg::UintrPciLock"),dataSize=8
+    subi t0, t2, 2,dataSize=8, flags=(ZF,)
+    br label("trylock"), flags=(CZF,)
+    wrval ctrlRegIdx("misc_reg::UintrPciLock"), t1,dataSize=8
+    rdval t3, ctrlRegIdx("misc_reg::UintrPciPending"),dataSize=8
+    rdval t4, ctrlRegIdx("misc_reg::UintrPciConsumed"),dataSize=8
+    sub t3, t3, t4, dataSize=8, flags=(ZF,)
+    wrval ctrlRegIdx("misc_reg::UintrPciConsumed"), t0, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrPciPending"), t3,dataSize=8
+    br label("zero"), flags=(CZF,)
+    rdval t4, ctrlRegIdx("misc_reg::UintrPciEarlyExit"),dataSize=8
+    subi t4, t4, 1, flags=(ZF,)
+    br label("zero"), flags=(CZF,)
+    rdval t1, ctrlRegIdx("misc_reg::UintrHandler"),dataSize=8
+    rdval t8, ctrlRegIdx("misc_reg::UintrPciRSP"),dataSize=8
+    wrip t0, t1,dataSize=8
+    mov rsp, rsp, t8, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrPciLock"), t0
+    br label("done")
+    zero:
+    wrval ctrlRegIdx("misc_reg::UintrPciON"), t0,dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrPciLock"), t0,dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrPciEarlyExit"), t0,dataSize=8
+    rdval t6, ctrlRegIdx("misc_reg::UintrPciPC"),dataSize=8
+    rdval t7, ctrlRegIdx("misc_reg::UintrPciRFLAGS"),dataSize=8
+    wrip t6, t0, dataSize=8
+    rflags t6, dataSize=8
+    limm t1, ~(0x254DD5), dataSize=8
+    rdval t8, ctrlRegIdx("misc_reg::UintrPciRSP"),dataSize=8
+    and t6, t6, t1, dataSize=8
+    limm t1, (0x254DD5), dataSize=8
+    mov rsp, rsp, t8, dataSize=8
+    and t7, t7, t1, dataSize=8
+    or t6, t6, t7, dataSize=8
+    wrflags t6, t0, dataSize=8
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc"),dataSize=8
+    limm t8,1<<63,dataSize=8
+    or t1, t1, t8, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrMisc"), t1,dataSize=8
+    br label("done")
+
+
+    notpci:
+    # pop tempRip
+    ld t6, ss, [1, t0, rsp], dataSize=8, addressSize=8
+    addi rsp, rsp, 8, dataSize=8
+    # pop tempRFLAGS
+    ld t7, ss, [1, t0, rsp], dataSize=8, addressSize=8
+    # track user interrupt overlap! use in delivery or wait till pc ready/first fetch after then go
+    addi rsp, rsp, 8, dataSize=8
+    # pop tempRsp
+    ld t8, ss, [1, t0, rsp], dataSize=8, addressSize=8
+    addi rsp, rsp, 8, dataSize=8
+
+    #Rip:= tempRip
+    wrip t6, t0, dataSize=8
+    #RFLAGS:= (RFLAGS & ~254DD5H) | (tempRFLAGS & 254DD5H)
+    rflags t6, dataSize=8
+    limm t1, ~(0x254DD5), dataSize=8
+    and t6, t6, t1, dataSize=8
+    limm t1, (0x254DD5), dataSize=8
+    and t7, t7, t1, dataSize=8
+    or t6, t6, t7, dataSize=8
+    
+    
+    #Rsp:=tempRsp
+    mov rsp, rsp, t8, dataSize=8
+
+    rdval t2, ctrlRegIdx("misc_reg::UintrTimerStatus"),dataSize=8
+    # timer_active timer_should_reset timer_on 
+    # -----1------ ---------0-------- ----1--- = 5
+    limm t3, 5|288, dataSize=8
+    sub t0, t2, t3, flags=(ZF,)
+    br label("skip_timer_update"), flags=(nCZF,)
+    # timer_active timer_should_reset timer_on 
+    # -----0------ ---------1-------- ----1--- = 3
+    limm t2, 3, dataSize=8
+    wrval  ctrlRegIdx("misc_reg::UintrTimerStatus"), t2,dataSize=8
+    skip_timer_update:
+
+
+    #UIF:=1
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc"),dataSize=8
+    limm t8,1<<63,dataSize=8
+    or t1, t1, t8, dataSize=8
+    wrval ctrlRegIdx("misc_reg::UintrMisc"), t1,dataSize=8
+    wrflags t6, t0, dataSize=8
+    done:
+    andi t1, t1, 1
+
+
+};
+
+def macroop SENDUIPI_R {
+    #if reg > UITTSZ
+    rdval t1, ctrlRegIdx("misc_reg::UintrMisc")
+    limm t3, 0xffffffff, dataSize=8
+    and t2, t1, t3, dataSize=8
+    sub t3, reg, t2, dataSize=8, flags=(OF, SF, ZF,)
+    # throw #GP(O)
+    fault "std::make_shared<GeneralProtection>(0)", flags=(nCSxOvZF,)
+    rdval t4, ctrlRegIdx("misc_reg::UintrTT")
+    #t4<-UITTADDR
+    limm t3, "(uint64_t(-(16ULL)))",dataSize=8
+    and t4, t4, t3, dataSize=8
+    #t4<-UITTADDR+reg<<4
+    slli t2, reg, 4, dataSize=8
+    add t4, t4, t2
+    #tempUITTE in t5, t6
+    ld t5, seg, [1, t0, t4], dataSize=8, atCPL0=True
+    addi t4, t4, 8
+    ld t6, seg, [1, t0, t4], dataSize=8, atCPL0=True
+    andi t7, t5, 1, dataSize=1, flags=(ZF,)
+    fault "std::make_shared<GeneralProtection>(0)", flags=(CZF,)
+    andi t7, t5, 0xFE, dataSize=1, flags=(ZF,)
+    fault "std::make_shared<GeneralProtection>(0)", flags=(nCZF,)
+    mfence
+    #tempUIPD in t1, t2 
+    ld t1, seg, [1, t0, t6], dataSize=8, atCPL0=True
+    addi t6, t6, 8
+    ld t2, seg, [1, t0, t6], dataSize=8, atCPL0=True
+    #
+    srli t9, t1, 2, dataSize=8
+    srli t10, t1, 24, dataSize=8
+    andi t10, t10, 0xff, dataSize=8 
+    limm t7, 0x3fff, dataSize=8
+    and t9, t9, t7, dataSize=8
+    or t9, t9, t10, dataSize=8, flags=(ZF,)
+    br label("pass"), flags=(CZF,)
+    mfence
+    fault "std::make_shared<GeneralProtection>(0)"
+    pass:
+
+    limm t9, 1, dataSize=8
+    #tempUITTE.UV
+    srli t3, t5, 8, dataSize=8
+    andi t3, t3, 0x3F, dataSize=8
+    
+    sll t9, t9, t3, dataSize=8
+    #tempUPID.PIR[tempUITTE.UV] := 1
+    or t2, t2, t9, dataSize=8
+    #if tempUPID.SN = tempUPID.ON = 0
+    andi t8, t1, 3, dataSize=8, flags=(ZF,)
+    br label("send"), flags=(CZF,)
+    # Only t2 changed
+    st t2, seg, [1, t0, t6], dataSize=8, atCPL0=True
+    mfence
+    br label("done"), flags=()
+    send:
+    ori t1, t1, 1
+    st t2, seg, [1, t0, t6], dataSize=8, atCPL0=True
+    subi t6, t6, 8
+    st t1, seg, [1, t0, t6], dataSize=8, atCPL0=True
+   # #UITTE is released t5, t6 free
+    mfence
+    rdval t9, ctrlRegIdx("misc_reg::ApicBase")
+    limm t7, (1<<11), dataSize=8 
+    and t8, t9, t7, flags=(ZF,)
+    br label("done"), flags=(CZF,)
+    # WE NEED SET UIRR 167
+
+    limm t7, (1<<10), dataSize=8
+    and t8, t9, t7, flags=(ZF,)
+    srli t6, t1, 16, dataSize=8
+    andi t6, t6, 0xFF, dataSize=8
+    #tempUPID.NV in t6 
+    srli t5, t1, 32, dataSize=8
+    #tempUPID.NDST in t5
+    br label("xAPIC"), flags=(CZF,)
+    #x2APIC
+    panic "x2APIC is not supported yet"
+    br label("done"), flags=()
+    xAPIC:
+    limm t7, 0x0000000FFFFFF000
+    and t9, t9, t7, dataSize=8
+    limm t7, 0x310, dataSize=8
+    add t9, t9, t7, dataSize=8
+    srli t5, t5, 8, dataSize=4
+    slli t5, t5, 24, dataSize=4
+    st t5, seg, [1,t0,t9], dataSize=4, physical=True, uncacheable=True, atCPL0=True
+    subi t9, t9, 0x10, dataSize=8
+    ld t1, seg, [1,t0,t9], dataSize=4, physical=True, uncacheable=True, atCPL0=True
+    limm t7,(1<<12), dataSize=4
+    and t1, t1, t7, dataSize=4
+    limm t7,1<<14, dataSize=4
+    or t1, t1, t7, dataSize=4
+    or t6, t6, t1, dataSize=4
+    st t6, seg, [1,t0,t9], dataSize=4, physical=True, uncacheable=True, atCPL0=True
+    # ld t1, seg, [1, t0, t6], dataSize=8, physical=True, uncacheable=True
+    done:
+    andi t1, t1, 1
+   #panic "no"
+};
+
 """
 # let {{
 #    class INT(Inst):

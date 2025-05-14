@@ -52,105 +52,106 @@
 namespace gem5
 {
 
-namespace X86ISA
-{
-
-template <class Device>
-class IntResponsePort : public SimpleTimingPort
-{
-    Device * device;
-
-  public:
-    IntResponsePort(const std::string& _name, SimObject* _parent,
-                 Device* dev) :
-        SimpleTimingPort(_name, _parent), device(dev)
+    namespace X86ISA
     {
-    }
 
-    AddrRangeList
-    getAddrRanges() const
-    {
-        return device->getIntAddrRange();
-    }
+        template <class Device>
+        class IntResponsePort : public SimpleTimingPort
+        {
+            Device *device;
 
-    Tick
-    recvAtomic(PacketPtr pkt)
-    {
-        panic_if(pkt->cmd != MemCmd::WriteReq,
-                "%s received unexpected command %s from %s.\n",
-                name(), pkt->cmd.toString(), getPeer());
-        pkt->headerDelay = pkt->payloadDelay = 0;
-        return device->recvMessage(pkt);
-    }
-};
+        public:
+            IntResponsePort(const std::string &_name, SimObject *_parent,
+                            Device *dev) : SimpleTimingPort(_name, _parent), device(dev)
+            {
+            }
 
-template<class T>
-PacketPtr
-buildIntPacket(Addr addr, T payload)
-{
-    RequestPtr req = std::make_shared<Request>(
-        addr, sizeof(T), Request::UNCACHEABLE, Request::intRequestorId);
-    PacketPtr pkt = new Packet(req, MemCmd::WriteReq);
-    pkt->allocate();
-    pkt->setRaw<T>(payload);
-    return pkt;
-}
+            AddrRangeList
+            getAddrRanges() const
+            {
+                return device->getIntAddrRange();
+            }
 
-template <class Device>
-class IntRequestPort : public QueuedRequestPort
-{
-  private:
-    ReqPacketQueue reqQueue;
-    SnoopRespPacketQueue snoopRespQueue;
+            Tick
+            recvAtomic(PacketPtr pkt)
+            {
+                panic_if(pkt->cmd != MemCmd::WriteReq,
+                         "%s received unexpected command %s from %s.\n",
+                         name(), pkt->cmd.toString(), getPeer());
+                pkt->headerDelay = pkt->payloadDelay = 0;
+                return device->recvMessage(pkt);
+            }
+        };
 
-    Device* device;
-    Tick latency;
-
-    typedef std::function<void(PacketPtr)> OnCompletionFunc;
-    struct OnCompletion : public Packet::SenderState
-    {
-        OnCompletionFunc func;
-        OnCompletion(OnCompletionFunc _func) : func(_func) {}
-    };
-    // If nothing extra needs to happen, just clean up the packet.
-    static void defaultOnCompletion(PacketPtr pkt) { delete pkt; }
-
-  public:
-    IntRequestPort(const std::string& _name, SimObject* _parent,
-                  Device* dev, Tick _latency) :
-        QueuedRequestPort(_name, reqQueue, snoopRespQueue),
-        reqQueue(*_parent, *this), snoopRespQueue(*_parent, *this),
-        device(dev), latency(_latency)
-    {
-    }
-
-    bool
-    recvTimingResp(PacketPtr pkt) override
-    {
-        assert(pkt->isResponse());
-        auto *oc = safe_cast<OnCompletion *>(pkt->popSenderState());
-        oc->func(pkt);
-        delete oc;
-        return true;
-    }
-
-    void
-    sendMessage(PacketPtr pkt, bool timing,
-            OnCompletionFunc func=defaultOnCompletion)
-    {
-        if (timing) {
-            pkt->pushSenderState(new OnCompletion(func));
-            schedTimingReq(pkt, curTick() + latency);
-            // The target handles cleaning up the packet in timing mode.
-        } else {
-            // ignore the latency involved in the atomic transaction
-            sendAtomic(pkt);
-            func(pkt);
+        template <class T>
+        PacketPtr
+        buildIntPacket(Addr addr, T payload)
+        {
+            RequestPtr req = std::make_shared<Request>(
+                addr, sizeof(T), Request::UNCACHEABLE, Request::intRequestorId);
+            PacketPtr pkt = new Packet(req, MemCmd::WriteReq);
+            pkt->allocate();
+            pkt->setRaw<T>(payload);
+            return pkt;
         }
-    }
-};
 
-} // namespace X86ISA
+        template <class Device>
+        class IntRequestPort : public QueuedRequestPort
+        {
+        private:
+            ReqPacketQueue reqQueue;
+            SnoopRespPacketQueue snoopRespQueue;
+
+            Device *device;
+            Tick latency;
+
+            typedef std::function<void(PacketPtr)> OnCompletionFunc;
+            struct OnCompletion : public Packet::SenderState
+            {
+                OnCompletionFunc func;
+                OnCompletion(OnCompletionFunc _func) : func(_func) {}
+            };
+            // If nothing extra needs to happen, just clean up the packet.
+            static void defaultOnCompletion(PacketPtr pkt) { delete pkt; }
+
+        public:
+            IntRequestPort(const std::string &_name, SimObject *_parent,
+                           Device *dev, Tick _latency) : QueuedRequestPort(_name, reqQueue, snoopRespQueue),
+                                                         reqQueue(*_parent, *this), snoopRespQueue(*_parent, *this),
+                                                         device(dev), latency(_latency)
+            {
+            }
+
+            bool
+            recvTimingResp(PacketPtr pkt) override
+            {
+                assert(pkt->isResponse());
+                auto *oc = safe_cast<OnCompletion *>(pkt->popSenderState());
+                oc->func(pkt);
+                delete oc;
+                return true;
+            }
+
+            void
+            sendMessage(PacketPtr pkt, bool timing,
+                        OnCompletionFunc func = defaultOnCompletion)
+            {
+                if (timing)
+                {
+                    pkt->pushSenderState(new OnCompletion(func));
+                    schedTimingReq(pkt, curTick() + latency);
+                    // The target handles cleaning up the packet in timing mode.
+                }
+                else
+                {
+                    // ignore the latency involved in the atomic transaction
+                    sendAtomic(pkt);
+                    func(pkt);
+                }
+            }
+        };
+
+    } // namespace X86ISA
 } // namespace gem5
 
 #endif //__DEV_X86_INTDEV_HH__

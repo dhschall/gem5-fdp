@@ -34,6 +34,12 @@ from ...runtime import get_runtime_isa
 import importlib
 import platform
 
+class MaxInstsHack:
+    max_insts_hack = 0
+def setMaxInstsHack(mi):
+    MaxInstsHack.max_insts_hack = mi
+def getMaxInstsHack():
+    return MaxInstsHack.max_insts_hack
 
 class SimpleCore(BaseCPUCore):
     """
@@ -42,7 +48,7 @@ class SimpleCore(BaseCPUCore):
     """
 
     def __init__(
-        self, cpu_type: CPUTypes, core_id: int, isa: Optional[ISA] = None
+        self, cpu_type: CPUTypes, core_id: int, isa: Optional[ISA] = None, interrupt_type = ""
     ):
 
         # If the ISA is not specified, we infer it via the `get_runtime_isa`
@@ -55,7 +61,7 @@ class SimpleCore(BaseCPUCore):
 
         super().__init__(
             core=SimpleCore.cpu_simobject_factory(
-                isa=isa, cpu_type=cpu_type, core_id=core_id
+                isa=isa, cpu_type=cpu_type, core_id=core_id, interrupt_type=interrupt_type
             ),
             isa=isa,
         )
@@ -66,7 +72,7 @@ class SimpleCore(BaseCPUCore):
         return self._cpu_type
 
     @classmethod
-    def cpu_simobject_factory(cls, cpu_type: CPUTypes, isa: ISA, core_id: int):
+    def cpu_simobject_factory(cls, cpu_type: CPUTypes, isa: ISA, core_id: int, interrupt_type=""):
         """
         A factory used to return the SimObject core object given the cpu type,
         and ISA target. An exception will be thrown if there is an
@@ -130,6 +136,10 @@ class SimpleCore(BaseCPUCore):
                 f"{_isa_string_map[isa]}V8"
                 f"{_cpu_types_string_map[cpu_type]}"
             )
+        elif isa.name == "X86" and cpu_type == CPUTypes.O3:
+            cpu_class_str = (
+                f"{_isa_string_map[isa]}" f"{_cpu_types_string_map[cpu_type]}" f"{interrupt_type}"
+            )
         else:
             cpu_class_str = (
                 f"{_isa_string_map[isa]}" f"{_cpu_types_string_map[cpu_type]}"
@@ -145,5 +155,21 @@ class SimpleCore(BaseCPUCore):
                 "ISA. Please ensure you have compiled the correct version of "
                 "gem5."
             )
+        LTAGE = getattr(
+            importlib.import_module('m5.objects'), "LTAGE"
+        )
+        class icelake_BP(LTAGE):
+            BTBEntries = 4096
+            BTBTagSize = 18
+            RASSize = 64
+            instShiftAmt = 2
+        if cpu_type == CPUTypes.KVM:
+            class newClsKvm(to_return_cls):
+                branchPred = icelake_BP()
+            return newClsKvm(cpu_id = core_id)
+        else:
+            class newCls(to_return_cls):
+                branchPred = icelake_BP()
+                max_insts_any_thread = getMaxInstsHack()
 
-        return to_return_cls(cpu_id=core_id)
+            return newCls(cpu_id = core_id)

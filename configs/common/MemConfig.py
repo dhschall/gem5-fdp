@@ -97,6 +97,7 @@ def create_mem_intf(intf, r, i, intlv_bits, intlv_size, xor_low_bit):
 
     # We got all we need to configure the appropriate address
     # range
+    print("start: " +str(r.start)+" end: "+str(r.start+r.size())+", intlvhigh: "+str(intlv_low_bit + intlv_bits - 1)+" intlvbits:"+str(intlv_bits)+" intlvMatch: "+str(i)+" xorHigh: "+str(xor_high_bit))
     interface.range = m5.objects.AddrRange(
         r.start,
         size=r.size(),

@@ -53,7 +53,10 @@ assert len(default_call_type) == 1, \
 default_call_type = default_call_type[0]
 
 static_env = env.Clone()
-static_env.Append(LINKFLAGS=[ '-no-pie', '-static' ])
+static_env.Append(CXXFLAGS=['-fPIC'])
+static_env.Append(CFLAGS=['-fPIC'])
+static_env.Append(LINKFLAGS=[ '-fPIC' ])
+static_env.Append(ASFLAGS='-DM5OP_PIC')
 
 #
 # The m5 library for use in other C/C++ programs.

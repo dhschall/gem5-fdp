@@ -155,6 +155,8 @@ class SnoopFilter(SimObject):
     # Sanity check on max capacity to track, adjust if needed.
     max_capacity = Param.MemorySize("8MiB", "Maximum capacity of snoop filter")
 
+    is_for_l3x = Param.Bool(False)
+
 
 # We use a coherent crossbar to connect multiple requestors to the L2
 # caches. Normally this crossbar would be part of the cache itself.
@@ -172,7 +174,7 @@ class L2XBar(CoherentXBar):
     # Use a snoop-filter by default, and set the latency to zero as
     # the lookup is assumed to overlap with the frontend latency of
     # the crossbar
-    snoop_filter = SnoopFilter(lookup_latency=0)
+    snoop_filter = SnoopFilter(lookup_latency=0, is_for_l3x = False)
 
     # This specialisation of the coherent crossbar is to be considered
     # the point of unification, it connects the dcache and the icache
@@ -195,7 +197,7 @@ class SystemXBar(CoherentXBar):
     snoop_response_latency = 4
 
     # Use a snoop-filter by default
-    snoop_filter = SnoopFilter(lookup_latency=1)
+    snoop_filter = SnoopFilter(lookup_latency=1,is_for_l3x=False)
 
     # This specialisation of the coherent crossbar is to be considered
     # the point of coherency, as there are no (coherent) downstream
@@ -208,7 +210,30 @@ class SystemXBar(CoherentXBar):
     # without caches where the SystemXBar is also the point of
     # unification.
     point_of_unification = True
+# SHIN.
+# We use a coherent crossbar to connect multiple masters to the L2
+# caches. Normally this crossbar would be part of the cache itself.
+class L3XBar(CoherentXBar):
+    # 256-bit crossbar by default
+    width = 32
 
+    # Assume that most of this is covered by the cache latencies, with
+    # no more than a single pipeline stage for any packet.
+    frontend_latency = 1
+    forward_latency = 0
+    response_latency = 1
+    snoop_response_latency = 1
+
+    # Use a snoop-filter by default, and set the latency to zero as
+    # the lookup is assumed to overlap with the frontend latency of
+    # the crossbar
+    snoop_filter = SnoopFilter(lookup_latency = 0, is_for_l3x = True)
+    #snoop_filter = NULL
+
+    # This specialisation of the coherent crossbar is to be considered
+    # the point of unification, it connects the dcache and the icache
+    # to the first level of unified cache.
+    point_of_unification = True
 
 # In addition to the system interconnect, we typically also have one
 # or more on-chip I/O crossbars. Note that at some point we might want

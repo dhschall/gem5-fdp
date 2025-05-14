@@ -137,6 +137,10 @@
                     0x3: decode MODRM_RM {
                         0x0: BasicOperate::SERIALIZE({{/*Nothing*/}},
                                                          IsSerializeAfter);
+                        0x7: Inst::STUI();
+                        0x6: Inst::CLUI();
+                        0x5: Inst::TESTUI();
+                        0x4: Inst::UIRET();
                         }
                     }
                 0x6: Inst::LMSW(Ew);
@@ -820,7 +824,11 @@
                     0x6: decode LEGACY_OP {
                         0x1: WarnUnimpl::vmclear_Mq();
                         default: decode LEGACY_REP {
-                            0x1: WarnUnimpl::vmxon_Mq();
+                            0x1: decode MODRM_MOD {
+                                // Instruction Printing has bug rbx shows as rsi
+                                0x3: SENDUIPI(Rq);
+                                default: WarnUnimpl::vmxon_Mq();
+                            }
                             0x0: WarnUnimpl::vmptrld_Mq();
                         }
                     }

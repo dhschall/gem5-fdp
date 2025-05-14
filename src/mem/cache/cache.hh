@@ -57,15 +57,15 @@
 namespace gem5
 {
 
-class CacheBlk;
-struct CacheParams;
-class MSHR;
+  class CacheBlk;
+  struct CacheParams;
+  class MSHR;
 
-/**
- * A coherent cache that can be arranged in flexible topologies.
- */
-class Cache : public BaseCache
-{
+  /**
+   * A coherent cache that can be arranged in flexible topologies.
+   */
+  class Cache : public BaseCache
+  {
   protected:
     /**
      * This cache should allocate a block on a line-sized write miss.
@@ -86,7 +86,7 @@ class Cache : public BaseCache
     void promoteWholeLineWrites(PacketPtr pkt);
 
     bool access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
-                PacketList &writebacks) override;
+                PacketList &writebacks, bool is_ddio = false) override;
 
     void handleTimingReqHit(PacketPtr pkt, CacheBlk *blk,
                             Tick request_time) override;
@@ -97,9 +97,9 @@ class Cache : public BaseCache
 
     void recvTimingReq(PacketPtr pkt) override;
 
-    void doWritebacks(PacketList& writebacks, Tick forward_time) override;
+    void doWritebacks(PacketList &writebacks, Tick forward_time) override;
 
-    void doWritebacksAtomic(PacketList& writebacks) override;
+    void doWritebacksAtomic(PacketList &writebacks) override;
 
     void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                             CacheBlk *blk) override;
@@ -169,8 +169,8 @@ class Cache : public BaseCache
      * @param mshr The MSHR to turn into a packet and send
      * @return True if the port is waiting for a retry
      */
-    bool sendMSHRQueuePacket(MSHR* mshr) override;
-};
+    bool sendMSHRQueuePacket(MSHR *mshr) override;
+  };
 
 } // namespace gem5
 

@@ -54,11 +54,19 @@
 #include "base/debug.hh"
 #include "base/output.hh"
 #include "cpu/base.hh"
+#include "cpu/o3/cpu.hh"
+#include "arch/x86/regs/misc.hh"
+#include "arch/x86/intmessage.hh"
+#include "arch/x86/interrupts.hh"
+#include "arch/x86/kvm/x86_cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"
 #include "debug/Quiesce.hh"
 #include "debug/WorkItems.hh"
 #include "dev/net/dist_iface.hh"
+#include "dev/net/load_generator.hh"
+#include <fstream>
+#include "dev/net/accelerator.hh"
 #include "mem/se_translating_port_proxy.hh"
 #include "mem/translating_port_proxy.hh"
 #include "params/BaseCPU.hh"
@@ -70,6 +78,7 @@
 #include "sim/stat_control.hh"
 #include "sim/stats.hh"
 #include "sim/system.hh"
+#include "pseudo_inst.hh"
 
 namespace gem5
 {
@@ -177,8 +186,10 @@ wakeCPU(ThreadContext *tc, uint64_t cpuid)
 void
 m5exit(ThreadContext *tc, Tick delay)
 {
+    tc->getCpuPtr()->startROI = false;
     DPRINTF(PseudoInst, "pseudo_inst::m5exit(%i)\n", delay);
-    if (DistIface::readyToExit(delay)) {
+    if (DistIface::readyToExit(delay))
+    {
         Tick when = curTick() + delay * sim_clock::as_int::ns;
         exitSimLoop("m5_exit instruction encountered", 0, when, 0, true);
     }
@@ -187,7 +198,7 @@ m5exit(ThreadContext *tc, Tick delay)
 // m5sum is for sanity checking the gem5 op interface.
 uint64_t
 m5sum(ThreadContext *tc, uint64_t a, uint64_t b, uint64_t c,
-                         uint64_t d, uint64_t e, uint64_t f)
+        uint64_t d, uint64_t e, uint64_t f)
 {
     DPRINTF(PseudoInst, "pseudo_inst::m5sum(%#x, %#x, %#x, %#x, %#x, %#x)\n",
             a, b, c, d, e, f);
@@ -304,28 +315,125 @@ initParam(ThreadContext *tc, uint64_t key_str1, uint64_t key_str2)
         panic("Unknown key for initparam pseudo instruction:\"%s\"", key_str);
 }
 
-
 void
 resetstats(ThreadContext *tc, Tick delay, Tick period)
 {
+    // Too lazy to make these into enumswitch dont judge bad luck for 777 years >:|
+    if (delay == 1)
+    {
+        if (!period)
+        {
+            X86ISA::UintrPciPending_t uintrPciPending = tc->readMiscRegNoEffect(X86ISA::misc_reg::UintrPciPending);
+            reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciConsumed, uintrPciPending, tc->threadId()); // breakout
+        }
+        else
+        {
+            reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciConsumed, period, tc->threadId());
+        }
+    }
+    if (delay == 2)
+    {
+        X86ISA::UintrPciPending_t uintrPciPending = tc->readMiscRegNoEffect(X86ISA::misc_reg::UintrPciPending);
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciConsumed, uintrPciPending, tc->threadId()); // breakout
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciDisable, 1, tc->threadId());                // disable
+    }
+    if (delay == 3)
+    {
+        LoadGenerator::switched = true;
+        LoadGenerator::firstTick = curTick();
+        LoadGenerator::startCounting = LoadGenerator::firstTick + (LoadGenerator::endTick - LoadGenerator::stopCounting);
+        for (auto &ldgen : LoadGenerator::self)
+        {
+            ldgen->sendPacket();
+        }
+    }
+    if (delay == 4)
+    {
+        reinterpret_cast<X86ISA::Interrupts *>(reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->getInterruptController(0))->requestInterrupt(33, X86ISA::delivery_mode::Fixed, false);
+    }
+    if (delay == 5)
+    {
+        LoadGenerator::endTick = curTick() + 500 * (period);
+        std::cerr << "end tick: " << LoadGenerator::endTick << std::endl;
+    }
+    if (delay == 6)
+    {
+        X86ISA::Interrupts::userPciThreshold = period;
+    }
+    if (delay == 7)
+    {
+        X86ISA::Interrupts::userPciTimeout = period * 1000;
+    }
+    if (delay == 8)
+    {
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrTimerStatus, 3, tc->threadId());
+    }
+    if (delay == 9)
+    {
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciEarlyExit, 1, tc->threadId());
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->setMiscRegNoEffect(X86ISA::misc_reg::UintrPciConsumed, period, tc->threadId());
+    }
+    if (delay == 10)
+    {
+        std::cout << "number_print_from_gem5: " << period << std::endl;
+    }
+    if (delay == 32)
+    {
+        // SETUP TIMER FOR interrupt 245
+        // period is the time interval in us
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->hackTimer.setPeriod(period);
+    }
+    if (delay == 33)
+    {
+        // RESET TIMER FOR interrupt 245
+        reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->hackTimer.disable();
+    }
+    if (delay == 50)
+    {
+        reinterpret_cast<X86KvmCPU *>(tc->getCpuPtr())->jumping_rip = period;
+    }
+    if (delay == 11)
+    {
+        LoadGenerator::stopCounting = LoadGenerator::endTick - 500 * (period);
+    }
+    if (delay == 51)
+    {
+        Accelerator::latency_file << period << std::endl;
+    }
+    if (delay == 52)
+    {
+        LoadGenerator::latencies << "===" << std::endl;
+        LoadGenerator::latencies << "Background cycles: " << period << std::endl;
+    }
+    if (delay == 53)
+    {
+        LoadGenerator::latencies << "Network cycles: " << period << std::endl;
+    }
+    if (delay == 54)
+    {
+        LoadGenerator::latencies << "Poll cycles: " << period << std::endl;
+    }
+    if (delay == 55)
+    {
+        LoadGenerator::latencies << "Forwarded packets: " << period << std::endl;
+    }
     DPRINTF(PseudoInst, "pseudo_inst::resetstats(%i, %i)\n", delay, period);
-    if (!tc->getCpuPtr()->params().do_statistics_insts)
+    /*if (!tc->getCpuPtr()->params().do_statistics_insts)
         return;
-
 
     Tick when = curTick() + delay * sim_clock::as_int::ns;
     Tick repeat = period * sim_clock::as_int::ns;
 
-    statistics::schedStatEvent(false, true, when, repeat);
+    statistics::schedStatEvent(false, true, when, repeat);*/
 }
 
 void
 dumpstats(ThreadContext *tc, Tick delay, Tick period)
 {
     DPRINTF(PseudoInst, "pseudo_inst::dumpstats(%i, %i)\n", delay, period);
+    LoadGenerator::switched = false;
     if (!tc->getCpuPtr()->params().do_statistics_insts)
         return;
-
 
     Tick when = curTick() + delay * sim_clock::as_int::ns;
     Tick repeat = period * sim_clock::as_int::ns;
@@ -491,14 +599,18 @@ triggerWorkloadEvent(ThreadContext *tc)
 void
 workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
+    tc->getCpuPtr()->startROI = true;
+    reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->cpuStats.startROICycle = tc->getCpuPtr()->curCycle();
+    std::cout << tc->pcState().instAddr() << std::endl;
     DPRINTF(PseudoInst, "pseudo_inst::workbegin(%i, %i)\n", workid, threadid);
     System *sys = tc->getSystemPtr();
     const System::Params &params = sys->params();
 
-    if (params.exit_on_work_items) {
+    /*if (params.exit_on_work_items)
+    {
         exitSimLoop("workbegin", static_cast<int>(workid));
         return;
-    }
+    }*/
 
     DPRINTF(WorkItems, "Work Begin workid: %d, threadid %d\n", workid,
             threadid);
@@ -554,14 +666,18 @@ workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 void
 workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
+    tc->getCpuPtr()->startROI = false;
+    reinterpret_cast<o3::CPU *>(tc->getCpuPtr())->cpuStats.endROICycle = tc->getCpuPtr()->curCycle();
+
     DPRINTF(PseudoInst, "pseudo_inst::workend(%i, %i)\n", workid, threadid);
     System *sys = tc->getSystemPtr();
     const System::Params &params = sys->params();
 
-    if (params.exit_on_work_items) {
+    /*if (params.exit_on_work_items)
+    {
         exitSimLoop("workend", static_cast<int>(workid));
         return;
-    }
+    }*/
 
     DPRINTF(WorkItems, "Work End workid: %d, threadid %d\n", workid, threadid);
     tc->getCpuPtr()->workItemEnd();
@@ -603,5 +719,18 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
     }
 }
 
+void utimer(ThreadContext *tc, Tick time)
+{
+    DPRINTF(PseudoInst, "pseudo_inst::utimer(%i)\n", time);
+    tc->getCpuPtr()->timerTicks = time;
+    tc->getCpuPtr()->timerEnable = true;
+    tc->getCpuPtr()->timerNext = true;
+}
+void utimer_end(ThreadContext *tc)
+{
+    DPRINTF(PseudoInst, "pseudo_inst::utimer_end()\n");
+    tc->getCpuPtr()->timerEnable = false;
+    tc->getCpuPtr()->timerNext = true;
+}
 } // namespace pseudo_inst
 } // namespace gem5

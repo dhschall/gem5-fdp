@@ -43,6 +43,7 @@
 #include "arch/x86/utility.hh"
 #include "base/compiler.hh"
 #include "cpu/kvm/base.hh"
+#include "dev/x86/pc.hh"
 #include "debug/Drain.hh"
 #include "debug/Kvm.hh"
 #include "debug/KvmContext.hh"
@@ -119,8 +120,8 @@ static_assert(sizeof(FXSave) == 512, "Unexpected size of FXSave");
         APPLY_IREG(rdi, int_reg::Rdi); \
         APPLY_IREG(rsp, int_reg::Rsp); \
         APPLY_IREG(rbp, int_reg::Rbp); \
-        APPLY_IREG(r8, int_reg::R8); \
-        APPLY_IREG(r9, int_reg::R9); \
+        APPLY_IREG(r8, int_reg::R8);   \
+        APPLY_IREG(r9, int_reg::R9);   \
         APPLY_IREG(r10, int_reg::R10); \
         APPLY_IREG(r11, int_reg::R11); \
         APPLY_IREG(r12, int_reg::R12); \
@@ -129,53 +130,58 @@ static_assert(sizeof(FXSave) == 512, "Unexpected size of FXSave");
         APPLY_IREG(r15, int_reg::R15); \
     } while (0)
 
-#define FOREACH_SREG() \
-    do { \
-        APPLY_SREG(cr0, misc_reg::Cr0); \
-        APPLY_SREG(cr2, misc_reg::Cr2); \
-        APPLY_SREG(cr3, misc_reg::Cr3); \
-        APPLY_SREG(cr4, misc_reg::Cr4); \
-        APPLY_SREG(cr8, misc_reg::Cr8); \
-        APPLY_SREG(efer, misc_reg::Efer); \
+#define FOREACH_SREG()                             \
+    do                                             \
+    {                                              \
+        APPLY_SREG(cr0, misc_reg::Cr0);            \
+        APPLY_SREG(cr2, misc_reg::Cr2);            \
+        APPLY_SREG(cr3, misc_reg::Cr3);            \
+        APPLY_SREG(cr4, misc_reg::Cr4);            \
+        APPLY_SREG(cr8, misc_reg::Cr8);            \
+        APPLY_SREG(efer, misc_reg::Efer);          \
         APPLY_SREG(apic_base, misc_reg::ApicBase); \
     } while (0)
 
-#define FOREACH_DREG() \
-    do { \
+#define FOREACH_DREG()                    \
+    do                                    \
+    {                                     \
         APPLY_DREG(db[0], misc_reg::Dr0); \
         APPLY_DREG(db[1], misc_reg::Dr1); \
         APPLY_DREG(db[2], misc_reg::Dr2); \
         APPLY_DREG(db[3], misc_reg::Dr3); \
-        APPLY_DREG(dr6, misc_reg::Dr6); \
-        APPLY_DREG(dr7, misc_reg::Dr7); \
+        APPLY_DREG(dr6, misc_reg::Dr6);   \
+        APPLY_DREG(dr7, misc_reg::Dr7);   \
     } while (0)
 
-#define FOREACH_SEGMENT() \
-    do { \
-        APPLY_SEGMENT(cs, misc_reg::Cs - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(ds, misc_reg::Ds - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(es, misc_reg::Es - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(fs, misc_reg::Fs - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(gs, misc_reg::Gs - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(ss, misc_reg::Ss - misc_reg::SegSelBase); \
-        APPLY_SEGMENT(tr, misc_reg::Tr - misc_reg::SegSelBase); \
+#define FOREACH_SEGMENT()                                         \
+    do                                                            \
+    {                                                             \
+        APPLY_SEGMENT(cs, misc_reg::Cs - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(ds, misc_reg::Ds - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(es, misc_reg::Es - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(fs, misc_reg::Fs - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(gs, misc_reg::Gs - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(ss, misc_reg::Ss - misc_reg::SegSelBase);   \
+        APPLY_SEGMENT(tr, misc_reg::Tr - misc_reg::SegSelBase);   \
         APPLY_SEGMENT(ldt, misc_reg::Tsl - misc_reg::SegSelBase); \
     } while (0)
 
-#define FOREACH_DTABLE() \
-    do { \
-        APPLY_DTABLE(gdt, misc_reg::Tsg - misc_reg::SegSelBase); \
+#define FOREACH_DTABLE()                                          \
+    do                                                            \
+    {                                                             \
+        APPLY_DTABLE(gdt, misc_reg::Tsg - misc_reg::SegSelBase);  \
         APPLY_DTABLE(idt, misc_reg::Idtr - misc_reg::SegSelBase); \
     } while (0)
 
-template<typename Struct, typename Entry>
+template <typename Struct, typename Entry>
 static auto
 newVarStruct(size_t entries)
 {
     size_t size = sizeof(Struct) + entries * sizeof(Entry);
-    return std::unique_ptr<Struct, void(*)(Struct *)>(
-            (Struct *)operator new(size),
-            [](Struct *p) { operator delete(p); });
+    return std::unique_ptr<Struct, void (*)(Struct *)>(
+        (Struct *)operator new(size),
+        [](Struct *p)
+        { operator delete(p); });
 }
 
 static void
@@ -184,7 +190,7 @@ dumpKvm(const struct kvm_regs &regs)
     inform("KVM register state:\n");
 
 #define APPLY_IREG(kreg, mreg) \
-    inform("\t" # kreg ": 0x%llx\n", regs.kreg)
+inform("\t" #kreg ": 0x%llx\n", regs.kreg)
 
     FOREACH_IREG();
 
@@ -198,30 +204,30 @@ static void
 dumpKvm(const char *reg_name, const struct kvm_segment &seg)
 {
     inform("\t%s: @0x%llx+%x [sel: 0x%x, type: 0x%x]\n"
-           "\t\tpres.: %u, dpl: %u, db: %u, s: %u, l: %u, g: %u, avl: %u, "
-           "unus.: %u\n",
-           reg_name,
-           seg.base, seg.limit, seg.selector, seg.type,
-           seg.present, seg.dpl, seg.db, seg.s, seg.l, seg.g, seg.avl,
-           seg.unusable);
+            "\t\tpres.: %u, dpl: %u, db: %u, s: %u, l: %u, g: %u, avl: %u, "
+            "unus.: %u\n",
+            reg_name,
+            seg.base, seg.limit, seg.selector, seg.type,
+            seg.present, seg.dpl, seg.db, seg.s, seg.l, seg.g, seg.avl,
+            seg.unusable);
 }
 
 static void
 dumpKvm(const char *reg_name, const struct kvm_dtable &dtable)
 {
     inform("\t%s: @0x%llx+%x\n",
-           reg_name, dtable.base, dtable.limit);
+            reg_name, dtable.base, dtable.limit);
 }
 
 static void
 dumpKvm(const struct kvm_sregs &sregs)
 {
-#define APPLY_SREG(kreg, mreg)                          \
-    inform("\t" # kreg ": 0x%llx\n", sregs.kreg);
-#define APPLY_SEGMENT(kreg, idx)                \
-    dumpKvm(# kreg, sregs.kreg);
-#define APPLY_DTABLE(kreg, idx)                 \
-    dumpKvm(# kreg, sregs.kreg);
+#define APPLY_SREG(kreg, mreg) \
+inform("\t" #kreg ": 0x%llx\n", sregs.kreg);
+#define APPLY_SEGMENT(kreg, idx) \
+dumpKvm(#kreg, sregs.kreg);
+#define APPLY_DTABLE(kreg, idx) \
+dumpKvm(#kreg, sregs.kreg);
 
     inform("Special registers:\n");
     FOREACH_SEGMENT();
@@ -243,8 +249,8 @@ dumpKvm(const struct kvm_debugregs &regs)
 {
     inform("KVM debug state:\n");
 
-#define APPLY_DREG(kreg, mreg)                  \
-    inform("\t" # kreg ": 0x%llx\n", regs.kreg)
+#define APPLY_DREG(kreg, mreg) \
+inform("\t" #kreg ": 0x%llx\n", regs.kreg)
 
     FOREACH_DREG();
 
@@ -269,7 +275,7 @@ dumpFpuSpec(const struct kvm_fpu &fpu)
     inform("\tlast_dp: 0x%x\n", fpu.last_dp);
 }
 
-template<typename T>
+template <typename T>
 static void
 dumpFpuCommon(const T &fpu)
 {
@@ -277,45 +283,46 @@ dumpFpuCommon(const T &fpu)
     inform("\tfcw: 0x%x\n", fpu.fcw);
 
     inform("\tfsw: 0x%x (top: %i, "
-           "conditions: %s%s%s%s, exceptions: %s%s%s%s%s%s %s%s%s)\n",
-           fpu.fsw, top,
+            "conditions: %s%s%s%s, exceptions: %s%s%s%s%s%s %s%s%s)\n",
+            fpu.fsw, top,
 
-           (fpu.fsw & CC0Bit) ? "C0" : "",
-           (fpu.fsw & CC1Bit) ? "C1" : "",
-           (fpu.fsw & CC2Bit) ? "C2" : "",
-           (fpu.fsw & CC3Bit) ? "C3" : "",
+            (fpu.fsw & CC0Bit) ? "C0" : "",
+            (fpu.fsw & CC1Bit) ? "C1" : "",
+            (fpu.fsw & CC2Bit) ? "C2" : "",
+            (fpu.fsw & CC3Bit) ? "C3" : "",
 
-           (fpu.fsw & IEBit) ? "I" : "",
-           (fpu.fsw & DEBit) ? "D" : "",
-           (fpu.fsw & ZEBit) ? "Z" : "",
-           (fpu.fsw & OEBit) ? "O" : "",
-           (fpu.fsw & UEBit) ? "U" : "",
-           (fpu.fsw & PEBit) ? "P" : "",
+            (fpu.fsw & IEBit) ? "I" : "",
+            (fpu.fsw & DEBit) ? "D" : "",
+            (fpu.fsw & ZEBit) ? "Z" : "",
+            (fpu.fsw & OEBit) ? "O" : "",
+            (fpu.fsw & UEBit) ? "U" : "",
+            (fpu.fsw & PEBit) ? "P" : "",
 
-           (fpu.fsw & StackFaultBit) ? "SF " : "",
-           (fpu.fsw & ErrSummaryBit) ? "ES " : "",
-           (fpu.fsw & BusyBit) ? "BUSY " : ""
-        );
+            (fpu.fsw & StackFaultBit) ? "SF " : "",
+            (fpu.fsw & ErrSummaryBit) ? "ES " : "",
+            (fpu.fsw & BusyBit) ? "BUSY " : "");
     inform("\tftwx: 0x%x\n", fpu.ftwx);
     inform("\tlast_opcode: 0x%x\n", fpu.last_opcode);
     dumpFpuSpec(fpu);
     inform("\tmxcsr: 0x%x\n", fpu.mxcsr);
     inform("\tFP Stack:\n");
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i)
+    {
         const unsigned reg_idx((i + top) & 0x7);
         const bool empty(!((fpu.ftwx >> reg_idx) & 0x1));
         const double value(X86ISA::loadFloat80(fpu.fpr[i]));
         char hex[33];
         for (int j = 0; j < 10; ++j)
-            snprintf(&hex[j*2], 3, "%.2x", fpu.fpr[i][j]);
+            snprintf(&hex[j * 2], 3, "%.2x", fpu.fpr[i][j]);
         inform("\t\tST%i/%i: 0x%s (%f)%s\n", i, reg_idx,
-               hex, value, empty ? " (e)" : "");
+                hex, value, empty ? " (e)" : "");
     }
     inform("\tXMM registers:\n");
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         char hex[33];
         for (int j = 0; j < 16; ++j)
-            snprintf(&hex[j*2], 3, "%.2x", fpu.xmm[i][j]);
+            snprintf(&hex[j * 2], 3, "%.2x", fpu.xmm[i][j]);
         inform("\t\t%i: 0x%s\n", i, hex);
     }
 }
@@ -339,7 +346,8 @@ dumpKvm(const struct kvm_msrs &msrs)
 {
     inform("MSRs:\n");
 
-    for (int i = 0; i < msrs.nmsrs; ++i) {
+    for (int i = 0; i < msrs.nmsrs; ++i)
+    {
         const struct kvm_msr_entry &e(msrs.entries[i]);
 
         inform("\t0x%x: 0x%x\n", e.index, e.data);
@@ -352,10 +360,11 @@ dumpKvm(const struct kvm_xcrs &regs)
     inform("KVM XCR registers:\n");
 
     inform("\tFlags: 0x%x\n", regs.flags);
-    for (int i = 0; i < regs.nr_xcrs; ++i) {
+    for (int i = 0; i < regs.nr_xcrs; ++i)
+    {
         inform("\tXCR[0x%x]: 0x%x\n",
-               regs.xcrs[i].xcr,
-               regs.xcrs[i].value);
+                regs.xcrs[i].xcr,
+                regs.xcrs[i].value);
     }
 }
 
@@ -365,16 +374,16 @@ dumpKvm(const struct kvm_vcpu_events &events)
     inform("vCPU events:\n");
 
     inform("\tException: [inj: %i, nr: %i, has_ec: %i, ec: %i]\n",
-           events.exception.injected, events.exception.nr,
-           events.exception.has_error_code, events.exception.error_code);
+            events.exception.injected, events.exception.nr,
+            events.exception.has_error_code, events.exception.error_code);
 
     inform("\tInterrupt: [inj: %i, nr: %i, soft: %i]\n",
-           events.interrupt.injected, events.interrupt.nr,
-           events.interrupt.soft);
+            events.interrupt.injected, events.interrupt.nr,
+            events.interrupt.soft);
 
     inform("\tNMI: [inj: %i, pending: %i, masked: %i]\n",
-           events.nmi.injected, events.nmi.pending,
-           events.nmi.masked);
+            events.nmi.injected, events.nmi.pending,
+            events.nmi.masked);
 
     inform("\tSIPI vector: 0x%x\n", events.sipi_vector);
     inform("\tFlags: 0x%x\n", events.flags);
@@ -393,76 +402,80 @@ isCanonicalAddress(uint64_t addr)
 
 static void
 checkSeg(const char *name, const int idx, const struct kvm_segment &seg,
-         struct kvm_sregs sregs)
+            struct kvm_sregs sregs)
 {
     // Check the register base
-    switch (idx) {
-      case misc_reg::Tsl:
-      case misc_reg::Tr:
-      case misc_reg::Fs:
-      case misc_reg::Gs:
+    switch (idx)
+    {
+    case misc_reg::Tsl:
+    case misc_reg::Tr:
+    case misc_reg::Fs:
+    case misc_reg::Gs:
         if (!isCanonicalAddress(seg.base))
             warn("Illegal %s base: 0x%x\n", name, seg.base);
         break;
 
-      case misc_reg::Ss:
-      case misc_reg::Ds:
-      case misc_reg::Es:
+    case misc_reg::Ss:
+    case misc_reg::Ds:
+    case misc_reg::Es:
         if (seg.unusable)
             break;
         [[fallthrough]];
-      case misc_reg::Cs:
+    case misc_reg::Cs:
         if (seg.base & 0xffffffff00000000ULL)
             warn("Illegal %s base: 0x%x\n", name, seg.base);
         break;
     }
 
     // Check the type
-    switch (idx) {
-      case misc_reg::Cs:
-        switch (seg.type) {
-          case 3:
+    switch (idx)
+    {
+    case misc_reg::Cs:
+        switch (seg.type)
+        {
+        case 3:
             if (seg.dpl != 0)
                 warn("CS type is 3 but dpl != 0.\n");
             break;
-          case 9:
-          case 11:
+        case 9:
+        case 11:
             if (seg.dpl != sregs.ss.dpl)
                 warn("CS type is %i but CS DPL != SS DPL\n", seg.type);
             break;
-          case 13:
-          case 15:
+        case 13:
+        case 15:
             if (seg.dpl > sregs.ss.dpl)
                 warn("CS type is %i but CS DPL > SS DPL\n", seg.type);
             break;
-          default:
+        default:
             warn("Illegal CS type: %i\n", seg.type);
             break;
         }
         break;
 
-      case misc_reg::Ss:
+    case misc_reg::Ss:
         if (seg.unusable)
             break;
-        switch (seg.type) {
-          case 3:
+        switch (seg.type)
+        {
+        case 3:
             if (sregs.cs.type == 3 && seg.dpl != 0)
                 warn("CS type is 3, but SS DPL is != 0.\n");
             [[fallthrough]];
-          case 7:
+        case 7:
             if (!(sregs.cr0 & 1) && seg.dpl != 0)
                 warn("SS DPL is %i, but CR0 PE is 0\n", seg.dpl);
             break;
-          default:
+        default:
             warn("Illegal SS type: %i\n", seg.type);
             break;
         }
         break;
 
-      case misc_reg::Ds:
-      case misc_reg::Es:
-      case misc_reg::Fs:
-      case misc_reg::Gs:
+    case misc_reg::Ds:
+    case misc_reg::Es:
+    case misc_reg::Fs:
+    case misc_reg::Gs:
         if (seg.unusable)
             break;
         if (!(seg.type & 0x1) ||
@@ -470,13 +483,13 @@ checkSeg(const char *name, const int idx, const struct kvm_segment &seg,
             warn("%s has an illegal type field: %i\n", name, seg.type);
         break;
 
-      case misc_reg::Tr:
+    case misc_reg::Tr:
         // TODO: We should check the CPU mode
         if (seg.type != 3 && seg.type != 11)
             warn("%s: Illegal segment type (%i)\n", name, seg.type);
         break;
 
-      case misc_reg::Tsl:
+    case misc_reg::Tsl:
         if (seg.unusable)
             break;
         if (seg.type != 2)
@@ -484,49 +497,52 @@ checkSeg(const char *name, const int idx, const struct kvm_segment &seg,
         break;
     }
 
-    switch (idx) {
-      case misc_reg::Ss:
-      case misc_reg::Ds:
-      case misc_reg::Es:
-      case misc_reg::Fs:
-      case misc_reg::Gs:
+    switch (idx)
+    {
+    case misc_reg::Ss:
+    case misc_reg::Ds:
+    case misc_reg::Es:
+    case misc_reg::Fs:
+    case misc_reg::Gs:
         if (seg.unusable)
             break;
         [[fallthrough]];
-      case misc_reg::Cs:
+    case misc_reg::Cs:
         if (!seg.s)
             warn("%s: S flag not set\n", name);
         break;
 
-      case misc_reg::Tsl:
+    case misc_reg::Tsl:
         if (seg.unusable)
             break;
         [[fallthrough]];
-      case misc_reg::Tr:
+    case misc_reg::Tr:
         if (seg.s)
             warn("%s: S flag is set\n", name);
         break;
     }
 
-    switch (idx) {
-      case misc_reg::Ss:
-      case misc_reg::Ds:
-      case misc_reg::Es:
-      case misc_reg::Fs:
-      case misc_reg::Gs:
-      case misc_reg::Tsl:
+    switch (idx)
+    {
+    case misc_reg::Ss:
+    case misc_reg::Ds:
+    case misc_reg::Es:
+    case misc_reg::Fs:
+    case misc_reg::Gs:
+    case misc_reg::Tsl:
         if (seg.unusable)
             break;
         [[fallthrough]];
-      case misc_reg::Tr:
-      case misc_reg::Cs:
+    case misc_reg::Tr:
+    case misc_reg::Cs:
         if (!seg.present)
             warn("%s: P flag not set\n", name);
 
         if (((seg.limit & 0xFFF) == 0 && seg.g) ||
-            ((seg.limit & 0xFFF00000) != 0 && !seg.g)) {
+            ((seg.limit & 0xFFF00000) != 0 && !seg.g))
+        {
             warn("%s limit (0x%x) and g (%i) combination is illegal.\n",
-                 name, seg.limit, seg.g);
+                    name, seg.limit, seg.g);
         }
         break;
     }
@@ -536,8 +552,10 @@ checkSeg(const char *name, const int idx, const struct kvm_segment &seg,
 
 X86KvmCPU::X86KvmCPU(const X86KvmCPUParams &params)
     : BaseKvmCPU(params),
-      useXSave(params.useXSave)
-{}
+        useXSave(params.useXSave)
+{
+    isKvm = true;
+}
 
 void
 X86KvmCPU::init()
@@ -559,11 +577,14 @@ X86KvmCPU::init()
     haveXSave = kvm.capXSave();
     haveXCRs = kvm.capXCRs();
 
-    if (useXSave && !haveXSave) {
+    if (useXSave && !haveXSave)
+    {
         warn("KVM: XSAVE not supported by host. MXCSR synchronization might "
-             "be unreliable due to kernel bugs.\n");
+                "be unreliable due to kernel bugs.\n");
         useXSave = false;
-    } else if (!useXSave) {
+    }
+    else if (!useXSave)
+    {
         warn("KVM: XSave FPU/SIMD synchronization disabled by user.\n");
     }
 }
@@ -576,6 +597,11 @@ void
 X86KvmCPU::startup()
 {
     BaseKvmCPU::startup();
+    setupMce();
+    /*if (ioctl(KVM_SET_TSC_READ, 0l) == -1)
+    {
+        panic("KVM_SET_TSC_READ failed\n");
+    }*/
 
     updateCPUID();
 
@@ -628,13 +654,16 @@ X86KvmCPU::dumpSpecRegs() const
 void
 X86KvmCPU::dumpDebugRegs() const
 {
-    if (haveDebugRegs) {
+    if (haveDebugRegs)
+    {
 #ifdef KVM_GET_DEBUGREGS
         struct kvm_debugregs dregs;
         getDebugRegisters(dregs);
         dumpKvm(dregs);
 #endif
-    } else {
+    }
+    else
+    {
         inform("Debug registers not supported by kernel.\n");
     }
 }
@@ -642,11 +671,14 @@ X86KvmCPU::dumpDebugRegs() const
 void
 X86KvmCPU::dumpXCRs() const
 {
-    if (haveXCRs) {
+    if (haveXCRs)
+    {
         struct kvm_xcrs xcrs;
         getXCRs(xcrs);
         dumpKvm(xcrs);
-    } else {
+    }
+    else
+    {
         inform("XCRs not supported by kernel.\n");
     }
 }
@@ -654,11 +686,14 @@ X86KvmCPU::dumpXCRs() const
 void
 X86KvmCPU::dumpXSave() const
 {
-    if (haveXSave) {
+    if (haveXSave)
+    {
         struct kvm_xsave xsave;
         getXSave(xsave);
         dumpKvm(xsave);
-    } else {
+    }
+    else
+    {
         inform("XSave not supported by kernel.\n");
     }
 }
@@ -676,10 +711,11 @@ X86KvmCPU::dumpMSRs() const
 {
     const Kvm::MSRIndexVector &supported_msrs = vm->kvm->getSupportedMSRs();
     auto msrs = newVarStruct<struct kvm_msrs, struct kvm_msr_entry>(
-            supported_msrs.size());
+        supported_msrs.size());
 
     msrs->nmsrs = supported_msrs.size();
-    for (int i = 0; i < supported_msrs.size(); ++i) {
+    for (int i = 0; i < supported_msrs.size(); ++i)
+    {
         struct kvm_msr_entry &e(msrs->entries[i]);
         e.index = supported_msrs[i];
         e.reserved = 0;
@@ -715,11 +751,11 @@ X86KvmCPU::updateKvmStateRegs()
     regs.rip = tc->pcState().instAddr() - tc->readMiscReg(misc_reg::CsBase);
 
     /* You might think that setting regs.rflags to the contents
-     * misc_reg::Rflags here would suffice. In that case you're
-     * mistaken. We need to reconstruct it from a bunch of ucode
-     * registers and wave a dead chicken over it (aka mask out and set
-     * reserved bits) to get it to work.
-     */
+        * misc_reg::Rflags here would suffice. In that case you're
+        * mistaken. We need to reconstruct it from a bunch of ucode
+        * registers and wave a dead chicken over it (aka mask out and set
+        * reserved bits) to get it to work.
+        */
     regs.rflags = X86ISA::getRFlags(tc);
 
     setRegisters(regs);
@@ -727,7 +763,7 @@ X86KvmCPU::updateKvmStateRegs()
 
 static inline void
 setKvmSegmentReg(ThreadContext *tc, struct kvm_segment &kvm_seg,
-                 const int index)
+                    const int index)
 {
     SegAttr attr(tc->readMiscRegNoEffect(misc_reg::segAttr(index)));
 
@@ -796,9 +832,10 @@ X86KvmCPU::updateKvmStateSRegs()
 
     // There are currently some cases where the active task isn't
     // marked as busy. This is illegal in VMX, so we force it to busy.
-    if (sregs.tr.type == SEG_SYS_TYPE_TSS_AVAILABLE) {
+    if (sregs.tr.type == SEG_SYS_TYPE_TSS_AVAILABLE)
+    {
         hack("tr.type (%i) is not busy. Forcing the busy bit.\n",
-             sregs.tr.type);
+                sregs.tr.type);
         sregs.tr.type = SEG_SYS_TYPE_TSS_BUSY;
     }
 
@@ -807,24 +844,26 @@ X86KvmCPU::updateKvmStateSRegs()
     // DPL of SS correctly when taking interrupts, so we need to fix
     // that here.
     if ((sregs.cs.type == SEG_CS_TYPE_ACCESSED ||
-         sregs.cs.type == SEG_CS_TYPE_READ_ACCESSED) &&
-        sregs.cs.dpl != sregs.ss.dpl) {
+            sregs.cs.type == SEG_CS_TYPE_READ_ACCESSED) &&
+        sregs.cs.dpl != sregs.ss.dpl)
+    {
 
         hack("CS.DPL (%i) != SS.DPL (%i): Forcing SS.DPL to %i\n",
-             sregs.cs.dpl, sregs.ss.dpl, sregs.cs.dpl);
+                sregs.cs.dpl, sregs.ss.dpl, sregs.cs.dpl);
         sregs.ss.dpl = sregs.cs.dpl;
     }
 
     // Do checks after fixing up the state to avoid getting excessive
     // amounts of warnings.
     RFLAGS rflags_nocc(tc->readMiscReg(misc_reg::Rflags));
-    if (!rflags_nocc.vm) {
+    if (!rflags_nocc.vm)
+    {
         // Do segment verification if the CPU isn't entering virtual
         // 8086 mode.  We currently assume that unrestricted guest
         // mode is available.
 
 #define APPLY_SEGMENT(kreg, idx) \
-        checkSeg(# kreg, idx + misc_reg::SegSelBase, sregs.kreg, sregs)
+checkSeg(#kreg, idx + misc_reg::SegSelBase, sregs.kreg, sregs)
 
         FOREACH_SEGMENT();
 #undef APPLY_SEGMENT
@@ -849,10 +888,11 @@ updateKvmStateFPUCommon(ThreadContext *tc, T &fpu)
     fpu.last_opcode = tc->readMiscRegNoEffect(misc_reg::Fop);
 
     const unsigned top((fpu.fsw >> 11) & 0x7);
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i)
+    {
         const unsigned reg_idx((i + top) & 0x7);
         const double value(bitsToFloat64(
-                    tc->getReg(float_reg::fpr(reg_idx))));
+            tc->getReg(float_reg::fpr(reg_idx))));
         DPRINTF(KvmContext, "Setting KVM FP reg %i (st[%i]) := %f\n",
                 reg_idx, i, value);
         X86ISA::storeFloat80(fpu.fpr[i], value);
@@ -860,7 +900,8 @@ updateKvmStateFPUCommon(ThreadContext *tc, T &fpu)
 
     // TODO: We should update the MMX state
 
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         *(uint64_t *)&fpu.xmm[i][0] =
             tc->getReg(float_reg::xmmLow(i));
         *(uint64_t *)&fpu.xmm[i][8] =
@@ -933,7 +974,8 @@ X86KvmCPU::updateKvmStateMSRs()
 
     const Kvm::MSRIndexVector &indices(getMsrIntersection());
 
-    for (auto it = indices.cbegin(); it != indices.cend(); ++it) {
+    for (auto it = indices.cbegin(); it != indices.cend(); ++it)
+    {
         struct kvm_msr_entry e;
 
         e.index = *it;
@@ -963,12 +1005,15 @@ X86KvmCPU::updateThreadContext()
 
     updateThreadContextRegs(regs, sregs);
     updateThreadContextSRegs(sregs);
-    if (useXSave) {
+    if (useXSave)
+    {
         struct kvm_xsave xsave;
         getXSave(xsave);
 
-       updateThreadContextXSave(xsave);
-    } else {
+        updateThreadContextXSave(xsave);
+    }
+    else
+    {
         struct kvm_fpu fpu;
         getFPUState(fpu);
 
@@ -984,7 +1029,7 @@ X86KvmCPU::updateThreadContext()
 
 void
 X86KvmCPU::updateThreadContextRegs(const struct kvm_regs &regs,
-                                   const struct kvm_sregs &sregs)
+                                    const struct kvm_sregs &sregs)
 {
 #define APPLY_IREG(kreg, mreg) tc->setReg(mreg, regs.kreg)
 
@@ -999,10 +1044,9 @@ X86KvmCPU::updateThreadContextRegs(const struct kvm_regs &regs,
     X86ISA::setRFlags(tc, regs.rflags);
 }
 
-
 inline void
 setContextSegment(ThreadContext *tc, const struct kvm_segment &kvm_seg,
-                  const int index)
+                    const int index)
 {
     SegAttr attr(0);
 
@@ -1027,7 +1071,7 @@ setContextSegment(ThreadContext *tc, const struct kvm_segment &kvm_seg,
 
 inline void
 setContextSegment(ThreadContext *tc, const struct kvm_dtable &kvm_dtable,
-                  const int index)
+                    const int index)
 {
     // We need some setMiscReg magic here to keep the effective base
     // addresses in sync. We need an up-to-date version of EFER, so
@@ -1053,13 +1097,14 @@ X86KvmCPU::updateThreadContextSRegs(const struct kvm_sregs &sregs)
 #undef APPLY_DTABLE
 }
 
-template<typename T>
+template <typename T>
 static void
 updateThreadContextFPUCommon(ThreadContext *tc, const T &fpu)
 {
     const unsigned top((fpu.fsw >> 11) & 0x7);
 
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8; ++i)
+    {
         const unsigned reg_idx((i + top) & 0x7);
         const double value(X86ISA::loadFloat80(fpu.fpr[i]));
         DPRINTF(KvmContext, "Setting gem5 FP reg %i (st[%i]) := %f\n",
@@ -1081,7 +1126,8 @@ updateThreadContextFPUCommon(ThreadContext *tc, const T &fpu)
 
     tc->setMiscRegNoEffect(misc_reg::Fop, fpu.last_opcode);
 
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         tc->setReg(float_reg::xmmLow(i), *(uint64_t *)&fpu.xmm[i][0]);
         tc->setReg(float_reg::xmmHigh(i), *(uint64_t *)&fpu.xmm[i][8]);
     }
@@ -1117,13 +1163,14 @@ X86KvmCPU::updateThreadContextMSRs()
     const Kvm::MSRIndexVector &msrs(getMsrIntersection());
 
     auto kvm_msrs = newVarStruct<struct kvm_msrs, struct kvm_msr_entry>(
-            msrs.size());
+        msrs.size());
     struct kvm_msr_entry *entry;
 
     // Create a list of MSRs to read
     kvm_msrs->nmsrs = msrs.size();
     entry = &kvm_msrs->entries[0];
-    for (auto it = msrs.cbegin(); it != msrs.cend(); ++it, ++entry) {
+    for (auto it = msrs.cbegin(); it != msrs.cend(); ++it, ++entry)
+    {
         entry->index = *it;
         entry->reserved = 0;
         entry->data = 0;
@@ -1133,7 +1180,8 @@ X86KvmCPU::updateThreadContextMSRs()
 
     // Update M5's state
     entry = &kvm_msrs->entries[0];
-    for (int i = 0; i < kvm_msrs->nmsrs; ++i, ++entry) {
+    for (int i = 0; i < kvm_msrs->nmsrs; ++i, ++entry)
+    {
         DPRINTF(KvmContext, "Setting M5 MSR: idx: 0x%x, data: 0x%x\n",
                 entry->index, entry->data);
 
@@ -1160,10 +1208,13 @@ X86KvmCPU::deliverInterrupts()
     }
 
     X86Interrupt *x86int(dynamic_cast<X86Interrupt *>(fault.get()));
-    if (dynamic_cast<NonMaskableInterrupt *>(fault.get())) {
+    if (dynamic_cast<NonMaskableInterrupt *>(fault.get()))
+    {
         DPRINTF(KvmInt, "Delivering NMI\n");
         kvmNonMaskableInterrupt();
-    } else if (dynamic_cast<InitInterrupt *>(fault.get())) {
+    }
+    else if (dynamic_cast<InitInterrupt *>(fault.get()))
+    {
         DPRINTF(KvmInt, "INIT interrupt\n");
         fault.get()->invoke(tc);
         // Delay the kvm state update since we won't enter KVM on this
@@ -1174,13 +1225,17 @@ X86KvmCPU::deliverInterrupts()
         // interrupt before restarting the thread. The simulated CPUs
         // use the same kind of hack using a microcode routine.
         thread->suspend();
-    } else if (dynamic_cast<StartupInterrupt *>(fault.get())) {
+    }
+    else if (dynamic_cast<StartupInterrupt *>(fault.get()))
+    {
         DPRINTF(KvmInt, "STARTUP interrupt\n");
         fault.get()->invoke(tc);
         // The kvm state is assumed to have been updated when entering
         // kvmRun(), so we need to update manually it here.
         updateKvmState();
-    } else if (x86int) {
+    }
+    else if (x86int)
+    {
         struct kvm_interrupt kvm_int;
         kvm_int.irq = x86int->getVector();
 
@@ -1188,10 +1243,11 @@ X86KvmCPU::deliverInterrupts()
                 fault->name(), kvm_int.irq);
 
         kvmInterrupt(kvm_int);
-    } else {
+    }
+    else
+    {
         panic("KVM: Unknown interrupt type\n");
     }
-
 }
 
 Tick
@@ -1201,36 +1257,47 @@ X86KvmCPU::kvmRun(Tick ticks)
 
     auto *lapic = dynamic_cast<X86ISA::Interrupts *>(interrupts[0]);
 
-    if (lapic->checkInterruptsRaw()) {
-        if (lapic->hasPendingUnmaskable()) {
+    if (lapic->checkInterruptsRaw())
+    {
+        if (lapic->hasPendingUnmaskable())
+        {
             DPRINTF(KvmInt,
                     "Delivering unmaskable interrupt.\n");
             syncThreadContext();
             deliverInterrupts();
-        } else if (kvm_run.ready_for_interrupt_injection) {
+        }
+        else if (kvm_run.ready_for_interrupt_injection)
+        {
             // KVM claims that it is ready for an interrupt. It might
             // be lying if we just updated rflags and disabled
             // interrupts (e.g., by doing a CPU handover). Let's sync
             // the thread context and check if there are /really/
             // interrupts that should be delivered now.
             syncThreadContext();
-            if (lapic->checkInterrupts()) {
+            if (lapic->checkInterrupts())
+            {
                 DPRINTF(KvmInt,
                         "M5 has pending interrupts, delivering interrupt.\n");
 
                 deliverInterrupts();
-            } else {
+            }
+            else
+            {
                 DPRINTF(KvmInt,
                         "Interrupt delivery delayed due to KVM confusion.\n");
                 kvm_run.request_interrupt_window = 1;
             }
-        } else if (!kvm_run.request_interrupt_window) {
+        }
+        else if (!kvm_run.request_interrupt_window)
+        {
             DPRINTF(KvmInt,
                     "M5 has pending interrupts, requesting interrupt "
                     "window.\n");
             kvm_run.request_interrupt_window = 1;
         }
-    } else {
+    }
+    else
+    {
         kvm_run.request_interrupt_window = 0;
     }
 
@@ -1247,7 +1314,8 @@ X86KvmCPU::kvmRunDrain()
 {
     struct kvm_run &kvm_run(*getKvmRunState());
 
-    if (!archIsDrained()) {
+    if (!archIsDrained())
+    {
         DPRINTF(Drain, "kvmRunDrain: Architecture code isn't drained\n");
 
         // Tell KVM to find a suitable place to deliver interrupts. This
@@ -1260,7 +1328,9 @@ X86KvmCPU::kvmRunDrain()
         // reach an interrupt window. Otherwise, we'll just try again
         // later.
         return BaseKvmCPU::kvmRun(1 * sim_clock::as_float::ms);
-    } else {
+    }
+    else
+    {
         DPRINTF(Drain, "kvmRunDrain: Delivering pending IO\n");
 
         return BaseKvmCPU::kvmRun(0);
@@ -1281,14 +1351,16 @@ X86KvmCPU::handleIOMiscReg32(int miscreg)
 
     assert(kvm_run.exit_reason == KVM_EXIT_IO);
 
-    if (kvm_run.io.size != 4) {
+    if (kvm_run.io.size != 4)
+    {
         panic("Unexpected IO size (%u) for address 0x%x.\n",
-              kvm_run.io.size, port);
+                kvm_run.io.size, port);
     }
 
-    if (kvm_run.io.count != 1) {
+    if (kvm_run.io.count != 1)
+    {
         panic("Unexpected IO count (%u) for address 0x%x.\n",
-              kvm_run.io.count, port);
+                kvm_run.io.count, port);
     }
 
     uint32_t *data((uint32_t *)getGuestData(kvm_run.io.data_offset));
@@ -1310,33 +1382,41 @@ X86KvmCPU::handleKvmExitIO()
     const int count(kvm_run.io.count);
 
     assert(kvm_run.io.direction == KVM_EXIT_IO_IN ||
-           kvm_run.io.direction == KVM_EXIT_IO_OUT);
+            kvm_run.io.direction == KVM_EXIT_IO_OUT);
 
     DPRINTF(KvmIO, "KVM-x86: Handling IO instruction (%s) (port: 0x%x)\n",
             (isWrite ? "out" : "in"), kvm_run.io.port);
 
     /* Vanilla gem5 handles PCI discovery in the TLB(!). Since we
-     * don't use the TLB component, we need to intercept and handle
-     * the PCI configuration space IO ports here.
-     *
-     * The IO port PCI discovery mechanism uses one address register
-     * and one data register. We map the address register to a misc
-     * reg and use that to re-route data register accesses to the
-     * right location in the PCI configuration space.
-     */
-    if (port == IO_PCI_CONF_ADDR) {
+        * don't use the TLB component, we need to intercept and handle
+        * the PCI configuration space IO ports here.
+        *
+        * The IO port PCI discovery mechanism uses one address register
+        * and one data register. We map the address register to a misc
+        * reg and use that to re-route data register accesses to the
+        * right location in the PCI configuration space.
+        */
+    if (port == IO_PCI_CONF_ADDR)
+    {
         handleIOMiscReg32(misc_reg::PciConfigAddress);
         return 0;
-    } else if ((port & ~0x3) == IO_PCI_CONF_DATA_BASE) {
+    }
+    else if ((port & ~0x3) == IO_PCI_CONF_DATA_BASE)
+    {
         Addr pciConfigAddr(tc->readMiscRegNoEffect(
-                    misc_reg::PciConfigAddress));
-        if (pciConfigAddr & 0x80000000) {
+            misc_reg::PciConfigAddress));
+        if (pciConfigAddr & 0x80000000)
+        {
             pAddr = X86ISA::x86PciConfigAddress((pciConfigAddr & 0x7ffffffc) |
                                                 (port & 0x3));
-        } else {
+        }
+        else
+        {
             pAddr = X86ISA::x86IOAddress(port);
         }
-    } else {
+    }
+    else
+    {
         pAddr = X86ISA::x86IOAddress(port);
     }
 
@@ -1344,7 +1424,8 @@ X86KvmCPU::handleKvmExitIO()
     // Temporarily lock and migrate to the device event queue to
     // prevent races in multi-core mode.
     EventQueue::ScopedMigration migrate(deviceEventQueue());
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i)
+    {
         RequestPtr io_req = std::make_shared<Request>(
             pAddr, kvm_run.io.size,
             Request::UNCACHEABLE, dataRequestorId());
@@ -1386,10 +1467,11 @@ X86KvmCPU::archIsDrained() const
     // executed in the guest by requesting an interrupt window if
     // there are pending interrupts.
     const bool pending_events(events.exception.injected ||
-                              events.interrupt.injected ||
-                              events.nmi.injected || events.nmi.pending);
+                                events.interrupt.injected ||
+                                events.nmi.injected || events.nmi.pending);
 
-    if (pending_events) {
+    if (pending_events)
+    {
         DPRINTF(Drain, "archIsDrained: Pending events: %s %s %s %s\n",
                 events.exception.injected ? "exception" : "",
                 events.interrupt.injected ? "interrupt" : "",
@@ -1419,7 +1501,7 @@ X86KvmCPU::ioctlRun()
 
 static struct kvm_cpuid_entry2
 makeKvmCpuid(uint32_t function, uint32_t index,
-             CpuidResult &result)
+                CpuidResult &result)
 {
     struct kvm_cpuid_entry2 e;
     e.function = function;
@@ -1433,21 +1515,30 @@ makeKvmCpuid(uint32_t function, uint32_t index,
     return e;
 }
 
+void X86KvmCPU::setupMce()
+{
+    uint64_t mcg_cap = 0x104;
+    if (ioctl(KVM_X86_SETUP_MCE, &mcg_cap) == -1)
+        panic("KVM: Failed to set guest mce (errno: %i)\n",
+                errno);
+}
+
 void
 X86KvmCPU::updateCPUID()
 {
     Kvm::CPUIDVector m5_supported;
 
     /* TODO: We currently don't support any of the functions that
-     * iterate through data structures in the CPU using an index. It's
-     * currently not a problem since M5 doesn't expose any of them at
-     * the moment.
-     */
+        * iterate through data structures in the CPU using an index. It's
+        * currently not a problem since M5 doesn't expose any of them at
+        * the moment.
+        */
 
     /* Basic features */
     CpuidResult func0;
     X86ISA::doCpuid(tc, 0x0, 0, func0);
-    for (uint32_t function = 0; function <= func0.rax; ++function) {
+    for (uint32_t function = 0; function <= func0.rax; ++function)
+    {
         CpuidResult cpuid;
         uint32_t idx(0);
 
@@ -1455,10 +1546,26 @@ X86KvmCPU::updateCPUID()
         m5_supported.push_back(makeKvmCpuid(function, idx, cpuid));
     }
 
+    /* Hypervisor features */
+    CpuidResult hfunc0;
+    X86ISA::doCpuid(tc, 0x40000000, 0, hfunc0);
+    for (uint32_t function = 0x40000000; function <= hfunc0.rax; ++function)
+    {
+        CpuidResult cpuid;
+        uint32_t idx(0);
+        std::cout << "function: " << function << std::endl;
+        X86ISA::doCpuid(tc, function, idx, cpuid);
+        std::cout << "cpuid.rbx: " << cpuid.rbx << std::endl;
+        std::cout << "cpuid.rcx: " << cpuid.rcx << std::endl;
+        std::cout << "cpuid.rdx: " << cpuid.rdx << std::endl;
+        m5_supported.push_back(makeKvmCpuid(function, idx, cpuid));
+    }
+
     /* Extended features */
     CpuidResult efunc0;
     X86ISA::doCpuid(tc, 0x80000000, 0, efunc0);
-    for (uint32_t function = 0x80000000; function <= efunc0.rax; ++function) {
+    for (uint32_t function = 0x80000000; function <= efunc0.rax; ++function)
+    {
         CpuidResult cpuid;
         uint32_t idx(0);
 
@@ -1474,14 +1581,14 @@ X86KvmCPU::setCPUID(const struct kvm_cpuid2 &cpuid)
 {
     if (ioctl(KVM_SET_CPUID2, (void *)&cpuid) == -1)
         panic("KVM: Failed to set guest CPUID2 (errno: %i)\n",
-              errno);
+                errno);
 }
 
 void
 X86KvmCPU::setCPUID(const Kvm::CPUIDVector &cpuid)
 {
     auto kvm_cpuid = newVarStruct<struct kvm_cpuid2, struct kvm_cpuid_entry2>(
-            cpuid.size());
+        cpuid.size());
 
     kvm_cpuid->nent = cpuid.size();
     std::copy(cpuid.begin(), cpuid.end(), kvm_cpuid->entries);
@@ -1494,14 +1601,14 @@ X86KvmCPU::setMSRs(const struct kvm_msrs &msrs)
 {
     if (ioctl(KVM_SET_MSRS, (void *)&msrs) == -1)
         panic("KVM: Failed to set guest MSRs (errno: %i)\n",
-              errno);
+                errno);
 }
 
 void
 X86KvmCPU::setMSRs(const KvmMSRVector &msrs)
 {
     auto kvm_msrs = newVarStruct<struct kvm_msrs, struct kvm_msr_entry>(
-            msrs.size());
+        msrs.size());
 
     kvm_msrs->nmsrs = msrs.size();
     std::copy(msrs.begin(), msrs.end(), kvm_msrs->entries);
@@ -1514,9 +1621,8 @@ X86KvmCPU::getMSRs(struct kvm_msrs &msrs) const
 {
     if (ioctl(KVM_GET_MSRS, (void *)&msrs) == -1)
         panic("KVM: Failed to get guest MSRs (errno: %i)\n",
-              errno);
+                errno);
 }
-
 
 void
 X86KvmCPU::setMSR(uint32_t index, uint64_t value)
@@ -1550,17 +1656,22 @@ X86KvmCPU::getMSR(uint32_t index) const
 const Kvm::MSRIndexVector &
 X86KvmCPU::getMsrIntersection() const
 {
-    if (cachedMsrIntersection.empty()) {
+    if (cachedMsrIntersection.empty())
+    {
         const Kvm::MSRIndexVector &kvm_msrs = vm->kvm->getSupportedMSRs();
 
         DPRINTF(Kvm, "kvm-x86: Updating MSR intersection\n");
-        for (auto it = kvm_msrs.cbegin(); it != kvm_msrs.cend(); ++it) {
-            if (X86ISA::msrMap.find(*it) != X86ISA::msrMap.end()) {
+        for (auto it = kvm_msrs.cbegin(); it != kvm_msrs.cend(); ++it)
+        {
+            if (X86ISA::msrMap.find(*it) != X86ISA::msrMap.end())
+            {
                 cachedMsrIntersection.push_back(*it);
                 DPRINTF(Kvm, "kvm-x86: Adding MSR 0x%x\n", *it);
-            } else {
+            }
+            else
+            {
                 warn("kvm-x86: MSR (0x%x) unsupported by gem5. Skipping.\n",
-                     *it);
+                        *it);
             }
         }
     }
@@ -1617,7 +1728,6 @@ X86KvmCPU::setXSave(const struct kvm_xsave &xsave)
     if (ioctl(KVM_SET_XSAVE, (void *)&xsave) == -1)
         panic("KVM: Failed to set guest debug registers\n");
 }
-
 
 void
 X86KvmCPU::getVCpuEvents(struct kvm_vcpu_events &events) const

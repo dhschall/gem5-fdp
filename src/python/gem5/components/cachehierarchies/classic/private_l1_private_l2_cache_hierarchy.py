@@ -130,7 +130,7 @@ class PrivateL1PrivateL2CacheHierarchy(
             L2XBar() for i in range(board.get_processor().get_num_cores())
         ]
         self.l2caches = [
-            L2Cache(size=self._l2_size)
+            L2Cache(size=self._l2_size, response_latency = 5, tag_latency = 12, data_latency = 12) #the default values are kind of small for 2MB hit latency in 2MB RAPTOR Lakes reported to be 15
             for i in range(board.get_processor().get_num_cores())
         ]
         # ITLB Page walk caches
@@ -174,15 +174,20 @@ class PrivateL1PrivateL2CacheHierarchy(
 
     def _setup_io_cache(self, board: AbstractBoard) -> None:
         """Create a cache for coherent I/O connections"""
-        self.iocache = Cache(
-            assoc=8,
-            tag_latency=50,
-            data_latency=50,
-            response_latency=50,
-            mshrs=20,
-            size="1kB",
-            tgts_per_mshr=12,
-            addr_ranges=board.mem_ranges,
+        # self.mem_ranges = board.mem_ranges[:-1]
+        class IOCache(Cache):
+            assoc = 8
+            tag_latency = 1
+            data_latency = 1
+            response_latency = 1
+            mshrs = 500
+            size = '1kB'
+            tgts_per_mshr = 500
+            # SHIN. Added information to identify if it is an IO cache.
+            is_iocache = True
+
+        self.iocache = IOCache(
+            addr_ranges=board.mem_ranges[:-1],
         )
         self.iocache.mem_side = self.membus.cpu_side_ports
         self.iocache.cpu_side = board.get_mem_side_coherent_io_port()

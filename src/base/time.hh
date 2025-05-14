@@ -47,7 +47,7 @@ namespace gem5
 
 class Time
 {
-  protected:
+protected:
     timespec _time;
 
     /**
@@ -55,15 +55,15 @@ class Time
      */
     void _set(bool monotonic);
 
-  public:
-    static const long NSEC_PER_SEC  = 1000 * 1000 * 1000;
+public:
+    static const long NSEC_PER_SEC = 1000 * 1000 * 1000;
     static const long NSEC_PER_MSEC = 1000 * 1000;
     static const long NSEC_PER_USEC = 1000;
 
-  public:
+public:
     explicit Time() { clear(); }
     explicit Time(double sec) { operator=(sec); }
-    Time(const Time &val) : _time(val._time) { }
+    Time(const Time &val) : _time(val._time) {}
     Time(uint64_t sec, uint64_t nsec) { set(sec, nsec); }
     Time(const timeval &tv) { operator=(tv); }
     Time(const timespec &ts) { operator=(ts); }
@@ -100,7 +100,11 @@ class Time
     /**
      * Set the current time
      */
-    void set(time_t _sec, long _nsec) { sec(_sec); nsec(_nsec); }
+    void set(time_t _sec, long _nsec)
+    {
+        sec(_sec);
+        nsec(_nsec);
+    }
 
     /**
      * Set the current time from a value measured in Ticks
@@ -127,7 +131,7 @@ class Time
     {
         double seconds = floor(new_time);
         sec((time_t)seconds);
-        nsec((long)((seconds - new_time) * 1e9));
+        nsec((long)((new_time - seconds) * 1e9));
         return *this;
     }
 
@@ -173,7 +177,8 @@ class Time
 
         _time.tv_sec += other.sec();
         _time.tv_nsec += other.nsec();
-        if (_time.tv_nsec > NSEC_PER_SEC) {
+        if (_time.tv_nsec > NSEC_PER_SEC)
+        {
             _time.tv_sec++;
             _time.tv_nsec -= NSEC_PER_SEC;
         }
@@ -186,7 +191,8 @@ class Time
     {
         _time.tv_sec -= other.sec();
         _time.tv_nsec -= other.nsec();
-        if (_time.tv_nsec < 0) {
+        if (_time.tv_nsec < 0)
+        {
             _time.tv_sec--;
             _time.tv_nsec += NSEC_PER_SEC;
         }
@@ -219,28 +225,28 @@ inline bool
 operator<(const Time &l, const Time &r)
 {
     return (l.sec() < r.sec()) ||
-        (l.sec() == r.sec() && l.nsec() < r.nsec());
+            (l.sec() == r.sec() && l.nsec() < r.nsec());
 }
 
 inline bool
 operator<=(const Time &l, const Time &r)
 {
     return (l.sec() < r.sec()) ||
-        (l.sec() == r.sec() && l.nsec() <= r.nsec());
+            (l.sec() == r.sec() && l.nsec() <= r.nsec());
 }
 
 inline bool
 operator>(const Time &l, const Time &r)
 {
     return (l.sec() > r.sec()) ||
-        (l.sec() == r.sec() && l.nsec() > r.nsec());
+            (l.sec() == r.sec() && l.nsec() > r.nsec());
 }
 
 inline bool
 operator>=(const Time &l, const Time &r)
 {
     return (l.sec() > r.sec()) ||
-        (l.sec() == r.sec() && l.nsec() >= r.nsec());
+            (l.sec() == r.sec() && l.nsec() >= r.nsec());
 }
 
 inline Time

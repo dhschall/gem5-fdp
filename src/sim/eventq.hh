@@ -58,7 +58,7 @@
 namespace gem5
 {
 
-class EventQueue;       // forward declaration
+class EventQueue; // forward declaration
 class BaseGlobalEvent;
 
 //! Simulation Quantum for multiple eventq simulation.
@@ -98,28 +98,28 @@ inline void curEventQueue(EventQueue *q);
  */
 class EventBase
 {
-  protected:
+protected:
     typedef unsigned short FlagsType;
     typedef ::gem5::Flags<FlagsType> Flags;
 
-    static const FlagsType PublicRead    = 0x003f; // public readable flags
-    static const FlagsType PublicWrite   = 0x001d; // public writable flags
-    static const FlagsType Squashed      = 0x0001; // has been squashed
-    static const FlagsType Scheduled     = 0x0002; // has been scheduled
-    static const FlagsType Managed       = 0x0004; // Use life cycle manager
-    static const FlagsType AutoDelete    = Managed; // delete after dispatch
+    static const FlagsType PublicRead = 0x003f;  // public readable flags
+    static const FlagsType PublicWrite = 0x001d; // public writable flags
+    static const FlagsType Squashed = 0x0001;    // has been squashed
+    static const FlagsType Scheduled = 0x0002;   // has been scheduled
+    static const FlagsType Managed = 0x0004;     // Use life cycle manager
+    static const FlagsType AutoDelete = Managed; // delete after dispatch
     /**
      * This used to be AutoSerialize. This value can't be reused
      * without changing the checkpoint version since the flag field
      * gets serialized.
      */
-    static const FlagsType Reserved0     = 0x0008;
-    static const FlagsType IsExitEvent   = 0x0010; // special exit event
-    static const FlagsType IsMainQueue   = 0x0020; // on main event queue
-    static const FlagsType Initialized   = 0x7a40; // somewhat random bits
-    static const FlagsType InitMask      = 0xffc0; // mask for init bits
+    static const FlagsType Reserved0 = 0x0008;
+    static const FlagsType IsExitEvent = 0x0010; // special exit event
+    static const FlagsType IsMainQueue = 0x0020; // on main event queue
+    static const FlagsType Initialized = 0x7a40; // somewhat random bits
+    static const FlagsType InitMask = 0xffc0;    // mask for init bits
 
-  public:
+public:
     /**
      * @ingroup api_eventq
      */
@@ -135,7 +135,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Minimum_Pri =          SCHAR_MIN;
+    static const Priority Minimum_Pri = SCHAR_MIN;
 
     /**
      * If we enable tracing on a particular cycle, do that as the
@@ -144,7 +144,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Debug_Enable_Pri =          -101;
+    static const Priority Debug_Enable_Pri = -101;
 
     /**
      * Breakpoints should happen before anything else (except
@@ -153,7 +153,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Debug_Break_Pri =           -100;
+    static const Priority Debug_Break_Pri = -100;
 
     /**
      * CPU switches schedule the new CPU's tick event for the
@@ -163,7 +163,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority CPU_Switch_Pri =             -31;
+    static const Priority CPU_Switch_Pri = -31;
 
     /**
      * For some reason "delayed" inter-cluster writebacks are
@@ -172,14 +172,14 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Delayed_Writeback_Pri =       -1;
+    static const Priority Delayed_Writeback_Pri = -1;
 
     /**
      * Default is zero for historical reasons.
      *
      * @ingroup api_eventq
      */
-    static const Priority Default_Pri =                  0;
+    static const Priority Default_Pri = 0;
 
     /**
      * DVFS update event leads to stats dump therefore given a lower priority
@@ -187,7 +187,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority DVFS_Update_Pri =             31;
+    static const Priority DVFS_Update_Pri = 31;
 
     /**
      * Serailization needs to occur before tick events also, so
@@ -196,7 +196,7 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Serialize_Pri =               32;
+    static const Priority Serialize_Pri = 32;
 
     /**
      * CPU ticks must come after other associated CPU events
@@ -204,14 +204,14 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority CPU_Tick_Pri =                50;
+    static const Priority CPU_Tick_Pri = 50;
 
     /**
      * If we want to exit a thread in a CPU, it comes after CPU_Tick_Pri
      *
      * @ingroup api_eventq
      */
-    static const Priority CPU_Exit_Pri =                64;
+    static const Priority CPU_Exit_Pri = 64;
 
     /**
      * Statistics events (dump, reset, etc.) come after
@@ -219,14 +219,14 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Stat_Event_Pri =              90;
+    static const Priority Stat_Event_Pri = 90;
 
     /**
      * Progress events come at the end.
      *
      * @ingroup api_eventq
      */
-    static const Priority Progress_Event_Pri =          95;
+    static const Priority Progress_Event_Pri = 95;
 
     /**
      * If we want to exit on this cycle, it's the very last thing
@@ -234,28 +234,28 @@ class EventBase
      *
      * @ingroup api_eventq
      */
-    static const Priority Sim_Exit_Pri =               100;
+    static const Priority Sim_Exit_Pri = 100;
 
     /**
      * Maximum priority
      *
      * @ingroup api_eventq
      */
-    static const Priority Maximum_Pri =          SCHAR_MAX;
+    static const Priority Maximum_Pri = SCHAR_MAX;
 };
 
 /*
- * An item on an event queue.  The action caused by a given
- * event is specified by deriving a subclass and overriding the
- * process() member function.
- *
- * Caution, the order of members is chosen to maximize data packing.
- */
+    * An item on an event queue.  The action caused by a given
+    * event is specified by deriving a subclass and overriding the
+    * process() member function.
+    *
+    * Caution, the order of members is chosen to maximize data packing.
+    */
 class Event : public EventBase, public Serializable
 {
     friend class EventQueue;
 
-  private:
+private:
     // The event queue is now a linked list of linked lists.  The
     // 'nextBin' pointer is to find the bin, where a bin is defined as
     // when+priority.  All events in the same bin will be stored in a
@@ -313,7 +313,7 @@ class Event : public EventBase, public Serializable
         return (flags & InitMask) == Initialized;
     }
 
-  protected:
+protected:
     Flags
     getFlags() const
     {
@@ -352,12 +352,12 @@ class Event : public EventBase, public Serializable
      *
      * @ingroup api_eventq
      */
-    virtual void trace(const char *action);     //!< trace event activity
+    virtual void trace(const char *action); //!< trace event activity
 
     /// Return the instance number as a string.
     const std::string instanceString() const;
 
-  protected: /* Memory management */
+protected: /* Memory management */
     /**
      * @{
      * Memory management hooks for events that have the Managed flag set
@@ -396,17 +396,16 @@ class Event : public EventBase, public Serializable
 
     /** @} */
 
-  public:
-
+public:
     /*
-     * Event constructor
-     * @param queue that the event gets scheduled on
-     *
-     * @ingroup api_eventq
-     */
+        * Event constructor
+        * @param queue that the event gets scheduled on
+        *
+        * @ingroup api_eventq
+        */
     Event(Priority p = Default_Pri, Flags f = 0)
         : nextBin(nullptr), nextInBin(nullptr), _when(0), _priority(p),
-          flags(Initialized | f)
+            flags(Initialized | f)
     {
         assert(f.noneSet(~PublicWrite));
 #ifndef NDEBUG
@@ -433,21 +432,21 @@ class Event : public EventBase, public Serializable
 
     /// Dump the current event data
     void dump() const;
-    /** @}*/ //end of api group
+    /** @}*/ // end of api group
 
-  public:
+public:
     /*
-     * This member function is invoked when the event is processed
-     * (occurs).  There is no default implementation; each subclass
-     * must provide its own implementation.  The event is not
-     * automatically deleted after it is processed (to allow for
-     * statically allocated event objects).
-     *
-     * If the AutoDestroy flag is set, the object is deleted once it
-     * is processed.
-     *
-     * @ingroup api_eventq
-     */
+        * This member function is invoked when the event is processed
+        * (occurs).  There is no default implementation; each subclass
+        * must provide its own implementation.  The event is not
+        * automatically deleted after it is processed (to allow for
+        * statically allocated event objects).
+        *
+        * If the AutoDestroy flag is set, the object is deleted once it
+        * is processed.
+        *
+        * @ingroup api_eventq
+        */
     virtual void process() = 0;
 
     /**
@@ -523,7 +522,7 @@ inline bool
 operator<(const Event &l, const Event &r)
 {
     return l.when() < r.when() ||
-        (l.when() == r.when() && l.priority() < r.priority());
+            (l.when() == r.when() && l.priority() < r.priority());
 }
 
 /**
@@ -533,7 +532,7 @@ inline bool
 operator>(const Event &l, const Event &r)
 {
     return l.when() > r.when() ||
-        (l.when() == r.when() && l.priority() > r.priority());
+            (l.when() == r.when() && l.priority() > r.priority());
 }
 
 /**
@@ -543,7 +542,7 @@ inline bool
 operator<=(const Event &l, const Event &r)
 {
     return l.when() < r.when() ||
-        (l.when() == r.when() && l.priority() <= r.priority());
+            (l.when() == r.when() && l.priority() <= r.priority());
 }
 
 /**
@@ -553,7 +552,7 @@ inline bool
 operator>=(const Event &l, const Event &r)
 {
     return l.when() > r.when() ||
-        (l.when() == r.when() && l.priority() >= r.priority());
+            (l.when() == r.when() && l.priority() >= r.priority());
 }
 
 /**
@@ -619,13 +618,16 @@ class EventQueue
 
     std::string objName;
     Event *head;
+
+public:
     Tick _curTick;
 
+private:
     //! Mutex to protect async queue.
     UncontendedMutex async_queue_mutex;
 
     //! List of events added by other threads to this event queue.
-    std::list<Event*> async_queue;
+    std::list<Event *> async_queue;
 
     /**
      * Lock protecting event handling.
@@ -1188,10 +1190,11 @@ class EventFunctionWrapper : public Event
  *
  * @ingroup api_serialize
  */
-#define UNSERIALIZE_EVENT(event)                        \
-    do {                                                \
-        event.unserializeSection(cp, #event);           \
-        eventQueue()->checkpointReschedule(&event);     \
+#define UNSERIALIZE_EVENT(event)                    \
+    do                                              \
+    {                                               \
+        event.unserializeSection(cp, #event);       \
+        eventQueue()->checkpointReschedule(&event); \
     } while (0)
 
 } // namespace gem5

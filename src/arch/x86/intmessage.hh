@@ -45,14 +45,15 @@ namespace X86ISA
 {
     BitUnion32(TriggerIntMessage)
         Bitfield<7, 0> destination;
-        Bitfield<15, 8> vector;
-        Bitfield<18, 16> deliveryMode;
-        Bitfield<19> destMode;
-        Bitfield<20> level;
-        Bitfield<21> trigger;
+    Bitfield<15, 8> vector;
+    Bitfield<18, 16> deliveryMode;
+    Bitfield<19> destMode;
+    Bitfield<20> level;
+    Bitfield<21> trigger;
+    Bitfield<22> user;
     EndBitUnion(TriggerIntMessage)
 
-    namespace delivery_mode
+        namespace delivery_mode
     {
         enum IntDeliveryMode
         {
@@ -66,10 +67,9 @@ namespace X86ISA
             NumModes
         };
 
-        static const char * const names[NumModes] = {
+        static const char *const names[NumModes] = {
             "Fixed", "LowestPriority", "SMI", "Reserved",
-            "NMI", "INIT", "Startup", "ExtInt"
-        };
+            "NMI", "INIT", "Startup", "ExtInt"};
 
         static inline bool
         isReserved(int mode)
@@ -91,8 +91,8 @@ namespace X86ISA
     buildIntAcknowledgePacket()
     {
         RequestPtr req = std::make_shared<Request>(
-                PhysAddrIntA, 1, Request::UNCACHEABLE,
-                Request::intRequestorId);
+            PhysAddrIntA, 1, Request::UNCACHEABLE,
+            Request::intRequestorId);
         PacketPtr pkt = new Packet(req, MemCmd::ReadReq);
         pkt->allocate();
         return pkt;

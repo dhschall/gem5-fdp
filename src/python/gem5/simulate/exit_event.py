@@ -39,6 +39,8 @@ class ExitEvent(Enum):
     EXIT = "exit"  # A standard vanilla exit.
     WORKBEGIN = "workbegin"  # An exit because a ROI has been reached.
     WORKEND = "workend"  # An exit because a ROI has ended.
+    UTIMER = "utimer"
+    UTIMEREND = "utimer_end"
     SWITCHCPU = "switchcpu"  # An exit needed to switch CPU cores.
     FAIL = "fail"  # An exit because the simulation has failed.
     CHECKPOINT = "checkpoint"  # An exit to load a checkpoint.
@@ -80,6 +82,10 @@ class ExitEvent(Enum):
             return ExitEvent.EXIT
         elif exit_string == "simulate() limit reached":
             return ExitEvent.MAX_TICK
+        elif exit_string == "utimer":
+            return ExitEvent.UTIMER
+        elif exit_string == "utimer_end":
+            return ExitEvent.UTIMEREND
         elif exit_string == "Tick exit reached":
             return ExitEvent.SCHEDULED_TICK
         elif exit_string == "switchcpu":

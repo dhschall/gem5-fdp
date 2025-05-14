@@ -55,11 +55,12 @@
 namespace gem5
 {
 
-class IGbEInt;
+  class IGbEInt;
 
-class IGbE : public EtherDevice
-{
+  class IGbE : public EtherDevice
+  {
   private:
+    int adq = -1;
     IGbEInt *etherInt;
 
     // device registers
@@ -94,48 +95,51 @@ class IGbE : public EtherDevice
     Tick rxWriteDelay, txReadDelay;
 
     // Event and function to deal with RDTR timer expiring
-    void rdtrProcess() {
-        rxDescCache.writeback(0);
-        DPRINTF(EthernetIntr,
-                "Posting RXT interrupt because RDTR timer expired\n");
-        postInterrupt(igbreg::IT_RXT);
+    void rdtrProcess()
+    {
+      rxDescCache.writeback(0);
+      DPRINTF(EthernetIntr,
+              "Posting RXT interrupt because RDTR timer expired\n");
+      postInterrupt(igbreg::IT_RXT);
     }
 
     EventFunctionWrapper rdtrEvent;
 
     // Event and function to deal with RADV timer expiring
-    void radvProcess() {
-        rxDescCache.writeback(0);
-        DPRINTF(EthernetIntr,
-                "Posting RXT interrupt because RADV timer expired\n");
-        postInterrupt(igbreg::IT_RXT);
+    void radvProcess()
+    {
+      rxDescCache.writeback(0);
+      DPRINTF(EthernetIntr,
+              "Posting RXT interrupt because RADV timer expired\n");
+      postInterrupt(igbreg::IT_RXT);
     }
 
     EventFunctionWrapper radvEvent;
 
     // Event and function to deal with TADV timer expiring
-    void tadvProcess() {
-        txDescCache.writeback(0);
-        DPRINTF(EthernetIntr,
-                "Posting TXDW interrupt because TADV timer expired\n");
-        postInterrupt(igbreg::IT_TXDW);
+    void tadvProcess()
+    {
+      txDescCache.writeback(0);
+      DPRINTF(EthernetIntr,
+              "Posting TXDW interrupt because TADV timer expired\n");
+      postInterrupt(igbreg::IT_TXDW);
     }
 
     EventFunctionWrapper tadvEvent;
 
     // Event and function to deal with TIDV timer expiring
-    void tidvProcess() {
-        txDescCache.writeback(0);
-        DPRINTF(EthernetIntr,
-                "Posting TXDW interrupt because TIDV timer expired\n");
-        postInterrupt(igbreg::IT_TXDW);
+    void tidvProcess()
+    {
+      txDescCache.writeback(0);
+      DPRINTF(EthernetIntr,
+              "Posting TXDW interrupt because TIDV timer expired\n");
+      postInterrupt(igbreg::IT_TXDW);
     }
     EventFunctionWrapper tidvEvent;
 
     // Main event to tick the device
     void tick();
     EventFunctionWrapper tickEvent;
-
 
     uint64_t macAddr;
 
@@ -177,298 +181,297 @@ class IGbE : public EtherDevice
      */
     void checkDrain();
 
-    template<class T>
+    template <class T>
     class DescCache : public Serializable
     {
-      protected:
-        virtual Addr descBase() const = 0;
-        virtual long descHead() const = 0;
-        virtual long descTail() const = 0;
-        virtual long descLen() const = 0;
-        virtual void updateHead(long h) = 0;
-        virtual void enableSm() = 0;
-        virtual void actionAfterWb() {}
-        virtual void fetchAfterWb() = 0;
+    protected:
+      virtual Addr descBase() const = 0;
+      virtual long descHead() const = 0;
+      virtual long descTail() const = 0;
+      virtual long descLen() const = 0;
+      virtual void updateHead(long h) = 0;
+      virtual void enableSm() = 0;
+      virtual void actionAfterWb() {}
+      virtual void fetchAfterWb() = 0;
 
-        typedef std::deque<T *> CacheType;
-        CacheType usedCache;
-        CacheType unusedCache;
+      typedef std::deque<T *> CacheType;
+      CacheType usedCache;
+      CacheType unusedCache;
 
-        T *fetchBuf;
-        T *wbBuf;
+      T *fetchBuf;
+      T *wbBuf;
 
-        // Pointer to the device we cache for
-        IGbE *igbe;
+      // Pointer to the device we cache for
+      IGbE *igbe;
 
-        // Name of this  descriptor cache
-        std::string _name;
+      // Name of this  descriptor cache
+      std::string _name;
 
-        // How far we've cached
-        int cachePnt;
+      // How far we've cached
+      int cachePnt;
 
-        // The size of the descriptor cache
-        int size;
+      // The size of the descriptor cache
+      int size;
 
-        // How many descriptors we are currently fetching
-        int curFetching;
+      // How many descriptors we are currently fetching
+      int curFetching;
 
-        // How many descriptors we are currently writing back
-        int wbOut;
+      // How many descriptors we are currently writing back
+      int wbOut;
 
-        // if the we wrote back to the end of the descriptor ring and are going
-        // to have to wrap and write more
-        bool moreToWb;
+      // if the we wrote back to the end of the descriptor ring and are going
+      // to have to wrap and write more
+      bool moreToWb;
 
-        // What the alignment is of the next descriptor writeback
-        Addr wbAlignment;
+      // What the alignment is of the next descriptor writeback
+      Addr wbAlignment;
 
-        /** The packet that is currently being dmad to memory if any */
-        EthPacketPtr pktPtr;
+      /** The packet that is currently being dmad to memory if any */
+      EthPacketPtr pktPtr;
 
-        /** Shortcut for DMA address translation */
-        Addr pciToDma(Addr a) { return igbe->pciToDma(a); }
+      /** Shortcut for DMA address translation */
+      Addr pciToDma(Addr a) { return igbe->pciToDma(a); }
 
-      public:
-        /** Annotate sm*/
-        std::string annSmFetch, annSmWb, annUnusedDescQ, annUsedCacheQ,
-            annUsedDescQ, annUnusedCacheQ, annDescQ;
+    public:
+      /** Annotate sm*/
+      std::string annSmFetch, annSmWb, annUnusedDescQ, annUsedCacheQ,
+          annUsedDescQ, annUnusedCacheQ, annDescQ;
 
-        DescCache(IGbE *i, const std::string n, int s);
-        virtual ~DescCache();
+      DescCache(IGbE *i, const std::string n, int s);
+      virtual ~DescCache();
 
-        std::string name() { return _name; }
+      std::string name() { return _name; }
 
-        /** If the address/len/head change when we've got descriptors that are
-         * dirty that is very bad. This function checks that we don't and if we
-         * do panics.
-         */
-        void areaChanged();
+      /** If the address/len/head change when we've got descriptors that are
+       * dirty that is very bad. This function checks that we don't and if we
+       * do panics.
+       */
+      void areaChanged();
 
-        void writeback(Addr aMask);
-        void writeback1();
-        EventFunctionWrapper wbDelayEvent;
+      void writeback(Addr aMask);
+      void writeback1();
+      EventFunctionWrapper wbDelayEvent;
 
-        /** Fetch a chunk of descriptors into the descriptor cache.
-         * Calls fetchComplete when the memory system returns the data
-         */
-        void fetchDescriptors();
-        void fetchDescriptors1();
-        EventFunctionWrapper fetchDelayEvent;
+      /** Fetch a chunk of descriptors into the descriptor cache.
+       * Calls fetchComplete when the memory system returns the data
+       */
+      void fetchDescriptors();
+      void fetchDescriptors1();
+      EventFunctionWrapper fetchDelayEvent;
 
-        /** Called by event when dma to read descriptors is completed
-         */
-        void fetchComplete();
-        EventFunctionWrapper fetchEvent;
+      /** Called by event when dma to read descriptors is completed
+       */
+      void fetchComplete();
+      EventFunctionWrapper fetchEvent;
 
-        /** Called by event when dma to writeback descriptors is completed
-         */
-        void wbComplete();
-        EventFunctionWrapper wbEvent;
+      /** Called by event when dma to writeback descriptors is completed
+       */
+      void wbComplete();
+      EventFunctionWrapper wbEvent;
 
-        /* Return the number of descriptors left in the ring, so the device has
-         * a way to figure out if it needs to interrupt.
-         */
-        unsigned
-        descLeft() const
-        {
-            unsigned left = unusedCache.size();
-            if (cachePnt > descTail())
-                left += (descLen() - cachePnt + descTail());
-            else
-                left += (descTail() - cachePnt);
+      /* Return the number of descriptors left in the ring, so the device has
+       * a way to figure out if it needs to interrupt.
+       */
+      unsigned
+      descLeft() const
+      {
+        unsigned left = unusedCache.size();
+        if (cachePnt > descTail())
+          left += (descLen() - cachePnt + descTail());
+        else
+          left += (descTail() - cachePnt);
 
-            return left;
-        }
+        return left;
+      }
 
-        /* Return the number of descriptors used and not written back.
-         */
-        unsigned descUsed() const { return usedCache.size(); }
+      /* Return the number of descriptors used and not written back.
+       */
+      unsigned descUsed() const { return usedCache.size(); }
 
-        /* Return the number of cache unused descriptors we have. */
-        unsigned descUnused() const { return unusedCache.size(); }
+      /* Return the number of cache unused descriptors we have. */
+      unsigned descUnused() const { return unusedCache.size(); }
 
-        /* Get into a state where the descriptor address/head/etc colud be
-         * changed */
-        void reset();
+      /* Get into a state where the descriptor address/head/etc colud be
+       * changed */
+      void reset();
 
+      void serialize(CheckpointOut &cp) const override;
+      void unserialize(CheckpointIn &cp) override;
 
-        void serialize(CheckpointOut &cp) const override;
-        void unserialize(CheckpointIn &cp) override;
-
-        virtual bool hasOutstandingEvents() {
-            return wbEvent.scheduled() || fetchEvent.scheduled();
-        }
-
+      virtual bool hasOutstandingEvents()
+      {
+        return wbEvent.scheduled() || fetchEvent.scheduled();
+      }
     };
-
 
     class RxDescCache : public DescCache<igbreg::RxDesc>
     {
-      protected:
-        Addr descBase() const override { return igbe->regs.rdba(); }
-        long descHead() const override { return igbe->regs.rdh(); }
-        long descLen() const override { return igbe->regs.rdlen() >> 4; }
-        long descTail() const override { return igbe->regs.rdt(); }
-        void updateHead(long h) override { igbe->regs.rdh(h); }
-        void enableSm() override;
-        void fetchAfterWb() override {
-            if (!igbe->rxTick && igbe->drainState() == DrainState::Running)
-                fetchDescriptors();
-        }
+    protected:
+      Addr descBase() const override { return igbe->regs.rdba(); }
+      long descHead() const override { return igbe->regs.rdh(); }
+      long descLen() const override { return igbe->regs.rdlen() >> 4; }
+      long descTail() const override { return igbe->regs.rdt(); }
+      void updateHead(long h) override { igbe->regs.rdh(h); }
+      void enableSm() override;
+      void fetchAfterWb() override
+      {
+        if (!igbe->rxTick && igbe->drainState() == DrainState::Running)
+          fetchDescriptors();
+      }
 
-        bool pktDone;
+      bool pktDone;
 
-        /** Variable to head with header/data completion events */
-        int splitCount;
+      /** Variable to head with header/data completion events */
+      int splitCount;
 
-        /** Bytes of packet that have been copied, so we know when to
-            set EOP */
-        unsigned bytesCopied;
+      /** Bytes of packet that have been copied, so we know when to
+          set EOP */
+      unsigned bytesCopied;
 
-      public:
-        RxDescCache(IGbE *i, std::string n, int s);
+    public:
+      RxDescCache(IGbE *i, std::string n, int s);
 
-        /** Write the given packet into the buffer(s) pointed to by the
-         * descriptor and update the book keeping. Should only be called when
-         * there are no dma's pending.
-         * @param packet ethernet packet to write
-         * @param pkt_offset bytes already copied from the packet to memory
-         * @return pkt_offset + number of bytes copied during this call
-         */
-        int writePacket(EthPacketPtr packet, int pkt_offset);
+      /** Write the given packet into the buffer(s) pointed to by the
+       * descriptor and update the book keeping. Should only be called when
+       * there are no dma's pending.
+       * @param packet ethernet packet to write
+       * @param pkt_offset bytes already copied from the packet to memory
+       * @return pkt_offset + number of bytes copied during this call
+       */
+      int writePacket(EthPacketPtr packet, int pkt_offset);
 
-        /** Called by event when dma to write packet is completed
-         */
-        void pktComplete();
+      /** Called by event when dma to write packet is completed
+       */
+      void pktComplete();
 
-        /** Check if the dma on the packet has completed and RX state machine
-         * can continue
-         */
-        bool packetDone();
+      /** Check if the dma on the packet has completed and RX state machine
+       * can continue
+       */
+      bool packetDone();
 
-        EventFunctionWrapper pktEvent;
+      EventFunctionWrapper pktEvent;
+      EventFunctionWrapper pktUintrEvent;
 
-        // Event to handle issuing header and data write at the same time
-        // and only callking pktComplete() when both are completed
-        void pktSplitDone();
-        EventFunctionWrapper pktHdrEvent;
-        EventFunctionWrapper pktDataEvent;
+      // Event to handle issuing header and data write at the same time
+      // and only callking pktComplete() when both are completed
+      void pktSplitDone();
+      EventFunctionWrapper pktHdrEvent;
+      EventFunctionWrapper pktDataEvent;
 
-        bool hasOutstandingEvents() override;
+      bool hasOutstandingEvents() override;
 
-        void serialize(CheckpointOut &cp) const override;
-        void unserialize(CheckpointIn &cp) override;
+      void serialize(CheckpointOut &cp) const override;
+      void unserialize(CheckpointIn &cp) override;
     };
     friend class RxDescCache;
 
     RxDescCache rxDescCache;
 
-    class TxDescCache  : public DescCache<igbreg::TxDesc>
+    class TxDescCache : public DescCache<igbreg::TxDesc>
     {
-      protected:
-        Addr descBase() const override { return igbe->regs.tdba(); }
-        long descHead() const override { return igbe->regs.tdh(); }
-        long descTail() const override { return igbe->regs.tdt(); }
-        long descLen() const override { return igbe->regs.tdlen() >> 4; }
-        void updateHead(long h) override { igbe->regs.tdh(h); }
-        void enableSm() override;
-        void actionAfterWb() override;
-        void fetchAfterWb() override {
-            if (!igbe->txTick && igbe->drainState() == DrainState::Running)
-                fetchDescriptors();
-        }
+    protected:
+      Addr descBase() const override { return igbe->regs.tdba(); }
+      long descHead() const override { return igbe->regs.tdh(); }
+      long descTail() const override { return igbe->regs.tdt(); }
+      long descLen() const override { return igbe->regs.tdlen() >> 4; }
+      void updateHead(long h) override { igbe->regs.tdh(h); }
+      void enableSm() override;
+      void actionAfterWb() override;
+      void fetchAfterWb() override
+      {
+        if (!igbe->txTick && igbe->drainState() == DrainState::Running)
+          fetchDescriptors();
+      }
 
+      bool pktDone;
+      bool isTcp;
+      bool pktWaiting;
+      bool pktMultiDesc;
+      Addr completionAddress;
+      bool completionEnabled;
+      uint32_t descEnd;
 
+      // tso variables
+      bool useTso;
+      Addr tsoHeaderLen;
+      Addr tsoMss;
+      Addr tsoTotalLen;
+      Addr tsoUsedLen;
+      Addr tsoPrevSeq;
+      Addr tsoPktPayloadBytes;
+      bool tsoLoadedHeader;
+      bool tsoPktHasHeader;
+      uint8_t tsoHeader[256];
+      Addr tsoDescBytesUsed;
+      Addr tsoCopyBytes;
+      int tsoPkts;
 
-        bool pktDone;
-        bool isTcp;
-        bool pktWaiting;
-        bool pktMultiDesc;
-        Addr completionAddress;
-        bool completionEnabled;
-        uint32_t descEnd;
+    public:
+      TxDescCache(IGbE *i, std::string n, int s);
 
+      /** Tell the cache to DMA a packet from main memory into its buffer and
+       * return the size the of the packet to reserve space in tx fifo.
+       * @return size of the packet
+       */
+      unsigned getPacketSize(EthPacketPtr p);
+      void getPacketData(EthPacketPtr p);
+      void processContextDesc();
 
-        // tso variables
-        bool useTso;
-        Addr tsoHeaderLen;
-        Addr tsoMss;
-        Addr tsoTotalLen;
-        Addr tsoUsedLen;
-        Addr tsoPrevSeq;
-        Addr tsoPktPayloadBytes;
-        bool tsoLoadedHeader;
-        bool tsoPktHasHeader;
-        uint8_t tsoHeader[256];
-        Addr tsoDescBytesUsed;
-        Addr tsoCopyBytes;
-        int tsoPkts;
+      /** Return the number of dsecriptors in a cache block for threshold
+       * operations.
+       */
+      unsigned
+      descInBlock(unsigned num_desc)
+      {
+        return num_desc / igbe->cacheBlockSize() / sizeof(igbreg::TxDesc);
+      }
 
-      public:
-        TxDescCache(IGbE *i, std::string n, int s);
+      /** Ask if the packet has been transfered so the state machine can give
+       * it to the fifo.
+       * @return packet available in descriptor cache
+       */
+      bool packetAvailable();
 
-        /** Tell the cache to DMA a packet from main memory into its buffer and
-         * return the size the of the packet to reserve space in tx fifo.
-         * @return size of the packet
-         */
-        unsigned getPacketSize(EthPacketPtr p);
-        void getPacketData(EthPacketPtr p);
-        void processContextDesc();
+      /** Ask if we are still waiting for the packet to be transfered.
+       * @return packet still in transit.
+       */
+      bool packetWaiting() { return pktWaiting; }
 
-        /** Return the number of dsecriptors in a cache block for threshold
-         * operations.
-         */
-        unsigned
-        descInBlock(unsigned num_desc)
-        {
-            return num_desc / igbe->cacheBlockSize() / sizeof(igbreg::TxDesc);
-        }
+      /** Ask if this packet is composed of multiple descriptors
+       * so even if we've got data, we need to wait for more before
+       * we can send it out.
+       * @return packet can't be sent out because it's a multi-descriptor
+       * packet
+       */
+      bool packetMultiDesc() { return pktMultiDesc; }
 
-        /** Ask if the packet has been transfered so the state machine can give
-         * it to the fifo.
-         * @return packet available in descriptor cache
-         */
-        bool packetAvailable();
+      /** Called by event when dma to write packet is completed
+       */
+      void pktComplete();
+      EventFunctionWrapper pktEvent;
 
-        /** Ask if we are still waiting for the packet to be transfered.
-         * @return packet still in transit.
-         */
-        bool packetWaiting() { return pktWaiting; }
+      void headerComplete();
+      EventFunctionWrapper headerEvent;
 
-        /** Ask if this packet is composed of multiple descriptors
-         * so even if we've got data, we need to wait for more before
-         * we can send it out.
-         * @return packet can't be sent out because it's a multi-descriptor
-         * packet
-         */
-        bool packetMultiDesc() { return pktMultiDesc;}
+      void completionWriteback(Addr a, bool enabled)
+      {
+        DPRINTF(EthernetDesc,
+                "Completion writeback Addr: %#x enabled: %d\n",
+                a, enabled);
+        completionAddress = a;
+        completionEnabled = enabled;
+      }
 
-        /** Called by event when dma to write packet is completed
-         */
-        void pktComplete();
-        EventFunctionWrapper pktEvent;
+      bool hasOutstandingEvents() override;
 
-        void headerComplete();
-        EventFunctionWrapper headerEvent;
+      void nullCallback()
+      {
+        DPRINTF(EthernetDesc, "Completion writeback complete\n");
+      }
+      EventFunctionWrapper nullEvent;
 
-
-        void completionWriteback(Addr a, bool enabled) {
-            DPRINTF(EthernetDesc,
-                    "Completion writeback Addr: %#x enabled: %d\n",
-                    a, enabled);
-            completionAddress = a;
-            completionEnabled = enabled;
-        }
-
-        bool hasOutstandingEvents() override;
-
-        void nullCallback() {
-            DPRINTF(EthernetDesc, "Completion writeback complete\n");
-        }
-        EventFunctionWrapper nullEvent;
-
-        void serialize(CheckpointOut &cp) const override;
-        void unserialize(CheckpointIn &cp) override;
+      void serialize(CheckpointOut &cp) const override;
+      void unserialize(CheckpointIn &cp) override;
     };
 
     friend class TxDescCache;
@@ -483,7 +486,7 @@ class IGbE : public EtherDevice
     void init() override;
 
     Port &getPort(const std::string &if_name,
-                  PortID idx=InvalidPortID) override;
+                  PortID idx = InvalidPortID) override;
 
     Tick lastInterrupt;
 
@@ -500,22 +503,22 @@ class IGbE : public EtherDevice
 
     DrainState drain() override;
     void drainResume() override;
+  };
 
-};
-
-class IGbEInt : public EtherInt
-{
+  class IGbEInt : public EtherInt
+  {
   private:
     IGbE *dev;
 
   public:
     IGbEInt(const std::string &name, IGbE *d)
         : EtherInt(name), dev(d)
-    { }
+    {
+    }
 
     virtual bool recvPacket(EthPacketPtr pkt) { return dev->ethRxPkt(pkt); }
     virtual void sendDone() { dev->ethTxDone(); }
-};
+  };
 
 } // namespace gem5
 

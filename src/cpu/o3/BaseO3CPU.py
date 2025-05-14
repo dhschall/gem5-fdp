@@ -59,6 +59,10 @@ class CommitPolicy(ScopedEnum):
     vals = ["RoundRobin", "OldestReady"]
 
 
+class InterruptStrategy(ScopedEnum):
+    vals = ["Drain", "Flush", "Intelligent", "Apic", "None"]
+
+
 class BaseO3CPU(BaseCPU):
     type = "BaseO3CPU"
     cxx_class = "gem5::o3::CPU"
@@ -128,7 +132,7 @@ class BaseO3CPU(BaseCPU):
     renameToROBDelay = Param.Cycles(1, "Rename to reorder buffer delay")
     commitWidth = Param.Unsigned(8, "Commit width")
     squashWidth = Param.Unsigned(8, "Squash width")
-    trapLatency = Param.Cycles(13, "Trap latency")
+    trapLatency = Param.Cycles(0, "Trap latency")
     fetchTrapLatency = Param.Cycles(1, "Fetch trap latency")
 
     backComSize = Param.Unsigned(
@@ -192,3 +196,6 @@ class BaseO3CPU(BaseCPU):
         TournamentBP(numThreads=Parent.numThreads), "Branch Predictor"
     )
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
+    intStrategy = Param.InterruptStrategy(
+        "None", "Interrupt Cleanup Strategy"
+    )

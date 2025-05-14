@@ -57,7 +57,7 @@ class BaseInterrupts : public SimObject
     /*
      * Return whether there are any interrupts waiting to be recognized.
      */
-    virtual bool checkInterrupts() const = 0;
+    virtual bool checkInterrupts() = 0;
     /*
      * Return an interrupt to process. This should return an interrupt exactly
      * when checkInterrupts returns true.

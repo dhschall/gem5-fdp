@@ -1,0 +1,6 @@
+- CLI/CLUI still in pipeline
+- interrupt arrives within macroop boundaries
+- interrupt arrives cache request going on squash? or not?
+- for latency of interrupts we want not to consult icache, but we might have to if we end on a branching instruction
+- Other implementations APIC End of interrupt is reset at the end of Microcode, making them uninterruptable longer,
+quirk of modelling?

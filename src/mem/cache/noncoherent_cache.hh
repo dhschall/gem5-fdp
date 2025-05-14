@@ -58,18 +58,18 @@
 namespace gem5
 {
 
-class CacheBlk;
-class MSHR;
-struct NoncoherentCacheParams;
+  class CacheBlk;
+  class MSHR;
+  struct NoncoherentCacheParams;
 
-/**
- * A non-coherent cache
- */
-class NoncoherentCache : public BaseCache
-{
+  /**
+   * A non-coherent cache
+   */
+  class NoncoherentCache : public BaseCache
+  {
   protected:
     bool access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
-                PacketList &writebacks) override;
+                PacketList &writebacks, bool is_ddio = false) override;
 
     void handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk,
                              Tick forward_time,
@@ -77,22 +77,24 @@ class NoncoherentCache : public BaseCache
 
     void recvTimingReq(PacketPtr pkt) override;
 
-    void doWritebacks(PacketList& writebacks,
+    void doWritebacks(PacketList &writebacks,
                       Tick forward_time) override;
 
-    void doWritebacksAtomic(PacketList& writebacks) override;
+    void doWritebacksAtomic(PacketList &writebacks) override;
 
     void serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt,
                             CacheBlk *blk) override;
 
     void recvTimingResp(PacketPtr pkt) override;
 
-    void recvTimingSnoopReq(PacketPtr pkt) override {
-        panic("Unexpected timing snoop request %s", pkt->print());
+    void recvTimingSnoopReq(PacketPtr pkt) override
+    {
+      panic("Unexpected timing snoop request %s", pkt->print());
     }
 
-    void recvTimingSnoopResp(PacketPtr pkt) override {
-        panic("Unexpected timing snoop response %s", pkt->print());
+    void recvTimingSnoopResp(PacketPtr pkt) override
+    {
+      panic("Unexpected timing snoop response %s", pkt->print());
     }
 
     Cycles handleAtomicReqMiss(PacketPtr pkt, CacheBlk *&blk,
@@ -100,8 +102,9 @@ class NoncoherentCache : public BaseCache
 
     Tick recvAtomic(PacketPtr pkt) override;
 
-    Tick recvAtomicSnoop(PacketPtr pkt) override {
-        panic("Unexpected atomic snoop request %s", pkt->print());
+    Tick recvAtomicSnoop(PacketPtr pkt) override
+    {
+      panic("Unexpected atomic snoop request %s", pkt->print());
     }
 
     void functionalAccess(PacketPtr pkt, bool from_cpu_side) override;
@@ -124,7 +127,7 @@ class NoncoherentCache : public BaseCache
 
   public:
     NoncoherentCache(const NoncoherentCacheParams &p);
-};
+  };
 
 } // namespace gem5
 

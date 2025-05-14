@@ -55,10 +55,10 @@ namespace gem5
         doSomethingChunky(gen.addr(), gen.size());
     }
 \endcode
- */
+    */
 class ChunkGenerator
 {
-  private:
+private:
     /** The starting address of the current chunk. */
     Addr curAddr;
     /** The starting address of the next chunk (after the current one). */
@@ -74,7 +74,9 @@ class ChunkGenerator
     /** The maximum chunk size, e.g., the cache block size or page size. */
     const Addr chunkSize;
 
-  public:
+    bool is_first_of_chunk;
+
+public:
     /**
      * Constructor.
      * @param _startAddr The starting address of the region.
@@ -84,8 +86,7 @@ class ChunkGenerator
      *
      * @ingroup api_chunk_generator
      */
-    ChunkGenerator(Addr _startAddr, Addr totalSize, Addr _chunkSize) :
-        startAddr(_startAddr), chunkSize(_chunkSize)
+    ChunkGenerator(Addr _startAddr, Addr totalSize, Addr _chunkSize) : startAddr(_startAddr), chunkSize(_chunkSize), is_first_of_chunk(true)
     {
         // chunkSize must be a power of two
         assert(chunkSize == 0 || isPowerOf2(chunkSize));
@@ -93,12 +94,16 @@ class ChunkGenerator
         // set up initial chunk.
         curAddr = startAddr;
 
-        if (chunkSize == 0) { // Special Case, if we see 0, assume no chunking.
+        if (chunkSize == 0)
+        { // Special Case, if we see 0, assume no chunking.
             nextAddr = startAddr + totalSize;
-        } else {
+        }
+        else
+        {
             // nextAddr should be *next* chunk start.
             nextAddr = roundUp(startAddr, chunkSize);
-            if (curAddr == nextAddr) {
+            if (curAddr == nextAddr)
+            {
                 // ... even if startAddr is already chunk-aligned
                 nextAddr += chunkSize;
             }
@@ -124,6 +129,7 @@ class ChunkGenerator
      */
     Addr size() const { return curSize; }
 
+    bool isHead() { return is_first_of_chunk; }
     /**
      * Number of bytes we have already chunked up.
      *
@@ -184,7 +190,8 @@ class ChunkGenerator
     bool
     next()
     {
-        if (last()) {
+        if (last())
+        {
             curSize = 0;
             return false;
         }
@@ -194,6 +201,9 @@ class ChunkGenerator
         sizeLeft -= curSize;
         nextAddr += curSize;
         nextSize = std::min(sizeLeft, chunkSize);
+
+        is_first_of_chunk = false;
+
         return true;
     }
 };

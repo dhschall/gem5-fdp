@@ -62,8 +62,23 @@ let {{
                 {
                     static const char romMnemonic[] = "Microcode_ROM";
             '''
+            start_ranges = []
+            end_ranges = []
+            for (label, microop) in self.labels.items():
+                if ("UserInterrupt_end" in label or "UserInterruptWithError_end" in label or "UserTimer_end" in label or "UserTimerWithError_end" in label) and "endBSR" not in label:
+                    end_ranges.append(microop.micropc)
+            for (label, microop) in self.externs.items():
+                if "UserInterrupt" in label or "UserTimer" in label:
+                    start_ranges.append(microop.micropc)
+            print(end_ranges)
+            print(start_ranges)
+
             for op in self.microops:
-                define_generators += op.getGeneratorDef(micropc)
+                isUintr = any((start_ranges[i] <= micropc <= end_ranges[i] for i in range(len(start_ranges))))
+                if isUintr:
+                    define_generators += op.getGeneratorDef(micropc,["IsUintUcode"])
+                else:
+                    define_generators += op.getGeneratorDef(micropc,[])
                 allocGenerators += "genFuncs[%d] = %s;\n" % \
                         (micropc, op.getGenerator(micropc))
                 micropc += 1

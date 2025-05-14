@@ -73,6 +73,9 @@ output header {{
 #include "mem/packet.hh"
 #include "sim/faults.hh"
 
+// HACK!
+#include "cpu/o3/cpu.hh"
+
 namespace gem5::X86ISAInst
 {
 using namespace X86ISA;

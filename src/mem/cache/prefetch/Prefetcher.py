@@ -89,7 +89,7 @@ class BasePrefetcher(ClockedObject):
     page_bytes = Param.MemorySize(
         "4KiB", "Size of pages for virtual addresses"
     )
-
+    is_ddio_prefetcher = Param.Bool(False, "Notify prefetcher on ddioHint")
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._events = []
@@ -687,3 +687,9 @@ class PIFPrefetcher(QueuedPrefetcher):
         self.addEvent(
             HWPProbeEventRetiredInsts(self, simObj, "RetiredInstsPC")
         )
+class MlcPrefetcher(QueuedPrefetcher):
+    type = 'MlcPrefetcher'
+    #abstract = True
+    cxx_class = 'gem5::prefetch::MlcPrefetcher'
+    cxx_header = "mem/cache/prefetch/mlc_prefetcher.hh"
+    is_ddio_prefetcher = True

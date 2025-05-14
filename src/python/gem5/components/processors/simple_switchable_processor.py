@@ -51,6 +51,7 @@ class SimpleSwitchableProcessor(SwitchableProcessor):
         switch_core_type: CPUTypes,
         num_cores: int,
         isa: Optional[ISA] = None,
+        interrupt_type = ""
     ) -> None:
         """
         :param starting_core_type: The CPU type for each type in the processor
@@ -86,11 +87,11 @@ class SimpleSwitchableProcessor(SwitchableProcessor):
 
         switchable_cores = {
             self._start_key: [
-                SimpleCore(cpu_type=starting_core_type, core_id=i, isa=isa)
+                SimpleCore(cpu_type=starting_core_type, core_id=i, isa=isa,interrupt_type=interrupt_type)
                 for i in range(num_cores)
             ],
             self._switch_key: [
-                SimpleCore(cpu_type=switch_core_type, core_id=i, isa=isa)
+                SimpleCore(cpu_type=switch_core_type, core_id=i, isa=isa,interrupt_type=interrupt_type)
                 for i in range(num_cores)
             ],
         }

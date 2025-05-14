@@ -35,7 +35,7 @@ class CopyEngine(PciDevice):
     type = "CopyEngine"
     cxx_header = "dev/pci/copy_engine.hh"
     cxx_class = "gem5::CopyEngine"
-    dma = VectorRequestPort("Copy engine DMA port")
+    dma_local = VectorRequestPort("Copy engine DMA port")
     VendorID = 0x8086
     DeviceID = 0x1A38
     Revision = 0xA2  # CM2 stepping (newest listed)

@@ -49,19 +49,19 @@
 namespace gem5
 {
 
-class PioDevice;
-class System;
+  class PioDevice;
+  class System;
 
-/**
- * The PioPort class is a programmed i/o port that all devices that are
- * sensitive to an address range use. The port takes all the memory
- * access types and roles them into one read() and write() call that the device
- * must respond to. The device must also provide getAddrRanges() function
- * with which it returns the address ranges it is interested in.
- */
-template <class Device>
-class PioPort : public SimpleTimingPort
-{
+  /**
+   * The PioPort class is a programmed i/o port that all devices that are
+   * sensitive to an address range use. The port takes all the memory
+   * access types and roles them into one read() and write() call that the device
+   * must respond to. The device must also provide getAddrRanges() function
+   * with which it returns the address ranges it is interested in.
+   */
+  template <class Device>
+  class PioPort : public SimpleTimingPort
+  {
   protected:
     /** The device that this port serves. */
     Device *device;
@@ -69,38 +69,38 @@ class PioPort : public SimpleTimingPort
     Tick
     recvAtomic(PacketPtr pkt) override
     {
-        // Technically the packet only reaches us after the header delay,
-        // and typically we also need to deserialise any payload.
-        Tick receive_delay = pkt->headerDelay + pkt->payloadDelay;
-        pkt->headerDelay = pkt->payloadDelay = 0;
+      // Technically the packet only reaches us after the header delay,
+      // and typically we also need to deserialise any payload.
+      Tick receive_delay = pkt->headerDelay + pkt->payloadDelay;
+      pkt->headerDelay = pkt->payloadDelay = 0;
 
-        const Tick delay =
-            pkt->isRead() ? device->read(pkt) : device->write(pkt);
-        assert(pkt->isResponse() || pkt->isError());
-        return delay + receive_delay;
+      const Tick delay =
+          pkt->isRead() ? device->read(pkt) : device->write(pkt);
+      assert(pkt->isResponse() || pkt->isError());
+      return delay + receive_delay;
     }
 
     AddrRangeList
     getAddrRanges() const override
     {
-        return device->getAddrRanges();
+      return device->getAddrRanges();
     }
 
   public:
-    PioPort(Device *dev) :
-        SimpleTimingPort(dev->name() + ".pio", dev), device(dev)
-    {}
-};
+    PioPort(Device *dev) : SimpleTimingPort(dev->name() + ".pio", dev), device(dev)
+    {
+    }
+  };
 
-/**
- * This device is the base class which all devices senstive to an address range
- * inherit from. There are three pure virtual functions which all devices must
- * implement getAddrRanges(), read(), and write(). The magic do choose which
- * mode we are in, etc is handled by the PioPort so the device doesn't have to
- * bother.
- */
-class PioDevice : public ClockedObject
-{
+  /**
+   * This device is the base class which all devices senstive to an address range
+   * inherit from. There are three pure virtual functions which all devices must
+   * implement getAddrRanges(), read(), and write(). The magic do choose which
+   * mode we are in, etc is handled by the PioPort so the device doesn't have to
+   * bother.
+   */
+  class PioDevice : public ClockedObject
+  {
   protected:
     System *sys;
 
@@ -138,14 +138,13 @@ class PioDevice : public ClockedObject
     void init() override;
 
     Port &getPort(const std::string &if_name,
-            PortID idx=InvalidPortID) override;
+                  PortID idx = InvalidPortID) override;
 
     friend class PioPort<PioDevice>;
+  };
 
-};
-
-class BasicPioDevice : public PioDevice
-{
+  class BasicPioDevice : public PioDevice
+  {
   protected:
     /** Address that the device listens to. */
     Addr pioAddr;
@@ -166,7 +165,7 @@ class BasicPioDevice : public PioDevice
      * @return a list of non-overlapping address ranges
      */
     AddrRangeList getAddrRanges() const override;
-};
+  };
 
 } // namespace gem5
 

@@ -76,3 +76,4 @@ class Root(SimObject):
     time_sync_spin_threshold = Param.Clock(
         "100us", "when less than this much time is left, spin"
     )
+    portlinks = VectorParam.EtherLink([], "EtherLink")

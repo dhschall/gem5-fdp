@@ -54,178 +54,183 @@
 namespace gem5
 {
 
-namespace o3
-{
-
-/** Struct that defines the information passed from fetch to decode. */
-struct FetchStruct
-{
-    int size;
-
-    DynInstPtr insts[MaxWidth];
-    Fault fetchFault;
-    InstSeqNum fetchFaultSN;
-    bool clearFetchFault;
-};
-
-/** Struct that defines the information passed from decode to rename. */
-struct DecodeStruct
-{
-    int size;
-
-    DynInstPtr insts[MaxWidth];
-};
-
-/** Struct that defines the information passed from rename to IEW. */
-struct RenameStruct
-{
-    int size;
-
-    DynInstPtr insts[MaxWidth];
-};
-
-/** Struct that defines the information passed from IEW to commit. */
-struct IEWStruct
-{
-    int size;
-
-    DynInstPtr insts[MaxWidth];
-    DynInstPtr mispredictInst[MaxThreads];
-    Addr mispredPC[MaxThreads];
-    InstSeqNum squashedSeqNum[MaxThreads];
-    std::unique_ptr<PCStateBase> pc[MaxThreads];
-
-    bool squash[MaxThreads];
-    bool branchMispredict[MaxThreads];
-    bool branchTaken[MaxThreads];
-    bool includeSquashInst[MaxThreads];
-};
-
-struct IssueStruct
-{
-    int size;
-
-    DynInstPtr insts[MaxWidth];
-};
-
-/** Struct that defines all backwards communication. */
-struct TimeStruct
-{
-    struct DecodeComm
+    namespace o3
     {
-        std::unique_ptr<PCStateBase> nextPC;
-        DynInstPtr mispredictInst;
-        DynInstPtr squashInst;
-        InstSeqNum doneSeqNum;
-        Addr mispredPC;
-        uint64_t branchAddr;
-        unsigned branchCount;
-        bool squash;
-        bool predIncorrect;
-        bool branchMispredict;
-        bool branchTaken;
-    };
 
-    DecodeComm decodeInfo[MaxThreads];
+        /** Struct that defines the information passed from fetch to decode. */
+        struct FetchStruct
+        {
+            int size;
 
-    struct RenameComm {};
+            DynInstPtr insts[MaxWidth];
+            Fault fetchFault;
+            InstSeqNum fetchFaultSN;
+            bool clearFetchFault;
+        };
 
-    RenameComm renameInfo[MaxThreads];
+        /** Struct that defines the information passed from decode to rename. */
+        struct DecodeStruct
+        {
+            int size;
 
-    struct IewComm
-    {
-        // Also eventually include skid buffer space.
-        unsigned freeIQEntries;
-        unsigned freeLQEntries;
-        unsigned freeSQEntries;
-        unsigned dispatchedToLQ;
-        unsigned dispatchedToSQ;
+            DynInstPtr insts[MaxWidth];
+        };
 
-        unsigned iqCount;
-        unsigned ldstqCount;
+        /** Struct that defines the information passed from rename to IEW. */
+        struct RenameStruct
+        {
+            int size;
 
-        unsigned dispatched;
-        bool usedIQ;
-        bool usedLSQ;
-    };
+            DynInstPtr insts[MaxWidth];
+        };
 
-    IewComm iewInfo[MaxThreads];
+        /** Struct that defines the information passed from IEW to commit. */
+        struct IEWStruct
+        {
+            int size;
 
-    struct CommitComm
-    {
-        /////////////////////////////////////////////////////////////////////
-        // This code has been re-structured for better packing of variables
-        // instead of by stage which is the more logical way to arrange the
-        // data.
-        // F = Fetch
-        // D = Decode
-        // I = IEW
-        // R = Rename
-        // As such each member is annotated with who consumes it
-        // e.g. bool variable name // *F,R for Fetch and Rename
-        /////////////////////////////////////////////////////////////////////
+            DynInstPtr insts[MaxWidth];
+            DynInstPtr mispredictInst[MaxThreads];
+            Addr mispredPC[MaxThreads];
+            InstSeqNum squashedSeqNum[MaxThreads];
+            std::unique_ptr<PCStateBase> pc[MaxThreads];
 
-        /// The pc of the next instruction to execute. This is the next
-        /// instruction for a branch mispredict, but the same instruction for
-        /// order violation and the like
-        std::unique_ptr<PCStateBase> pc; // *F
+            bool squash[MaxThreads];
+            bool branchMispredict[MaxThreads];
+            bool branchTaken[MaxThreads];
+            bool includeSquashInst[MaxThreads];
+        };
 
-        /// Provide fetch the instruction that mispredicted, if this
-        /// pointer is not-null a misprediction occured
-        DynInstPtr mispredictInst;  // *F
+        struct IssueStruct
+        {
+            int size;
 
-        /// Instruction that caused the a non-mispredict squash
-        DynInstPtr squashInst; // *F
+            DynInstPtr insts[MaxWidth];
+        };
 
-        /// Hack for now to send back a strictly ordered access to the
-        /// IEW stage.
-        DynInstPtr strictlyOrderedLoad; // *I
+        /** Struct that defines all backwards communication. */
+        struct TimeStruct
+        {
+            struct DecodeComm
+            {
+                std::unique_ptr<PCStateBase> nextPC;
+                DynInstPtr mispredictInst;
+                DynInstPtr squashInst;
+                InstSeqNum doneSeqNum;
+                Addr mispredPC;
+                uint64_t branchAddr;
+                unsigned branchCount;
+                bool squash;
+                bool predIncorrect;
+                bool branchMispredict;
+                bool branchTaken;
+            };
 
-        /// Communication specifically to the IQ to tell the IQ that it can
-        /// schedule a non-speculative instruction.
-        InstSeqNum nonSpecSeqNum; // *I
+            DecodeComm decodeInfo[MaxThreads];
 
-        /// Represents the instruction that has either been retired or
-        /// squashed.  Similar to having a single bus that broadcasts the
-        /// retired or squashed sequence number.
-        InstSeqNum doneSeqNum; // *F, I
+            struct RenameComm
+            {
+            };
 
-        /// Tell Rename how many free entries it has in the ROB
-        unsigned freeROBEntries; // *R
+            RenameComm renameInfo[MaxThreads];
 
-        bool squash; // *F, D, R, I
-        bool robSquashing; // *F, D, R, I
+            struct IewComm
+            {
+                // Also eventually include skid buffer space.
+                unsigned freeIQEntries;
+                unsigned freeLQEntries;
+                unsigned freeSQEntries;
+                unsigned dispatchedToLQ;
+                unsigned dispatchedToSQ;
 
-        /// Rename should re-read number of free rob entries
-        bool usedROB; // *R
+                unsigned iqCount;
+                unsigned ldstqCount;
 
-        /// Notify Rename that the ROB is empty
-        bool emptyROB; // *R
+                unsigned dispatched;
+                bool usedIQ;
+                bool usedLSQ;
+            };
 
-        /// Was the branch taken or not
-        bool branchTaken; // *F
-        /// If an interrupt is pending and fetch should stall
-        bool interruptPending; // *F
-        /// If the interrupt ended up being cleared before being handled
-        bool clearInterrupt; // *F
+            IewComm iewInfo[MaxThreads];
 
-        /// Hack for now to send back an strictly ordered access to
-        /// the IEW stage.
-        bool strictlyOrdered; // *I
+            struct CommitComm
+            {
+                /////////////////////////////////////////////////////////////////////
+                // This code has been re-structured for better packing of variables
+                // instead of by stage which is the more logical way to arrange the
+                // data.
+                // F = Fetch
+                // D = Decode
+                // I = IEW
+                // R = Rename
+                // As such each member is annotated with who consumes it
+                // e.g. bool variable name // *F,R for Fetch and Rename
+                /////////////////////////////////////////////////////////////////////
 
-    };
+                /// The pc of the next instruction to execute. This is the next
+                /// instruction for a branch mispredict, but the same instruction for
+                /// order violation and the like
+                std::unique_ptr<PCStateBase> pc; // *F
 
-    CommitComm commitInfo[MaxThreads];
+                /// Provide fetch the instruction that mispredicted, if this
+                /// pointer is not-null a misprediction occured
+                DynInstPtr mispredictInst; // *F
 
-    bool decodeBlock[MaxThreads];
-    bool decodeUnblock[MaxThreads];
-    bool renameBlock[MaxThreads];
-    bool renameUnblock[MaxThreads];
-    bool iewBlock[MaxThreads];
-    bool iewUnblock[MaxThreads];
-};
+                /// Instruction that caused the a non-mispredict squash
+                DynInstPtr squashInst; // *F
 
-} // namespace o3
+                /// Hack for now to send back a strictly ordered access to the
+                /// IEW stage.
+                DynInstPtr strictlyOrderedLoad; // *I
+
+                /// Communication specifically to the IQ to tell the IQ that it can
+                /// schedule a non-speculative instruction.
+                InstSeqNum nonSpecSeqNum; // *I
+
+                /// Represents the instruction that has either been retired or
+                /// squashed.  Similar to having a single bus that broadcasts the
+                /// retired or squashed sequence number.
+                InstSeqNum doneSeqNum; // *F, I
+
+                /// Tell Rename how many free entries it has in the ROB
+                unsigned freeROBEntries; // *R
+
+                bool squash;       // *F, D, R, I
+                bool robSquashing; // *F, D, R, I
+
+                /// Rename should re-read number of free rob entries
+                bool usedROB; // *R
+
+                /// Notify Rename that the ROB is empty
+                bool emptyROB; // *R
+
+                /// Was the branch taken or not
+                bool branchTaken; // *F
+                /// If an interrupt is pending and fetch should stall
+                bool interruptPending; // *F
+                /// If the interrupt ended up being cleared before being handled @Berk this description does not seem to align with actual usage.
+                bool clearInterrupt; // *F
+                // If there is an update to pc that avoids squashing from commit
+                bool noneSquashPCUpdate; // *F
+                ///
+                bool clearUserInterrupt; // *F
+
+                /// Hack for now to send back an strictly ordered access to
+                /// the IEW stage.
+                bool strictlyOrdered; // *I
+            };
+
+            CommitComm commitInfo[MaxThreads];
+
+            bool decodeBlock[MaxThreads];
+            bool decodeUnblock[MaxThreads];
+            bool renameBlock[MaxThreads];
+            bool renameUnblock[MaxThreads];
+            bool iewBlock[MaxThreads];
+            bool iewUnblock[MaxThreads];
+        };
+
+    } // namespace o3
 } // namespace gem5
 
 #endif //__CPU_O3_COMM_HH__

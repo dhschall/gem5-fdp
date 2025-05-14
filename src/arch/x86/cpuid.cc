@@ -168,21 +168,42 @@ namespace X86ISA {
                           stringToRegister(vendor_string.c_str() + 8));
                 }
                 break;
-              case FamilyModelStepping:
-                result = CpuidResult(0x00020f51, 0x00000805,
-                                     0xefdbfbff, 0x00000209);
-                break;
-              case ExtendedFeatures:
-                result = CpuidResult(0x00000000, 0x01800000,
-                                     0x00000000, 0x00000000);
-                break;
-              default:
-                warn("x86 cpuid family 0x0000: unimplemented function %u",
-                    funcNum);
-                return false;
-            }
-        } else {
-            warn("x86 cpuid: unknown family %#x", family);
+        case FamilyModelStepping:
+          result = CpuidResult(0x00020f51, 0x00000805,
+                               0xefdbfbff, 0x80000209); // hypervisor bit on but should only be really set for kvm, probably ok to do so though.
+          break;
+        case ExtendedFeatures:
+          result = CpuidResult(0x00000000, 0x01800000,
+                               0x00000000, 0x00000000);
+          break;
+        default:
+          warn("x86 cpuid family 0x0000: unimplemented function %u",
+               funcNum);
+          return false;
+        }
+      }
+      else if (family == 0x4000)
+      {
+        switch (funcNum)
+        {
+        case 0x0:
+        {
+          std::string hyper_vendor_string = "KVMKVMKVM\0\0\0";
+          result = CpuidResult(0x40000000,
+                               stringToRegister(hyper_vendor_string.c_str()),
+                               stringToRegister(hyper_vendor_string.c_str() + 8),
+                               stringToRegister(hyper_vendor_string.c_str() + 4));
+          break;
+        }
+        default:
+          warn("x86 cpuid family 0x4000: unimplemented function %u",
+               funcNum);
+          return false;
+        }
+      }
+      else
+      {
+        warn("x86 cpuid: unknown family %#x", family);
             return false;
         }
 
