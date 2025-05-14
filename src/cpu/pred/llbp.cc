@@ -57,6 +57,7 @@ LLBP::LLBP(const LLBPParams &params)
 void
 LLBP::init()
 {
+    base->init();
 }
 
 void
@@ -68,7 +69,6 @@ LLBP::squash(ThreadID tid, void *&bp_history)
             stats.squashedOverrides++;
         }
     }
-    // TODO: No squash in LLBP?
     base->squash(tid, bi->ltage_bi);
     delete bi;
     bp_history = nullptr;
@@ -82,14 +82,18 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
     assert(bp_history);
     LLBPBranchInfo *bi = static_cast<LLBPBranchInfo *>(bp_history);
 
-    if (squashed && !bi->avenged && bi->rcrBackup.size()) {
-        rcr.restore(bi->rcrBackup);
+    if (squashed) {
+        assert(!bi->avenged);
+        if (bi->rcrBackup.size()) {
+            rcr.restore(bi->rcrBackup);
+        }
+        base->update(tid, pc, taken, bi->ltage_bi, squashed, inst, target);    
+        return;
     }
 
     if (inst->isCondCtrl()) 
         storageUpdate(tid, pc, rcr.getCCID(), taken, bi);
 
-    base->update(tid, pc, taken, bi->ltage_bi, squashed, inst, target);
 
     std::string rcr_cont = "";
 
@@ -110,10 +114,10 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
             rcr_cont
         );
 
-    if (!squashed) {
-        delete bi;
-        bp_history = nullptr;
-    }
+    base->update(tid, pc, taken, bi->ltage_bi, squashed, inst, target);
+
+    delete bi;
+    bp_history = nullptr;
 }
 
 void
@@ -167,9 +171,10 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                 Cycles additionalLatency = calculateRemainingLatency(patternBuffer[ccid]);
                 if (additionalLatency == 0) {
                     int i = findBestPattern(tid, pc, backingStorage[ccid]);
+                    bi->index = i;
                     if (i >= 0)
                     {
-                        int key = base->gtag(tid, pc, i);
+                        int key = tage_bi->tableTags[i];
                         ++stats.demandHitsTotal;
                         llbp_confidence = backingStorage[ccid].patterns[key].counter;
                         bool llbp_prediction = llbp_confidence >= 0;
@@ -241,9 +246,6 @@ LLBP::updateHistories(
         }
     } else {
         bi = static_cast<LLBPBranchInfo *>(bp_history);
-        storageUpdate(
-            tid, pc, rcr.getCCID(), taken, bi
-        );
     }
 
     rcr.backup(bi->rcrBackup);
@@ -267,22 +269,26 @@ int8_t LLBP::absPredCounter(int8_t counter)
  * @param pc Program counter
  * @param cid Context ID
  * @param taken Whether the branch was taken
+ * @param speculative Whether the update is speculative
  * @param bi Branch info
  */
-void LLBP::storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken,
-                         LLBPBranchInfo *bi)
+void LLBP::storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken, LLBPBranchInfo *bi)
 {
+    LTAGE::LTageBranchInfo *ltage_bi =
+        static_cast<LTAGE::LTageBranchInfo *>(bi->ltage_bi);
+    
+    auto tage_bi = ltage_bi->tageBranchInfo;
+    
     // Check whether the current context is known
     // If not, we create a new context
     if (backingStorage.count(cid))
     {
         auto context = backingStorage[cid];
-        // The best pattern is always the one that was used to predict
-        // the branch. Both the pattern and the context are updated.
-        int i = findBestPattern(tid, pc, context);
+        
+        int i = bi->index; 
         if (i >= 0)
         {
-            int key = base->gtag(tid, pc, i);
+            int key = tage_bi->tableTags[i];
             TAGEBase::ctrUpdate(context.patterns[key].counter, taken,
                                 ptnCounterBits);
             if (context.patterns[key].counter == (taken ? 1 : -2))
@@ -302,24 +308,22 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken,
         // If a misprediction occurs, we allocate a new pattern with longer history
         // in the context. The pattern with the weakest confidence is replaced.
         // This only happens if the LLBP was the provider.
-        if (bi->overridden) {
-            if (bi->getPrediction() != taken) {
-                if (!bi->avenged) {
-                    ++stats.wrongOverridesTotal;
-                    if (bi->llbp_pred == bi->base_pred) {
-                        ++stats.wrongOverridesIdentical;
-                    }
-                    bi->avenged = true;
-                }
-                if (i < base->getNumHistoryTables() - 1) {
-                    int choosei = std::min(i + 1, (int) base->getNumHistoryTables() - 1);
-                    context.patterns[base->gtag(tid, pc, choosei)].counter = taken ? 0 : -1;
-                }
-            } else {
-                ++stats.correctOverridesTotal;   
+        if (bi->getPrediction() != taken) {
+            if (!bi->avenged && bi->overridden) {
+                ++stats.wrongOverridesTotal;
                 if (bi->llbp_pred == bi->base_pred) {
-                    ++stats.correctOverridesIdentical;
+                    ++stats.wrongOverridesIdentical;
                 }
+                bi->avenged = true;
+            }
+            if (i < base->getNumHistoryTables() - 1) {
+                int choosei = std::min(i + 1, (int) base->getNumHistoryTables() - 1);
+                context.patterns[tage_bi->tableTags[choosei]].counter = taken ? 0 : -1;
+            }
+        } else if (bi->overridden) {
+            ++stats.correctOverridesTotal;   
+            if (bi->llbp_pred == bi->base_pred) {
+                ++stats.correctOverridesIdentical;
             }
         }
     }
@@ -338,7 +342,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken,
         // (only this branch, in different history lengths)
         for (int i = 1; i <= base->getNumHistoryTables(); i++)
         {
-            backingStorage[cid].patterns[base->gtag(tid, pc, i)].counter = taken ? 0 : -1;
+            backingStorage[cid].patterns[tage_bi->tableTags[i]].counter = taken ? 0 : -1;
         }
     }
 }

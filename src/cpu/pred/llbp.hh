@@ -84,12 +84,16 @@ class LLBP : public ConditionalPredictor
         bool base_pred;
         bool avenged;
         Addr pc;
+        int index;
         bool conditional;
         std::list<uint64_t> rcrBackup;
         void* ltage_bi;
         
         LLBPBranchInfo(Addr pc, bool conditional)
-          : pc(pc),
+          : overridden(false),
+            avenged(false),
+            pc(pc),
+            index(-1),
             conditional(conditional),
             ltage_bi(nullptr)
         {}
@@ -134,8 +138,7 @@ class LLBP : public ConditionalPredictor
     Cycles backingStorageLatency;
 
     int8_t absPredCounter(int8_t counter);
-    void storageUpdate(
-        ThreadID tid, Addr pc, uint64_t cid, bool taken, LLBPBranchInfo* bi);
+    void storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken, LLBPBranchInfo* bi);
     void storageInvalidate();
     int findBestPattern(ThreadID tid, Addr pc, Context& ctx);
     int findVictimPattern(int min, Context& ctx);
