@@ -97,7 +97,7 @@ FetchTarget::finishTranslation(const Fault &_fault, const RequestPtr &_req,
 
     fault = _fault;
     DPRINTF(FTQ, "Finish translation %s, with %i, %i\n",
-                print(), _fault, fault);
+                toString(), _fault, fault);
     if (_fault == NoFault) {
         paddr = _req->getPaddr();
         translation_done = true;

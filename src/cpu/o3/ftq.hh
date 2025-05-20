@@ -136,19 +136,15 @@ class FetchTarget
     branch_prediction::BPredUnit::PredictorHistory *bpuHistory;
 
 
-    /* Start address of the basic block */
+    /* Start address of the fetch target */
     Addr
     startAddress()
     {
         return startPC->instAddr();
     }
 
-    /* End address of the basic block */
-    Addr
-    endAddress()
-    {
-        return (endPC) ? endPC->instAddr() : MaxAddr;
-    }
+    /* PC address of the last instruction in the fetch target */
+    Addr endPCAddr() { return (endPC) ? endPC->instAddr() : MaxAddr; }
 
     /* Address of the last byte in the fetch target */
     Addr endAddress() { return endAddr; }
@@ -169,13 +165,13 @@ class FetchTarget
     bool
     isExitInst(Addr addr)
     {
-        return addr == endAddress();
+        return addr == endPCAddr();
     }
 
     bool
     isExitBranch(Addr addr)
     {
-        return (addr == endAddress()) && is_branch;
+        return (addr == endPCAddr()) && is_branch;
     }
 
     bool inRangeAligned(Addr addr, int alignment) {
@@ -284,7 +280,8 @@ class FetchTarget
     Addr getPaddr() { return paddr; }
     bool hasPaddr() { return paddr_valid; }
 
-    RequestPtr popReq() { return std::move(req); }
+    // Pop the request from the fetch target.
+    RequestPtr popReq() { return std::exchange(req, nullptr); }
     RequestPtr req;
     Fault fault;
 
