@@ -130,41 +130,6 @@ class Fetch
     };
 
   private:
-    /* Event to delay delivery of a fetch translation result in case of
-     * a fault and the nop to carry the fault cannot be generated
-     * immediately */
-    class FinishTranslationEvent : public Event
-    {
-      private:
-        Fetch *fetch;
-        Fault fault;
-        RequestPtr req;
-        FetchTargetPtr ft;
-
-      public:
-        FinishTranslationEvent(Fetch *_fetch)
-            : fetch(_fetch), req(nullptr), ft(nullptr)
-        {}
-
-        void setFault(Fault _fault) { fault = _fault; }
-        void setReq(const RequestPtr &_req) { req = _req; }
-        void setFT(const FetchTargetPtr &_ft) { ft = _ft; }
-
-        /** Process the delayed finish translation */
-        void
-        process()
-        {
-            assert(fetch->numInst < fetch->fetchWidth);
-            // fetch->finishTranslation(fault, req);
-            fetch->finishTranslation(fault, req, ft);
-        }
-
-        const char *
-        description() const
-        {
-            return "CPU FetchFinishTranslation";
-        }
-      };
 
  class ProcessTrapEvent : public Event
     {
@@ -378,6 +343,7 @@ class Fetch
 
     int outstandingTranslations;
     const int maxOutstandingTranslations;
+    const int maxPrefetchesPerCycle;
 
     // Function that issues translation and prefetch requests for
     // fetch targets that needs it.
@@ -630,9 +596,6 @@ class Fetch
     bool issuePipelinedIfetch[MaxThreads];
 
     /** Event used to delay fault generation of translation faults */
-    FinishTranslationEvent finishTranslationEvent;
-
-    /** Event used to delay fault generation of translation faults */
     ProcessTrapEvent processTrapEvent;
 
   protected:
@@ -685,6 +648,11 @@ class Fetch
         statistics::Distribution nisnDist;
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
+
+        statistics::Scalar stopFetchReasonReachBranchBW;
+        statistics::Scalar stopFetchReasonReachInstFetchLimit;
+        statistics::Scalar stopFetchReasonReachFetchBufferLimit;
+        statistics::Scalar stopFetchReasonReachFTBW;
 
 
         statistics::Distribution instrAccessLatency;

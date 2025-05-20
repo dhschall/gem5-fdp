@@ -214,7 +214,8 @@ class FetchTarget
     Addr getPaddr() { return paddr; }
     bool hasPaddr() { return paddr_valid; }
 
-    RequestPtr popReq() { return std::move(req); }
+    // Pop the request from the fetch target.
+    RequestPtr popReq() { return std::exchange(req, nullptr); }
     RequestPtr req;
     Fault fault;
 

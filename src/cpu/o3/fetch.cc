@@ -86,6 +86,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       maxOutstandingPrefetches(params.maxOutstandingPrefetches),
       outstandingTranslations(0),
       maxOutstandingTranslations(params.maxOutstandingTranslations),
+      maxPrefetchesPerCycle(params.maxPrefetchesPerCycle),
       cpu(_cpu),
       bac(nullptr), ftq(nullptr),
       decoupledFrontEnd(params.decoupledFrontEnd),
@@ -104,7 +105,6 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       numFetchingThreads(params.smtNumFetchingThreads),
       icachePort(this, _cpu),
-      finishTranslationEvent(this),
       processTrapEvent(this),
       fetchStats(_cpu, this)
 {
@@ -204,7 +204,16 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Ratio of cycles fetch was idle",
              idleCycles / cpu->baseStats.numCycles),
 
-    ADD_STAT(instrAccessLatency, statistics::units::Count::get(),
+             ADD_STAT(stopFetchReasonReachBranchBW, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to branch bandwidth"),
+    ADD_STAT(stopFetchReasonReachInstFetchLimit, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to instruction fetch limit"),
+    ADD_STAT(stopFetchReasonReachFetchBufferLimit, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch buffer limit"),
+    ADD_STAT(stopFetchReasonReachFTBW, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch target bandwidth"),
+
+             ADD_STAT(instrAccessLatency, statistics::units::Count::get(),
              "Demand instruction access latency (in log2(cycles))"),
     ADD_STAT(translationLatency, statistics::units::Count::get(),
              "Translation latency (in log2(cycles))"),
@@ -417,64 +426,72 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     ThreadID tid = cpu->contextToThread(pkt->req->contextId());
     fetchesInProgress.erase(pkt->req->getPaddr());
 
-    // Only change the status if it's still waiting on the icache access
-    // to return.
-    if (fetchStatus[tid] != IcacheWaitResponse ||
-        pkt->req != memReq[tid]) {
+    DPRINTF(Fetch, "%s: PA:%#x, VA:%#x\n", __func__,
+            pkt->req->getPaddr(), pkt->req->getVaddr());
 
-        if (trySatisfyPrefetch(tid, pkt)) {
-            // If the request belongs to a fetch target, we are done
-            return;
+
+    // First check if the request is the active demand request
+    // we are waiting for.
+    if (fetchStatus[tid] == IcacheWaitResponse &&
+        pkt->req == memReq[tid]) {
+
+
+        DPRINTF(Fetch, "[tid:%i] Recv.: %#x. Waking up from cache miss.\n", tid,
+                pkt->req->getPaddr());
+        assert(!cpu->switchedOut());
+
+        memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+        fetchBufferValid[tid] = true;
+
+    DPRINTF(Fetch, "Recv.: %#x, %#x. Copy into FB\n", fetchBuffer[tid][0],
+                fetchBuffer[tid][1]);
+
+
+
+        // Wake up the CPU (if it went to sleep and was waiting on
+        // this completion event).
+        cpu->wakeCPU();
+
+        DPRINTF(Activity, "[tid:%i] Activating fetch due to cache completion\n",
+                tid);
+
+        switchToActive();
+
+        // Only switch to IcacheAccessComplete if we're not stalled as well.
+        if (checkStall(tid)) {
+            fetchStatus[tid] = Blocked;
+        } else {
+            fetchStatus[tid] = IcacheAccessComplete;
         }
 
-        ++fetchStats.icacheSquashes;
+        if (pkt->req->getAccessDepth() == 0) {
+            fetchStats.demandHit++;
+        } else {
+            fetchStats.demandMiss++;
+        }
+
+        pkt->req->setAccessLatency();
+        auto latency = cpu->ticksToCycles(pkt->req->getAccessLatency());
+        fetchStats.instrAccessLatency.sample(
+            latency > 0 ? floorLog2(uint64_t(latency)) : 0);
+        cpu->ppInstAccessComplete->notify(pkt);
+
+        // Reset the mem req to NULL.
         delete pkt;
+        memReq[tid] = NULL;
         return;
     }
 
-
-    DPRINTF(Fetch, "[tid:%i] Recv.: %#x. Waking up from cache miss.\n", tid,
-            pkt->req->getPaddr());
-    assert(!cpu->switchedOut());
-
-    memcpy(fetchBuffer[tid], pkt->getConstPtr<uint8_t>(), fetchBufferSize);
-    fetchBufferValid[tid] = true;
-
-DPRINTF(Fetch, "Recv.: %#x, %#x. Copy into FB\n", fetchBuffer[tid][0],
-            fetchBuffer[tid][1]);
-
-
-
-    // Wake up the CPU (if it went to sleep and was waiting on
-    // this completion event).
-    cpu->wakeCPU();
-
-    DPRINTF(Activity, "[tid:%i] Activating fetch due to cache completion\n",
-            tid);
-
-    switchToActive();
-
-    // Only switch to IcacheAccessComplete if we're not stalled as well.
-    if (checkStall(tid)) {
-        fetchStatus[tid] = Blocked;
-    } else {
-        fetchStatus[tid] = IcacheAccessComplete;
+    // Not the demand request. Check if belongs to a prefetch.
+    if (trySatisfyPrefetch(tid, pkt)) {
+        // If the request belongs to a fetch target, we are done
+        return;
     }
 
-    if (pkt->req->getAccessDepth() == 0) {
-        fetchStats.demandHit++;
-    } else {
-        fetchStats.demandMiss++;
-    }
-
-    pkt->req->setAccessLatency();
-    auto latency = cpu->ticksToCycles(pkt->req->getAccessLatency());
-    fetchStats.instrAccessLatency.sample(
-        latency > 0 ? floorLog2(uint64_t(latency)) : 0);
-    cpu->ppInstAccessComplete->notify(pkt);
-    // Reset the mem req to NULL.
+    // Doesn't belong to anything. Must be a dropped request after a squash.
+    ++fetchStats.icacheSquashes;
     delete pkt;
-    memReq[tid] = NULL;
+    return;
 }
 
 void
@@ -528,7 +545,7 @@ Fetch::isDrained() const
      * cycle if the finish translation event is scheduled, so make
      * sure that's not the case.
      */
-    return !finishTranslationEvent.scheduled();
+    return !processTrapEvent.scheduled();
 }
 
 void
@@ -840,7 +857,9 @@ Fetch::makeRequest(Addr vaddr, ThreadID tid, Addr pc, FetchTargetPtr ft)
         // checking the fetch target range and do the translation
         // again.
 
-        Addr cl_pa = ft->getPaddr() & ~(cacheBlkSize - 1);
+        DPRINTF(Fetch, "[tid:%i] Using translation VA:%#x, PA:%#x from %s\n",
+            tid, vaddr, ft->getPaddr(), ft->print());
+        Addr cl_pa = ft->getPaddr() & ~(uint64_t(cacheBlkSize - 1));
         cl_pa += vaddr & (cacheBlkSize - 1);
 
         req->setPaddr(cl_pa);
@@ -859,8 +878,10 @@ Fetch::performCacheAccess(Addr vaddr, ThreadID tid, const RequestPtr &mem_req,
     // If we have, just wait around for commit to squash something and put
     // us on the right track
     if (!cpu->system->isMemAddr(mem_req->getPaddr())) {
-        warn("Address %#x is outside of physical memory, stopping fetch\n",
-                mem_req->getPaddr());
+        warn("%llu Address %#x is outside of physical memory, stopping fetch\n",
+             curTick(), mem_req->getPaddr());
+        DPRINTF(Fetch, "[tid:%i] Address %#x is outside of physical memory\n",
+                tid, mem_req->getPaddr());
         fetchStatus[tid] = NoGoodAddr;
         memReq[tid] = NULL;
         return false;
@@ -903,8 +924,9 @@ Fetch::performCacheAccess(Addr vaddr, ThreadID tid, const RequestPtr &mem_req,
 
     // Keep track of the outstanding fetches.
     fetchesInProgress.insert(mem_req->getPaddr());
-    DPRINTF(Fetch, "[tid:%i] Successful send fetch request to %#x. "
-            "In-flight: %i.\n", tid, mem_req->getPaddr(),
+    DPRINTF(Fetch, "[tid:%i] Successful send %s request to %#x. "
+            "In-flight: %i.\n", tid, prefetch ? "prefetch" : "demand fetch",
+            mem_req->getPaddr(),
             fetchesInProgress.size());
     fetchStats.memReqInFlight.sample(fetchesInProgress.size());
 
@@ -935,38 +957,41 @@ Fetch::processFTQ(const ThreadID tid)
     if (!ftq->isValid(tid)) return;
 
     FetchTargetPtr ft = nullptr;
+    ftq->printFTQ(tid);
 
+    for (int i = 0; i < maxPrefetchesPerCycle; i++) {
 
-    // Prefetch Translations ----------------------------------------
-    if (outstandingTranslations < maxOutstandingTranslations) {
+        // Prefetch Translations ----------------------------------------
+        if (outstandingTranslations < maxOutstandingTranslations) {
 
-        // First check if the FTQ contains fetch targets that
-        // require a translation.
-        ft = ftq->findAfterHead(tid,
-            [this](FetchTargetPtr &ft) -> bool
-            {
-                return ft->requiresTranslation();
-            });
+            // First check if the FTQ contains fetch targets that
+            // require a translation.
+            ft = ftq->findAfterHead(tid,
+                [this](FetchTargetPtr &ft) -> bool
+                {
+                    return ft->requiresTranslation();
+                });
 
-        if (ft != nullptr) {
-            // Send translation request to the MMU.
-            Addr fetchBufferBlockPC = fetchBufferAlignPC(ft->startAddress());
-            auto req = makeRequest(fetchBufferBlockPC,
-                                    tid, ft->startAddress());
+            if (ft != nullptr) {
+                // Send translation request to the MMU.
+                Addr fetchBufferBlockPC = fetchBufferAlignPC(ft->startAddress());
+                auto req = makeRequest(fetchBufferBlockPC,
+                                        tid, ft->startAddress());
 
-            DPRINTF(Fetch, "[tid:%i] Translation for %#x started %s\n",
-                    tid, fetchBufferBlockPC, ft->print());
+                DPRINTF(Fetch, "[tid:%i] Translation for %#x started %s\n",
+                        tid, fetchBufferBlockPC, ft->print());
 
-            startTranslation(req, tid, ft);
+                startTranslation(req, tid, ft);
+            }
+
+        } else {
+
+            // If we have too many outstanding prefetches, we can't issue
+            // more.
+            DPRINTF(Fetch, "[tid:%i] Can't issue translation, too many "
+                    "outstanding\n", tid);
+            fetchStats.pfTranslationLimitReached++;
         }
-
-    } else {
-
-        // If we have too many outstanding prefetches, we can't issue
-        // more.
-        DPRINTF(Fetch, "[tid:%i] Can't issue translation, too many "
-                "outstanding\n", tid);
-        fetchStats.pfTranslationLimitReached++;
     }
 
     // Prefetch -------------------------------------------
@@ -977,47 +1002,48 @@ Fetch::processFTQ(const ThreadID tid)
                 tid);
         return;
     }
+    ftq->printFTQ(tid);
 
-    if (outstandingPrefetches >= maxOutstandingPrefetches) {
-        // If we have too many outstanding prefetches, we can't issue
-        // more.
-        DPRINTF(Fetch, "[tid:%i] Can't issue prefetches, too many "
-                "outstanding\n", tid);
-        fetchStats.pfLimitReached++;
-        return;
-    }
+    for (int i = 0; i < maxPrefetchesPerCycle; i++) {
 
-    // The front-end is able to prefetch. Search for the next fetch target
-    // that can be prefetched.
-    ft = ftq->findAfterHead(tid,
-        [this](FetchTargetPtr &ft) -> bool
-        {
-            return ft->translationReady();
-        });
-
-    if (ft != nullptr) {
-        // Send prefetch request to the cache.
-        RequestPtr req = ft->req;
-        assert(req != nullptr);
-
-        // Check if an access to this address is already in flight.
-        auto it = fetchesInProgress.find(req->getPaddr());
-        if (it != fetchesInProgress.end()) {
-            DPRINTF(Fetch, "[tid:%i] Access to %#x/%#x already in flight. "
-                    "Mark ready\n", tid, req->getVaddr(), req->getPaddr());
-            ft->markReady();
+        if (outstandingPrefetches >= maxOutstandingPrefetches) {
+            // If we have too many outstanding prefetches, we can't issue
+            // more.
+            DPRINTF(Fetch, "[tid:%i] Can't issue prefetches, too many "
+                    "outstanding\n", tid);
+            fetchStats.pfLimitReached++;
             return;
         }
 
-        if (performCacheAccess(req->getVaddr(), tid, req, true)) {
-            ft->prefetchIssued();
-            outstandingPrefetches++;
-            fetchStats.pfIssued++;
+        // The front-end is able to prefetch. Search for the next fetch target
+        // that can be prefetched.
+        ft = ftq->findAfterHead(tid,
+            [this](FetchTargetPtr &ft) -> bool
+            {
+                return ft->translationReady();
+            });
 
-            DPRINTF(Fetch, "[tid:%i] Prefetch request send %#x (%i/%i) %s\n",
-                tid, req->getVaddr(),
-                outstandingPrefetches, maxOutstandingPrefetches,
-                ft->print());
+        if (ft != nullptr) {
+            // Send prefetch request to the cache.
+            RequestPtr req = ft->req;
+            assert(req != nullptr);
+
+            // Check if an access to this address is already in flight.
+            auto it = fetchesInProgress.find(req->getPaddr());
+            if (it != fetchesInProgress.end()) {
+                DPRINTF(Fetch, "[tid:%i] Access to %#x/%#x already in flight. "
+                        "Mark ready\n", tid, req->getVaddr(), req->getPaddr());
+                ft->markReady();
+            } else if (performCacheAccess(req->getVaddr(), tid, req, true)) {
+                ft->prefetchIssued();
+                outstandingPrefetches++;
+                fetchStats.pfIssued++;
+
+                DPRINTF(Fetch, "[tid:%i] Prefetch request send %#x (%i/%i) %s\n",
+                    tid, req->getVaddr(),
+                    outstandingPrefetches, maxOutstandingPrefetches,
+                    ft->print());
+            }
         }
     }
 }
@@ -1056,7 +1082,7 @@ Fetch::trySatisfyPrefetch(const ThreadID tid, PacketPtr pkt)
 
     // Iterate over all fetch targets in the FTQ and check if the
     // request belongs to one of them.
-    FetchTargetPtr ft = ftq->findAfterHead(tid,
+    FetchTargetPtr ft = ftq->findNext(tid,
         [this, pkt](FetchTargetPtr &ft) -> bool
         {
             return ft->req == pkt->req;
@@ -1094,28 +1120,34 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
     cpu->wakeCPU();
 
     outstandingTranslations--;
+    DPRINTF(Fetch, "[tid:%i] Translation for %#x completed with %s\n",
+        tid, mem_req->getVaddr(),
+        fault==NoFault ? "NoFault" : "Fault");
 
-    if (fetchStatus[tid] != ItlbWait || mem_req != memReq[tid] ||
-        mem_req->getVaddr() != memReq[tid]->getVaddr()) {
+    // if (fetchStatus[tid] != ItlbWait || mem_req != memReq[tid] ||
+    //     mem_req->getVaddr() != memReq[tid]->getVaddr()) {
 
 
-        if (ft && ft->isValid()) {
-            DPRINTF(Fetch, "[tid:%i] Translation for %#x completed %s\n",
-                    tid, mem_req->getVaddr(), ft->print());
+    //     if (ft && ft->isValid()) {
+    //         DPRINTF(Fetch, "[tid:%i] Translation for %#x completed %s\n",
+    //                 tid, mem_req->getVaddr(), ft->print());
 
-            auto lat = ft->finishTranslation(fault, mem_req, true);
-            fetchStats.translationLatency.sample(lat ? floorLog2(lat) : 0);
-        } else {
+    //         auto lat = ft->finishTranslation(fault, mem_req, true);
+    //         fetchStats.translationLatency.sample(lat ? floorLog2(lat) : 0);
+    //     } else {
 
-            // The request is neither for the head nor for a fetch target.
-            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
-                    tid);
-            ++fetchStats.tlbSquashes;
-        }
+    //         // The request is neither for the head nor for a fetch target.
+    //         DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
+    //                 tid);
+    //         ++fetchStats.tlbSquashes;
+    //     }
 
-        // In either we case we are done here.
-        return;
-    }
+    //     // In either we case we are done here.
+    //     return;
+    // }
+    bool demand_request = (fetchStatus[tid] == ItlbWait) &&
+                          mem_req == memReq[tid] &&
+                          mem_req->getVaddr() == memReq[tid]->getVaddr();
 
     if (ft && ft->isValid()) {
         DPRINTF(Fetch, "[tid:%i] Translation for %#x completed %s with %i\n",
@@ -1124,8 +1156,19 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
         DPRINTF(Fetch, "Fetch: Doing instruction read. VA:%#lx, PA:%#lx\n",
                 mem_req->getVaddr(), fault==NoFault ? mem_req->getPaddr() : 0);
 
-        auto lat = ft->finishTranslation(fault, mem_req, false);
+        auto lat = ft->finishTranslation(fault, mem_req, !demand_request);
         fetchStats.translationLatency.sample(lat ? floorLog2(lat) : 0);
+    }
+
+    if (!demand_request) {
+
+        if (!ft || !ft->isValid()) {
+            DPRINTF(Fetch, "[tid:%i] Ignoring itlb completed after squash\n",
+                    tid);
+            ++fetchStats.tlbSquashes;
+        }
+        // The request is neither for the head nor for a fetch target.
+        return;
     }
 
 
@@ -1133,18 +1176,6 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req,
     if (fault == NoFault) {
         performCacheAccess(fetchBufferBlockPC, tid, mem_req);
     } else {
-        // // Don't send an instruction to decode if we can't handle it.
-        // if (!(numInst < fetchWidth) ||
-        //         !(fetchQueue[tid].size() < fetchQueueSize)) {
-        //     assert(!finishTranslationEvent.scheduled());
-        //     finishTranslationEvent.setFault(fault);
-        //     finishTranslationEvent.setReq(mem_req);
-        //     finishTranslationEvent.setFT(ft);
-        //     cpu->schedule(finishTranslationEvent,
-        //                   cpu->clockEdge(Cycles(1)));
-        //     outstandingTranslations++
-        //     return;
-        // }
         processTrap(tid, fault, mem_req);
     }
     _status = updateFetchStatus();
@@ -1159,17 +1190,18 @@ Fetch::processTrap(const ThreadID tid, const Fault &fault,
     // Don't send an instruction to decode if we can't handle it.
     if (!(numInst < fetchWidth) ||
             !(fetchQueue[tid].size() < fetchQueueSize)) {
-        assert(!processTrapEvent.scheduled());
-        processTrapEvent.setup(tid, fault, mem_req);
-        cpu->schedule(processTrapEvent,
-                        cpu->clockEdge(Cycles(1)));
+        if (!processTrapEvent.scheduled()) {
+            processTrapEvent.setup(tid, fault, mem_req);
+            cpu->schedule(processTrapEvent,
+                cpu->clockEdge(Cycles(1)));
+        }
         return;
     }
 
 
     DPRINTF(Fetch,
-            "[tid:%i] Got back req with addr %#x but expected %#x\n",
-            tid, mem_req->getVaddr(), mem_req->getVaddr());
+            "[tid:%i] Got back req:%#x with VA:%#x \n",
+            tid, mem_req, mem_req->getVaddr());
     // Translation faulted, icache request won't be sent.
     memReq[tid] = NULL;
 
@@ -1279,6 +1311,10 @@ Fetch::doSquash(const PCStateBase &new_pc, const DynInstPtr squashInst,
     // Drop all prefetches
     fetchStats.pfSquashed += outstandingPrefetches;
     outstandingPrefetches = 0;
+
+    if (processTrapEvent.scheduled()) {
+        processTrapEvent.squash();
+    }
 
     ++fetchStats.squashCycles;
 }
@@ -1879,15 +1915,19 @@ Fetch::fetch(bool &status_change)
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
                 "instruction encountered.\n", tid);
+        fetchStats.stopFetchReasonReachBranchBW++;
     } else if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth "
                 "for this cycle.\n", tid);
+        fetchStats.stopFetchReasonReachInstFetchLimit++;
     } else if (blkOffset >= fetchBufferSize) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end "
                 "fetch buffer.\n", tid);
+        fetchStats.stopFetchReasonReachFetchBufferLimit++;
     } else if (decoupledFrontEnd && !curFT) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached end of fetch "
                 "target.\n", tid);
+        fetchStats.stopFetchReasonReachFTBW++;
     }
 
     if (decoupledFrontEnd && !curFT) {
