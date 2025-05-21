@@ -497,6 +497,8 @@ TAGEBase::allocateEntry(int idx, BranchInfo* bi, bool taken)
 {
     if (gtable[idx][bi->tableIndices[idx]].u != 0)
         return false;
+    
+    ++stats.allocationsTotal;
 
     gtable[idx][bi->tableIndices[idx]].tag = bi->tableTags[idx];
     gtable[idx][bi->tableIndices[idx]].ctr = (taken) ? 0 : -1;
@@ -825,6 +827,8 @@ TAGEBase::getGHR(ThreadID tid) const
 TAGEBase::TAGEBaseStats::TAGEBaseStats(
     statistics::Group *parent, unsigned nHistoryTables)
     : statistics::Group(parent),
+      ADD_STAT(allocationsTotal, statistics::units::Count::get(),
+               "Number of times TAGE inserted a new pattern"),
       ADD_STAT(longestMatchProviderCorrect, statistics::units::Count::get(),
                "Number of times TAGE Longest Match is the provider and the "
                "prediction is correct"),

@@ -87,6 +87,7 @@ class LLBP : public ConditionalPredictor
         int index;
         bool conditional;
         std::list<uint64_t> rcrBackup;
+        uint64_t cid;
         void* ltage_bi;
         
         LLBPBranchInfo(Addr pc, bool conditional)
@@ -95,6 +96,7 @@ class LLBP : public ConditionalPredictor
             pc(pc),
             index(-1),
             conditional(conditional),
+            cid(-1),
             ltage_bi(nullptr)
         {}
 
@@ -111,6 +113,7 @@ class LLBP : public ConditionalPredictor
     {
         //* hysteresis counter: > 0 = taken, < 0 = not taken
         int8_t counter;
+        int visited = 0;
     };
 
     struct Context
@@ -135,12 +138,17 @@ class LLBP : public ConditionalPredictor
     int ctxCounterBits;
     int ptnCounterBits;
 
+    int calculateTag(int tageTag, int tageBank) const
+    {
+        return (tageTag << 4) + tageBank;
+    }
+
     Cycles backingStorageLatency;
 
     int8_t absPredCounter(int8_t counter);
-    void storageUpdate(ThreadID tid, Addr pc, uint64_t cid, bool taken, LLBPBranchInfo* bi);
+    void storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo* bi);
     void storageInvalidate();
-    int findBestPattern(ThreadID tid, Addr pc, Context& ctx);
+    int findBestPattern(Context &ctx, TAGEBase::BranchInfo *bi);
     int findVictimPattern(int min, Context& ctx);
     uint64_t findVictimContext();
 
@@ -149,6 +157,7 @@ class LLBP : public ConditionalPredictor
         LLBPStats(LLBP *llbp);
 
         statistics::Scalar prefetchesIssued;
+        statistics::Scalar baseHitsTotal;
         statistics::Scalar demandHitsTotal;
         statistics::Scalar demandHitsOverride;
         statistics::Scalar demandHitsNoOverride;
@@ -156,6 +165,8 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar demandMissesNoPattern;
         statistics::Scalar demandMissesNoPrefetch;
         statistics::Scalar demandMissesCold;
+        statistics::Scalar allocationsTotal;
+        statistics::Vector revisits;
         statistics::Scalar patternBufferEvictions;
         statistics::Scalar backingStorageEvictions;
         statistics::Scalar backingStorageInsertions;

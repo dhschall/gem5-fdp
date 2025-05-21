@@ -563,6 +563,7 @@ class TAGEBase : public SimObject
     {
         TAGEBaseStats(statistics::Group *parent, unsigned nHistoryTables);
         // stats
+        statistics::Scalar allocationsTotal;
         statistics::Scalar longestMatchProviderCorrect;
         statistics::Scalar altMatchProviderCorrect;
         statistics::Scalar bimodalAltMatchProviderCorrect;
