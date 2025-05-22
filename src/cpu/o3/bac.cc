@@ -629,7 +629,6 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
     // Get a reference to the current PC state for this thread.
     // The search itself is done on the instruction address to speed up
     // simulation time.
-    PCStateBase &cur_pc = *bacPC[tid];
     Addr search_addr = cur_pc.instAddr();
     Addr start_addr = search_addr;
     Addr cur_cache_block = alignToCacheBlock(cur_pc.instAddr());
@@ -646,14 +645,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // The search itself is done on the instruction address to speed up
         // simulation time.
 
-        Addr search_addr = cur_pc.instAddr();
-        Addr start_addr = search_addr;
-
-        // In each cycles a new fetch target is created starting with
-        // the current PC.
-        FetchTargetPtr curFT = newFetchTarget(cur_pc);
-
-
+    
         // Scan through the instruction stream and search for branches.
         // The BTB contains only branches where taken at least once.
         while (true) {
