@@ -71,7 +71,7 @@ class LLBP : public ConditionalPredictor
   protected:
 
     LTAGE* base;
-    
+
     Cycles calculateRemainingLatency(Cycles insertTime);
 
     Prediction predict(ThreadID tid, Addr pc,
@@ -82,17 +82,15 @@ class LLBP : public ConditionalPredictor
         bool overridden;
         bool llbp_pred;
         bool base_pred;
-        bool avenged;
         Addr pc;
         int index;
         bool conditional;
         std::list<uint64_t> rcrBackup;
         uint64_t cid;
         void* ltage_bi;
-        
+
         LLBPBranchInfo(Addr pc, bool conditional)
           : overridden(false),
-            avenged(false),
             pc(pc),
             index(-1),
             conditional(conditional),
@@ -118,7 +116,7 @@ class LLBP : public ConditionalPredictor
 
     struct Context
     {
-        std::unordered_map<int, Pattern> patterns;
+        std::unordered_map<uint64_t, Pattern> patterns;
         /** Confidence counter of the context (guides replacement) */
         uint8_t confidence;
     };
@@ -138,9 +136,12 @@ class LLBP : public ConditionalPredictor
     int ctxCounterBits;
     int ptnCounterBits;
 
-    int calculateTag(int tageTag, int tageBank) const
+    uint64_t calculateTag(int* tageTags, int* tageIndices, int tageBank, Addr pc) const
     {
-        return (tageTag << 4) + tageBank;
+        uint64_t tag = tageTags[tageBank];
+        uint64_t index = tageIndices[tageBank];
+        uint64_t bank = tageBank;
+        return ((tag << 49) | (index << 6) | bank);
     }
 
     Cycles backingStorageLatency;
@@ -148,7 +149,7 @@ class LLBP : public ConditionalPredictor
     int8_t absPredCounter(int8_t counter);
     void storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo* bi);
     void storageInvalidate();
-    int findBestPattern(Context &ctx, TAGEBase::BranchInfo *bi);
+    int findBestPattern(Context &ctx, TAGEBase::BranchInfo *bi, Addr pc);
     int findVictimPattern(int min, Context& ctx);
     uint64_t findVictimContext();
 
@@ -226,7 +227,7 @@ class LLBP : public ConditionalPredictor
           * @return The wrapped value
         */
         inline static uint64_t moduloTwoExp(uint64_t val, int exp) {
-            return val & ((1 << exp) - 1);
+            return val & ((1 << (uint64_t) exp) - 1);
         }
 
         // Get the current context ID

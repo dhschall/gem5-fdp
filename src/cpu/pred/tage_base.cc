@@ -497,7 +497,7 @@ TAGEBase::allocateEntry(int idx, BranchInfo* bi, bool taken)
 {
     if (gtable[idx][bi->tableIndices[idx]].u != 0)
         return false;
-    
+
     ++stats.allocationsTotal;
 
     gtable[idx][bi->tableIndices[idx]].tag = bi->tableTags[idx];
