@@ -207,7 +207,6 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                 ++stats.demandMissesTotal;
             }
 
-            context.patterns.tickAge();
         } else {
             ++stats.demandMissesCold;
             ++stats.demandMissesTotal;
@@ -489,12 +488,12 @@ LLBP::RCR::calcHash(int n, int skip, int shift)
 
 uint64_t LLBP::RCR::getCCID()
 {
-    return moduloTwoExp(ctxs.ccid, tagWidthBits);
+    return ctxs.ccid;
 }    // Hash of all branches
 
 uint64_t LLBP::RCR::getPCID()
 {
-    return moduloTwoExp(ctxs.pcid, tagWidthBits);
+    return ctxs.pcid;
 }
 
 bool LLBP::RCR::update(Addr pc, const StaticInstPtr &inst, bool taken)

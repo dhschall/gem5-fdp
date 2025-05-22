@@ -114,7 +114,6 @@ class LLBP : public ConditionalPredictor
         int8_t counter;
         int hit = 0;
         int useful = 0;
-        int keep = 7;
     };
 
     class PatternSet {
@@ -148,7 +147,6 @@ class LLBP : public ConditionalPredictor
             victim.counter = taken ? 0 : -1;
             victim.hit = 0;
             victim.useful = 0;
-            victim.keep = 7;
         }
 
         void wasUseful(uint64_t key, statistics::Vector& usefulTotal) {
@@ -159,8 +157,6 @@ class LLBP : public ConditionalPredictor
                     --usefulTotal[useful];
                     ++usefulTotal[useful + 1];
                 }
-                saturatingAdd(p->keep, 8);
-                saturatingAdd(p->keep, 8);
             }
         }
 
@@ -174,14 +170,6 @@ class LLBP : public ConditionalPredictor
                 }
             }
         }
-
-        void tickAge() {
-            for (auto& set : sets) {
-                for (auto& pattern : set) {
-                    saturatingSub(pattern.keep);
-                }
-            }
-        }
         
         uint64_t calculateKey(int* tageTags, int* tageIndices, int tageBank) {
             uint64_t tag = tageTags[tageBank];
@@ -192,6 +180,13 @@ class LLBP : public ConditionalPredictor
 
         int getBank(uint64_t key) {
             return bitmaskLowerN(bankBits) & key;
+        }
+
+        static int absConfidence(int8_t ctr) {
+            if (ctr < 0) {
+                return abs(ctr) - 1;
+            }
+            return ctr;
         }
         
         static uint64_t bitmaskLowerN(int n) {
@@ -229,7 +224,7 @@ class LLBP : public ConditionalPredictor
 
         Pattern& findVictimPattern(std::vector<Pattern>& set) {
             auto result = std::min_element(set.begin(), set.end(), [&](const Pattern& a, const Pattern& b) {
-                return a.keep < b.keep;
+                return absConfidence(a.counter) < absConfidence(b.counter);
             });
 
             return *result;
