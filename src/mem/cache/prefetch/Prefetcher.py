@@ -736,6 +736,7 @@ class FetchDirectedPrefetcher(BasePrefetcher):
     cxx_header = "mem/cache/prefetch/fdp.hh"
 
     cpu = Param.BaseCPU(Parent.any, "The CPU to train the predictor")
+    cache = Param.BaseCache(Parent.any, "The Instruction cache for this CPU")
 
     latency = Param.Cycles(1, "Latency for generated prefetches")
 

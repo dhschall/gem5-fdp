@@ -37,12 +37,12 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.defines import buildEnv # type: ignore
-from m5.objects.BaseCPU import BaseCPU # type: ignore
+from m5.defines import buildEnv  # type: ignore
+from m5.objects.BaseCPU import BaseCPU  # type: ignore
 
 # from m5.objects.O3Checker import O3Checker
-from m5.objects.BranchPredictor import * # type: ignore
-from m5.objects.FUPool import * # type: ignore
+from m5.objects.BranchPredictor import *  # type: ignore
+from m5.objects.FUPool import *  # type: ignore
 from m5.objects.IndexingPolicies import *  # type: ignore
 from m5.objects.ReplacementPolicies import *  # type: ignore
 from m5.params import *
@@ -238,4 +238,19 @@ class BaseO3CPU(BaseCPU):
     )
     decoupledFrontEnd = Param.Bool(False, "Enables the decoupled front-end")
 
-    numPredPerCycle = Param.Unsigned(2, "Max number of FTs added to the FTQ per Cycle")
+    numPredPerCycle = Param.Unsigned(
+        2, "Max number of FTs added to the FTQ per Cycle"
+    )
+
+    maxOutstandingPrefetches = Param.Unsigned(
+        2, "Maximum outstanding prefetches. (Used for decoupled front-end)"
+    )
+
+    maxOutstandingTranslations = Param.Unsigned(
+        2,
+        "Maximum outstanding translation prefetches. (Used for decoupled front-end)",
+    )
+    maxPrefetchesPerCycle = Param.Unsigned(
+        1,
+        "Maximum prefetches send per cycle. (Used for decoupled front-end)",
+    )

@@ -73,12 +73,13 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       decodeToFetchDelay(params.decodeToFetchDelay),
       commitToFetchDelay(params.commitToFetchDelay),
       bacToFetchDelay(params.bacToFetchDelay),
+      cacheBlkSize(cpu->cacheLineSize()),
       fetchTargetWidth(params.fetchTargetWidth),
       minInstSize(params.minInstSize),
       numThreads(params.numThreads),
       numPredPerCycle(params.numPredPerCycle),
       stats(_cpu,this)
-      
+
 {
     fatal_if(decoupledFrontEnd && (fetchTargetWidth < params.fetchBufferSize),
             "Fetch target width should be larger than fetch buffer size!");
@@ -472,7 +473,7 @@ BAC::squashBpuHistories(ThreadID tid)
 {
     if (!decoupledFrontEnd) return;
 
-    DPRINTF(BAC, "%s(tid:%i): FTQ sz: %i\n", tid, __func__, ftq->size(tid));
+    DPRINTF(BAC, "%s(tid:%i): FTQ sz: %i\n", __func__, tid, ftq->size(tid));
 
     unsigned n_fts = ftq->size(tid);
     if (n_fts == 0) return;
@@ -570,9 +571,9 @@ if (decoupledFrontEnd) {
 
 
 FetchTargetPtr
-BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
+BAC::newFetchTarget(const PCStateBase &start_pc)
 {
-    auto ft = std::make_shared<FetchTarget>(start_pc,
+    auto ft = std::make_shared<FetchTarget>(*ftq, start_pc,
                                             cpu->getAndIncrementFTSeq());
 
     DPRINTF(BAC, "Create new fetch target ftn:%llu\n", ft->ftNum());
@@ -625,146 +626,171 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
     int i =0;
     for(; i < numPredPerCycle ; i++)
     {
+    // Get a reference to the current PC state for this thread.
+    // The search itself is done on the instruction address to speed up
+    // simulation time.
+    PCStateBase &cur_pc = *bacPC[tid];
+    Addr search_addr = cur_pc.instAddr();
+    Addr start_addr = search_addr;
+    Addr cur_cache_block = alignToCacheBlock(cur_pc.instAddr());
+
+    // In each cycles a new fetch target is created starting with
+    // the current PC.
+    FetchTargetPtr curFT = newFetchTarget(cur_pc);
 
 
         bool branch_found = false;
         bool predict_taken = false;
-    
+
         // Get a reference to the current PC state for this thread.
         // The search itself is done on the instruction address to speed up
         // simulation time.
-        
+
         Addr search_addr = cur_pc.instAddr();
         Addr start_addr = search_addr;
-    
+
         // In each cycles a new fetch target is created starting with
         // the current PC.
-        FetchTargetPtr curFT = newFetchTarget(tid, cur_pc);
-    
-    
+        FetchTargetPtr curFT = newFetchTarget(cur_pc);
+
+
         // Scan through the instruction stream and search for branches.
         // The BTB contains only branches where taken at least once.
         while (true) {
-    
+
             // Check if the current search address can be found in the BTB
             // indicating the end of the branch.
             branch_found = bpu->BTBValid(tid, search_addr);
-    
+
             // If its a branch stop searching
             if (branch_found) {
                 break;
             }
-    
-            // If its not a branch check if the maximum search width is reached.
-            // If yes stop searching.
-            if ((search_addr - start_addr) >= fetchTargetWidth) {
-                break;
-            }
-    
-            // Continue searching.
-            search_addr += minInstSize;
-        }
-    
-        // Update the current PC to point to the last instruction
-        // in the fetch target
-        cur_pc.set(search_addr);
-    
-    
-        // Search stopped either because a branch was found in instruction
-        // stream or the maximum search width per cycle was reached.
-        // In the first case make the branch prediction and in the later
-        // advance the PC to start the search at the following address.
-    
-        // Make a copy of the current PC since the BPU will update it.
-        std::unique_ptr<PCStateBase> next_pc(cur_pc.clone());
-        StaticInstPtr staticInst = nullptr;
-    
-        if (branch_found) {
-            // Branch found in instruction stream. As the current
-            // BPU implementation required the static instruction we need to
-            // look it up from the BTB.
-            staticInst = bpu->BTBGetInst(tid, cur_pc.instAddr());
-            assert(staticInst);
-    
-            // Now make the actual prediction. Note the BPU will advance
-            // the PC to the next instruction.
-            predict_taken = predict(tid, staticInst, curFT, *next_pc);
-    
-            DPRINTF(BAC, "[tid:%i, ftn:%llu] Branch found at PC %#x "
-                    "taken?:%i, target:%#x\n",
-                    tid, curFT->ftNum(), cur_pc.instAddr(),
-                    predict_taken, next_pc->instAddr());
-    
-            stats.branches++;
-            if (predict_taken) {
-                stats.predTakenBranches++;
-            }
-    
-        } else {
-    
-            // Not a branch therefore we will continue the next FT at the
-            // next address
-            next_pc->set(cur_pc.instAddr() + minInstSize);
-        }
-    
-    
-        // Complete the fetch target if
-        // - a branch is found
-        // - or the maximum fetch bandwidth is reached.
-        curFT->finalize(cur_pc, curFT->ftNum(), branch_found,
-                            predict_taken, *next_pc);
-    
-        ftq->insert(tid, curFT);
-        wroteToTimeBuffer = true;
-    
-       
-    
-        // x86 has some complex instruction like string copy where the branch
-        // is not the last instruction or have several branches within the same
-        // instruction. Those branches jump always! to itself. This messes up
-        // the searching approach and will result in an infinite loop until the
-        // branch is squashed.
-        // We handle this by assuming only one branch per instruction and go
-        // straight to the next address/instruction/fetch target. In case the
-        // decoder finds more branches in this instruction we squash the FTQ.
-        // (see postFetch())
-        // This could be circumvented by using not only the PC but also the
-        // microPC to make predictions. However, since such instructions are
-        // rare this is not implemented.
-        if (staticInst
-            && staticInst->isMicroop() && !staticInst->isLastMicroop()) {
-            stats.branchesNotLastuOp++;
-            // The target is always to itself no matter if its taken or not.
-            // assert(next_pc->instAddr() == search_addr);
-            DPRINTF(BAC, "Branch detected which is not the last uOp %s. "
-                        "Continue with next address.\n", cur_pc);
-    
-            next_pc->set(cur_pc.instAddr() + staticInst->size());
-        }
-    
-        DPRINTF(BAC, "[tid:%i] [fn:%llu] %i addresses searched. "
-                "Branch found:%i. Continue with PC:%s in next cycle\n",
-                tid, curFT->ftNum(), (search_addr - start_addr),
-                branch_found, *next_pc);
-    
-        stats.ftSizeDist.sample(search_addr - start_addr);
-    
-        // Finally set the BPU PC to the next FT in the next cycle
-        set(cur_pc, *next_pc);
 
 
-        // Check whether the FTQ became full. In that case block until
-        // fetch has consumed one.
-        if (ftq->isFull(tid)) {
-            DPRINTF(BAC, "FTQ full\n");
-            bacStatus[tid] = FTQFull;
-            status_change = true;
+        // If its not a branch check if the maximum search width is reached.
+        // If yes stop searching.
+        if ((search_addr - start_addr) >= fetchTargetWidth) {
             break;
         }
 
-    } 
-    stats.ftNumber.sample(i);
-    // ftq->printFTQ(tid);
+        // Check if the search address will exceed the cache block
+        // boundary. If yes stop searching.
+        if (alignToCacheBlock(search_addr + minInstSize) != cur_cache_block) {
+            break;
+        }
+
+        // Continue searching.
+        search_addr += minInstSize;
+
+    }
+
+    // Update the current PC to point to the last instruction
+    // in the fetch target
+    cur_pc.set(search_addr);
+
+
+    // Search stopped either because a branch was found in instruction
+    // stream or the maximum search width per cycle was reached.
+    // In the first case make the branch prediction and in the later
+    // advance the PC to start the search at the following address.
+
+    // Make a copy of the current PC since the BPU will update it.
+    std::unique_ptr<PCStateBase> next_pc(cur_pc.clone());
+    StaticInstPtr staticInst = nullptr;
+    Addr ftEndAddr = cur_pc.instAddr();
+
+    if (branch_found) {
+        // Branch found in instruction stream. As the current
+        // BPU implementation required the static instruction we need to
+        // look it up from the BTB.
+        staticInst = bpu->BTBGetInst(tid, cur_pc.instAddr());
+        assert(staticInst);
+
+        // The end address of the fetch target is the address of the
+        // branch instruction + instruction size.
+        ftEndAddr = cur_pc.instAddr() + staticInst->size() - 1;
+
+        // Now make the actual prediction. Note the BPU will advance
+        // the PC to the next instruction.
+        predict_taken = predict(tid, staticInst, curFT, *next_pc);
+
+        DPRINTF(BAC, "[tid:%i, ftn:%llu] Branch found at PC %s "
+                "taken?:%i, target:%#x\n",
+                tid, curFT->ftNum(), cur_pc,
+                predict_taken, next_pc->instAddr());
+
+        stats.branches++;
+        if (predict_taken) {
+            stats.predTakenBranches++;
+        }
+
+    } else {
+
+        // Not a branch therefore we will continue the next FT at the
+        // next address
+        next_pc->set(cur_pc.instAddr() + minInstSize);
+        ftEndAddr = next_pc->instAddr() - 1;
+    }
+
+
+    // x86 has some complex instruction like string copy where the branch
+    // is not the last instruction or have several branches within the same
+    // instruction. Those branches jump always! to itself. This messes up
+    // the searching approach and will result in an infinite loop until the
+    // branch is squashed.
+    // We handle this by assuming only one branch per instruction and go
+    // straight to the next address/instruction/fetch target. In case the
+    // decoder finds more branches in this instruction we squash the FTQ.
+    // (see postFetch())
+    // This could be circumvented by using not only the PC but also the
+    // microPC to make predictions. However, since such instructions are
+    // rare this is not implemented.
+    if (staticInst
+        && staticInst->isMicroop() && !staticInst->isLastMicroop()) {
+        stats.branchesNotLastuOp++;
+        // The target is always to itself no matter if its taken or not.
+        // assert(next_pc->instAddr() == search_addr);
+        DPRINTF(BAC, "Branch detected which is not the last uOp %s. "
+                    "Continue with next address.\n", cur_pc);
+
+        next_pc->set(cur_pc.instAddr() + staticInst->size());
+        ftEndAddr = next_pc->instAddr() - 1;
+    }
+
+
+    // Complete the fetch target if
+    // - a branch is found
+    // - or the maximum fetch bandwidth is reached.
+    curFT->finalize(cur_pc, ftEndAddr, curFT->ftNum(), branch_found,
+                        predict_taken, *next_pc);
+
+    ftq->insert(tid, curFT);
+    wroteToTimeBuffer = true;
+
+
+    DPRINTF(BAC, "[tid:%i] [fn:%llu] %i addresses searched. "
+            "Branch found:%i. Continue with PC:%s in next cycle\n",
+            tid, curFT->ftNum(), (search_addr - start_addr),
+            branch_found, *next_pc);
+
+    stats.ftSizeDist.sample(search_addr - start_addr);
+
+    // Finally set the BPU PC to the next FT in the next cycle
+    set(cur_pc, *next_pc);
+     // ftq->printFTQ(tid);
+
+      // Check whether the FTQ became full. In that case block until
+    // fetch has consumed one.
+    if (ftq->isFull(tid)) {
+        DPRINTF(BAC, "FTQ full\n");
+        bacStatus[tid] = FTQFull;
+        status_change = true;
+        break;
+    }
+}
+stats.ftNumber.sample(i);
+
 }
 
 
@@ -1064,7 +1090,7 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
               /* last value */ bac->fetchTargetWidth,
               /* bucket size */ 4)
         .flags(statistics::pdf);
-    
+
 
     ftNumber.init(0, bac->numPredPerCycle, 1);
 
