@@ -107,25 +107,150 @@ class LLBP : public ConditionalPredictor
     };
 
 
+
     struct Pattern
     {
-        //* hysteresis counter: > 0 = taken, < 0 = not taken
+        uint64_t tag;
         int8_t counter;
-        int visited = 0;
+        int hit = 0;
+        int useful = 0;
+        int keep = 7;
     };
 
-    struct Context
+    class PatternSet {
+      public:
+        PatternSet(int numEntries, int setSize, int bankBits) {
+            assert(numEntries % setSize == 0);
+            this->bankBits = bankBits;
+            this->setSize = setSize;
+            this->numSets = numEntries / setSize;
+            sets.resize(numSets);
+            for (auto& set : sets) {
+                set.resize(setSize);
+            }
+        }
+
+        int getID(uint64_t key) {
+            uint64_t bank = getBank(key);
+            return bank / setSize;
+        }
+
+        Pattern* getEntry(uint64_t key) {
+            auto& set = getSet(key);
+            Pattern* result = findPatternInSet(key, set);
+            return result;
+        }
+
+        void insertEntry(uint64_t key, bool taken) {
+            auto& set = getSet(key);
+            Pattern& victim = findVictimPattern(set);
+            victim.tag = key;
+            victim.counter = taken ? 0 : -1;
+            victim.hit = 0;
+            victim.useful = 0;
+            victim.keep = 7;
+        }
+
+        void wasUseful(uint64_t key, statistics::Vector& usefulTotal) {
+            Pattern* p = getEntry(key);
+            if (p) {
+                int useful = p->useful++;
+                if (useful < usefulTotal.size() - 1) {
+                    --usefulTotal[useful];
+                    ++usefulTotal[useful + 1];
+                }
+                saturatingAdd(p->keep, 8);
+                saturatingAdd(p->keep, 8);
+            }
+        }
+
+        void wasHit(uint64_t key, statistics::Vector& hitsTotal) {
+            Pattern* p = getEntry(key);
+            if (p) {
+                int hits = p->hit++;
+                if (hits < hitsTotal.size() - 1) {
+                    --hitsTotal[hits];
+                    ++hitsTotal[hits + 1];
+                }
+            }
+        }
+
+        void tickAge() {
+            for (auto& set : sets) {
+                for (auto& pattern : set) {
+                    saturatingSub(pattern.keep);
+                }
+            }
+        }
+        
+        uint64_t calculateKey(int* tageTags, int* tageIndices, int tageBank) {
+            uint64_t tag = tageTags[tageBank];
+            uint64_t index = tageIndices[tageBank];
+            uint64_t bank = tageBank;
+            return ((tag << 49) | (index << bankBits) | bank);
+        }
+
+        int getBank(uint64_t key) {
+            return bitmaskLowerN(bankBits) & key;
+        }
+        
+        static uint64_t bitmaskLowerN(int n) {
+            return (1 << n) - 1;
+        }
+
+        static void saturatingSub(int& n) {
+            if (n > 0) {
+                --n;
+            }
+        }
+        
+        static void saturatingAdd(int& n, int max) {
+            if (n < max) {
+                ++n;
+            }
+        }
+      private:
+        std::vector<Pattern>& getSet(uint64_t key) {
+            int id = getID(key);
+            assert(id < sets.size());
+            return sets[id];
+        }
+
+        Pattern* findPatternInSet(uint64_t key, std::vector<Pattern>& set) {
+            auto result = std::find_if(set.begin(), set.end(), [key](Pattern& pat) {
+                return pat.tag == key;
+            });
+
+            if (result == set.end())
+                return nullptr;
+            
+            return &*result;
+        }
+
+        Pattern& findVictimPattern(std::vector<Pattern>& set) {
+            auto result = std::min_element(set.begin(), set.end(), [&](const Pattern& a, const Pattern& b) {
+                return a.keep < b.keep;
+            });
+
+            return *result;
+        }
+
+        int bankBits;
+        int numSets;
+        int setSize;      
+        std::vector<std::vector<Pattern>> sets;
+    };
+
+    class Context
     {
-        std::unordered_map<uint64_t, Pattern> patterns;
+      public:
+        PatternSet patterns;
         /** Confidence counter of the context (guides replacement) */
         uint8_t confidence;
+
+        Context(PatternSet patterns): patterns(patterns), confidence(0) {}
     };
 
-    struct PatternBufferEntry
-    {
-        uint64_t cid;
-        Cycles insertTime;
-    };
 
     std::unordered_map<uint64_t, Context> backingStorage;
     std::unordered_map<uint64_t, Cycles> patternBuffer;
@@ -135,14 +260,6 @@ class LLBP : public ConditionalPredictor
     int storageCapacity;
     int ctxCounterBits;
     int ptnCounterBits;
-
-    uint64_t calculateTag(int* tageTags, int* tageIndices, int tageBank, Addr pc) const
-    {
-        uint64_t tag = tageTags[tageBank];
-        uint64_t index = tageIndices[tageBank];
-        uint64_t bank = tageBank;
-        return ((tag << 49) | (index << 6) | bank);
-    }
 
     Cycles backingStorageLatency;
 
@@ -167,7 +284,8 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar demandMissesNoPrefetch;
         statistics::Scalar demandMissesCold;
         statistics::Scalar allocationsTotal;
-        statistics::Vector revisits;
+        statistics::Vector patternHits;
+        statistics::Vector patternUseful;
         statistics::Scalar patternBufferEvictions;
         statistics::Scalar backingStorageEvictions;
         statistics::Scalar backingStorageInsertions;
