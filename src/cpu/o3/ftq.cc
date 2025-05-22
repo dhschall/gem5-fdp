@@ -63,7 +63,7 @@ FetchTarget::FetchTarget(const FTQ& parent, const PCStateBase &_start_pc,
     state(Initial),
     fetchBuffer(nullptr),
     fetchBufferValid(false)
-   
+
 {
     set(startPC , _start_pc);
     vaddr = startPC->instAddr() & ~(ftq.cacheBlkSize-1);
@@ -264,6 +264,18 @@ FTQ::findAfterHead(ThreadID tid, std::function<bool(FetchTargetPtr&)> f)
     }
     return nullptr;
 }
+
+std::vector<FetchTargetPtr>
+FTQ::findAll(ThreadID tid, std::function<bool(FetchTargetPtr&)> f){
+
+    std::vector<FetchTargetPtr> ret;
+    for (auto it = ftq[tid].begin(); it != ftq[tid].end(); it++) {
+        if (f(*it)) ret.push_back(*it);
+
+    }
+    return ret;
+
+    }
 
 
 void

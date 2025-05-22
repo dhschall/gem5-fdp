@@ -437,12 +437,13 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     if(decoupledFrontEnd) {
 
 
-    FetchTargetPtr  ft = ftq->findNext(tid, [pkt](FetchTargetPtr ft) {
+    std::vector<FetchTargetPtr> result = ftq->findAll(tid, [pkt](FetchTargetPtr ft) {
         return ft->hasPaddr() && ft->getPaddr() == pkt->req->getPaddr();
     });
 
-    if(ft)
+    for(auto &ft : result) {
         ft->setFetchBuffer(pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+    }
 
         }
 

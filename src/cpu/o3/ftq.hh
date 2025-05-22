@@ -80,7 +80,7 @@ class FetchTarget
   private:
     /** The parent ftq */
     const FTQ &ftq;
-    
+
     /** Start PC and address of the fetch target */
     std::unique_ptr<PCStateBase> startPC;
     Addr startAddr;
@@ -156,7 +156,7 @@ class FetchTarget
         return vaddr;
     }
 
-    
+
     /** Returns the fetch target number. */
     FTSeqNum ftNum() { return ftSeqNum; }
 
@@ -272,7 +272,7 @@ class FetchTarget
     private:
 
     /** The fetch target buffer */
-    uint8_t* fetchBuffer; 
+    uint8_t* fetchBuffer;
     /** Whether the fetch buffer is valid */
     bool fetchBufferValid;
 
@@ -403,6 +403,12 @@ public:
     FetchTargetPtr findAfterHead(ThreadID tid,
                                  std::function<bool(FetchTargetPtr&)> f);
 
+
+    /**
+     * Helper function to find all fetch targets in the FTQ verifying the search comdition.
+     */
+    std::vector<FetchTargetPtr> findAll(ThreadID tid,
+                                 std::function<bool(FetchTargetPtr&)> f);
 
     /** Pushes a fetch target into the back/tail of the FTQ.
      *  @param fetchTarget Pointer to the fetch target to be inserted.
