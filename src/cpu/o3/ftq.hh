@@ -192,7 +192,7 @@ class FetchTarget
 
     /*Copy the content of the buffer passed to the fetch buffer of the fetch target*/
     void setFetchBuffer(const u_int8_t* _buffer , size_t fetchBufferSize) {
-      if(fetchBuffer) return;
+      if(hasFetchBuffer()) return;
         fetchBuffer = new uint8_t[fetchBufferSize];
         memcpy(fetchBuffer, _buffer, fetchBufferSize);
         fetchBufferValid = true;

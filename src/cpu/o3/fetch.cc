@@ -1690,7 +1690,7 @@ Fetch::fetch(bool &status_change)
 
     //Only check the fetch target if we are in decoupled front-end mode.
     // We check if the fetch target has a valid fetch buffer and can be used to read instructions
-    bool ftHasFB = ftqReady(tid, status_change) && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
+    bool ftHasFB = ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
 
     if (decoupledFrontEnd) { // #ifdef FDIP
         assert(ftqReady(tid,status_change));
@@ -1811,7 +1811,7 @@ Fetch::fetch(bool &status_change)
         bool needMem = !inRom && !curMacroop && !dec_ptr->instReady();
         fetchAddr = (this_pc.instAddr() + pcOffset) & pc_mask;
         Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-        ftHasFB = ftqReady(tid, status_change) && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferBlockPC;
+        ftHasFB = ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferBlockPC;
         if (needMem) {
             // If buffer is no longer valid or fetchAddr has moved to point
             // to the next cache block then start fetch from icache.
