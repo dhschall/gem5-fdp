@@ -39,13 +39,14 @@ namespace branch_prediction
 LLBP::LLBP(const LLBPParams &params)
     : ConditionalPredictor(params),
       base(params.base),
-      patternBufferCapacity(params.patternBufferCapacity),
+      backingStorage(),
+      patternBuffer(params.patternBufferCapacity, 64, this->backingStorage),
       storageCapacity(params.storageCapacity),
       ctxCounterBits(params.ctxCounterBits),
       ptnCounterBits(params.ptnCounterBits),
       backingStorageLatency(params.backingStorageLatency),
       stats(this),
-      rcr(3, 8, 8, 2, params.tagWidthBits)
+      rcr(3, 64, 8, 2, params.tagWidthBits)
 {
     DPRINTF(LLBP, "Using experimental LLBP\n");
     DPRINTF(LLBP, "RCR: T=%d,  W=%d,  D=%d,  S=%d,  tagWidthBits=%d\n",
@@ -84,6 +85,9 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
         if (bi->rcrBackup.size()) {
             rcr.restore(bi->rcrBackup);
         }
+
+        patternBuffer.clearInFlight(curCycle(), backingStorageLatency);
+
         base->update(tid, pc, taken, bi->ltage_bi, resteer, inst, target);
         return;
     }
@@ -159,6 +163,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
     if (cond_branch)
     {
         int tage_bank = 0;
+        
         if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
             tage_bank = tage_bi->hitBank;
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
@@ -169,11 +174,12 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
         auto ccid = rcr.getCCID();
         bi->index = tage_bank;
         bi->cid = ccid;
-        if (backingStorage.count(ccid))
-        {
+        if (backingStorage.count(ccid)) {
             auto& context = backingStorage.at(ccid);
-            if (patternBuffer.count(ccid)) {
-                Cycles additionalLatency = calculateRemainingLatency(patternBuffer[ccid]);
+            PatternBufferEntry* pbe = patternBuffer.get(ccid);
+            if (pbe) {
+                auto& entry = *pbe;
+                Cycles additionalLatency = calculateRemainingLatency(entry.insertTime);
                 if (additionalLatency == 0) {
                     int i = findBestPattern(context, tage_bi, branch_pc);
                     if (i > 0)
@@ -181,7 +187,12 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                         uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
                         auto &pattern = *context.patterns.getEntry(key);
 
+                        if (pattern.hit == 0) {
+                            ++stats.patternUseful[0];
+                        }
+
                         context.patterns.wasHit(key, stats.patternHits);
+                        entry.lastUsed = curCycle();
 
                         ++stats.demandHitsTotal;
                         llbp_confidence = pattern.counter;
@@ -239,20 +250,13 @@ LLBP::updateHistories(
         bp_history = (void*)(bi);
 
         // Insert the next prefetch context into the pattern buffer
-        if (backingStorage.count(rcr.getPCID()))
+        uint64_t pcid = rcr.getPCID();
+        if (backingStorage.count(pcid)) 
         {
-            uint64_t pcid = rcr.getPCID();
-            if (patternBuffer.count(rcr.getPCID()) == 0) {
+            if (patternBuffer.get(pcid) == nullptr) 
+            {
                 ++stats.prefetchesIssued;
-                patternBuffer[pcid] = curCycle();
-
-                patternBufferQueue.push_back(pcid);
-                if (patternBufferQueue.size() >= patternBufferCapacity)
-                {
-                    patternBuffer.erase(patternBufferQueue.front());
-                    patternBufferQueue.pop_front();
-                    ++stats.patternBufferEvictions;
-                }
+                patternBuffer.insert(pcid, curCycle());
             }
         }
     } else {
@@ -350,7 +354,6 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
             if (i < base->getNumHistoryTables()) {
                 ++stats.allocationsTotal;
                 ++stats.patternHits[0];
-                ++stats.patternUseful[0];
                 uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i+1);
                 context.patterns.insertEntry(key, taken);
             }
@@ -371,7 +374,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
             tage_bank = tage_bi->altBank;
 
-        backingStorage.emplace(cid, Context(PatternSet(16, 4, 8)));
+        backingStorage.emplace(cid, Context(PatternSet(16, 4, 8, stats.patternSetOccupancy)));
         Context& context = backingStorage.at(cid);
         ++stats.backingStorageInsertions;
 
@@ -592,9 +595,11 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
       ADD_STAT(allocationsTotal, statistics::units::Count::get(),
               "Total number of new patterns allocated in any pattern set"),
       ADD_STAT(patternHits, statistics::units::Count::get(),
-              "Number of times any pattern was hit"),
+              "Number of times any pattern was hit (distribution)"),
       ADD_STAT(patternUseful, statistics::units::Count::get(),
-              "Number of times any pattern was useful"),
+              "Number of times any pattern was useful (distribution)"),
+      ADD_STAT(patternSetOccupancy, statistics::units::Count::get(),
+              "Number of patterns used in the pattern sets (distribution)"),    
       ADD_STAT(patternBufferEvictions, statistics::units::Count::get(),
               "Number of pattern sets evicted from the pattern buffer due to capacity limits"),
       ADD_STAT(backingStorageEvictions, statistics::units::Count::get(),
@@ -612,8 +617,9 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
       ADD_STAT(squashedOverrides, statistics::units::Count::get(),
               "Number of branches predicted by LLBP, but squashed before the outcome was known")
               {
-                patternHits.init(10).flags(statistics::dist);
-                patternUseful.init(10).flags(statistics::dist);
+                patternHits.init(10).flags(statistics::pdf);
+                patternUseful.init(10).flags(statistics::pdf);
+                patternSetOccupancy.init(17).flags(statistics::pdf);
               }
 
 } // namespace branch_prediction

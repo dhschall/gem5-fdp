@@ -30,7 +30,6 @@ Implementation of the last-level branch predictor (LLBP).
 #define __CPU_PRED_LLBP_HH__
 
 #include <algorithm>
-#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -118,11 +117,19 @@ class LLBP : public ConditionalPredictor
 
     class PatternSet {
       public:
-        PatternSet(int numEntries, int setSize, int bankBits) {
+        PatternSet(
+            int numEntries,
+            int setSize,
+            int bankBits,
+            statistics::Vector& totalOccupancy
+        ):  bankBits(bankBits),
+            setSize(setSize),
+            occupancy(0),
+            totalOccupancy(totalOccupancy)
+        {
             assert(numEntries % setSize == 0);
-            this->bankBits = bankBits;
-            this->setSize = setSize;
             this->numSets = numEntries / setSize;
+            ++totalOccupancy[0];
             sets.resize(numSets);
             for (auto& set : sets) {
                 set.resize(setSize);
@@ -147,6 +154,12 @@ class LLBP : public ConditionalPredictor
             victim.counter = taken ? 0 : -1;
             victim.hit = 0;
             victim.useful = 0;
+
+            if (occupancy < totalOccupancy.size() - 1) {
+                --totalOccupancy[occupancy];
+                ++totalOccupancy[occupancy + 1];
+            }
+            saturatingAdd(occupancy, numSets*setSize);
         }
 
         void wasUseful(uint64_t key, statistics::Vector& usefulTotal) {
@@ -233,6 +246,8 @@ class LLBP : public ConditionalPredictor
         int bankBits;
         int numSets;
         int setSize;      
+        int occupancy;
+        statistics::Vector& totalOccupancy;
         std::vector<std::vector<Pattern>> sets;
     };
 
@@ -244,14 +259,99 @@ class LLBP : public ConditionalPredictor
         uint8_t confidence;
 
         Context(PatternSet patterns): patterns(patterns), confidence(0) {}
+        
+    };
+
+ 
+    typedef std::unordered_map<uint64_t, Context> BackingStorage;
+
+    BackingStorage backingStorage;
+
+    struct PatternBufferEntry {
+        uint64_t cid;
+        Cycles insertTime;
+        Cycles lastUsed;
+        bool valid = false;
     };
 
 
-    std::unordered_map<uint64_t, Context> backingStorage;
-    std::unordered_map<uint64_t, Cycles> patternBuffer;
-    std::deque<uint64_t> patternBufferQueue;
+    class PatternBuffer {
+      public:
+        PatternBuffer(int numEntries, int setSize, BackingStorage& backingStorage)
+          : setSize(setSize),
+            backingStorage(backingStorage) {
+            assert(numEntries % setSize == 0);
+            this->numSets = numEntries / setSize;
 
-    int patternBufferCapacity;
+            sets.resize(numSets);
+            for (auto& set : sets) {
+                set.resize(setSize);
+            }
+        }
+
+        void insert(uint64_t cid, Cycles now) {
+            auto& set = getSet(cid);
+            if (!backingStorage.count(cid))
+                return;
+            PatternBufferEntry& victim = findVictim(set);
+            victim.cid = cid;
+            victim.insertTime = now;
+            victim.lastUsed = now;
+            victim.valid = true;
+        }
+
+        PatternBufferEntry* get(uint64_t cid) {
+            auto& set = getSet(cid);
+            return findEntry(cid, set);
+        }
+
+        void clearInFlight(Cycles now, Cycles latency) {
+            for (auto& set: sets) {
+                for (auto& e: set) {
+                    Cycles passedTime = (now - e.insertTime);
+                    if (passedTime < latency) {
+                        e.valid = false;
+                    }
+                }
+            }
+        }
+
+        std::vector<PatternBufferEntry>& getSet(uint64_t cid) {
+            return sets[cid % numSets];
+        }
+
+      private:
+        PatternBufferEntry* findEntry(uint64_t cid, std::vector<PatternBufferEntry>& set) {
+            auto result = std::find_if(set.begin(), set.end(), [cid](PatternBufferEntry& e) {
+                return e.cid == cid && e.valid;
+            }); 
+            
+            if (result == set.end())
+                return nullptr;
+            
+            return &*result;
+        }
+
+        PatternBufferEntry& findVictim(std::vector<PatternBufferEntry>& set) {
+            auto firstInvalid = std::find_if(set.begin(), set.end(), [](PatternBufferEntry& e) {
+                return !e.valid;
+            });
+
+            if (firstInvalid != set.end())
+                return *firstInvalid;
+            
+            auto worst = std::min_element(set.begin(), set.end(), [&](const PatternBufferEntry& a, const PatternBufferEntry& b) {
+                return a.insertTime < b.insertTime;
+            });
+
+            return *worst;
+        }
+        int numSets;
+        int setSize;
+        BackingStorage& backingStorage;
+        std::vector<std::vector<PatternBufferEntry>> sets;
+    } patternBuffer;
+
     int storageCapacity;
     int ctxCounterBits;
     int ptnCounterBits;
@@ -281,6 +381,7 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar allocationsTotal;
         statistics::Vector patternHits;
         statistics::Vector patternUseful;
+        statistics::Vector patternSetOccupancy;
         statistics::Scalar patternBufferEvictions;
         statistics::Scalar backingStorageEvictions;
         statistics::Scalar backingStorageInsertions;
