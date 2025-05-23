@@ -74,6 +74,10 @@ FetchTarget::~FetchTarget()
     assert(bpu_history == nullptr);
     req = nullptr;
     fault = nullptr;
+    if (fetchBuffer) {
+        delete[] fetchBuffer;
+        fetchBuffer = nullptr;
+    }
 }
 
 void
