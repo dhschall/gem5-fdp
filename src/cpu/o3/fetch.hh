@@ -379,6 +379,9 @@ class Fetch
      * cycle. */
     FetchStatus updateFetchStatus();
 
+    /*Returns true if the fetch buffer of the fetch target is ready */
+    bool fetchTargetHasFBReady(ThreadID tid, bool &status_change, FetchTargetPtr curFT, Addr fetchAddr);
+
   public:
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions that are not in the ROB. The source of this

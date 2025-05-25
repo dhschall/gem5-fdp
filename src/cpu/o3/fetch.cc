@@ -1646,6 +1646,17 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     return instruction;
 }
 
+
+
+bool
+Fetch::fetchTargetHasFBReady(ThreadID tid, bool &status_change, FetchTargetPtr curFT, Addr fetchAddr) {
+
+
+return ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
+
+}
+
+
 void
 Fetch::fetch(bool &status_change)
 {
@@ -1688,10 +1699,6 @@ Fetch::fetch(bool &status_change)
 
     FetchTargetPtr curFT = ftq->readHead(tid);
 
-    //Only check the fetch target if we are in decoupled front-end mode.
-    // We check if the fetch target has a valid fetch buffer and can be used to read instructions
-    bool ftHasFB = ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
-
     if (decoupledFrontEnd) { // #ifdef FDIP
         assert(ftqReady(tid,status_change));
 
@@ -1719,7 +1726,8 @@ Fetch::fetch(bool &status_change)
         // If buffer is no longer valid or fetchAddr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
-        if (!((fetchBufferValid[tid] && ftqReady(tid, status_change) && fetchBufferBlockPC == fetchBufferPC[tid]) || ftHasFB)
+        if (!((fetchBufferValid[tid] && ftqReady(tid, status_change) && fetchBufferBlockPC == fetchBufferPC[tid])
+         || fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr))
          && !inRom && !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
@@ -1777,17 +1785,15 @@ Fetch::fetch(bool &status_change)
     // Need to halt fetch if quiesce instruction detected
     bool quiesce = false;
 
+    const unsigned numInsts = fetchBufferSize / instSize;
+    unsigned blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
 
-    Addr &lFetchBufferPC = fetchBufferPC[tid];
+    if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
 
-    if(ftHasFB) {
-
-        lFetchBufferPC = fetchBufferAlignPC(curFT->startAddress());
+        blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
 
     }
 
-    const unsigned numInsts = fetchBufferSize / instSize;
-    unsigned blkOffset = (fetchAddr - lFetchBufferPC) / instSize;
 
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
@@ -1811,11 +1817,10 @@ Fetch::fetch(bool &status_change)
         bool needMem = !inRom && !curMacroop && !dec_ptr->instReady();
         fetchAddr = (this_pc.instAddr() + pcOffset) & pc_mask;
         Addr fetchBufferBlockPC = fetchBufferAlignPC(fetchAddr);
-        ftHasFB = ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferBlockPC;
         if (needMem) {
             // If buffer is no longer valid or fetchAddr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!ftHasFB && (!fetchBufferValid[tid] ||
+            if (!fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr) && (!fetchBufferValid[tid] ||
                 fetchBufferBlockPC != fetchBufferPC[tid]))
                 break;
 
@@ -1826,7 +1831,7 @@ Fetch::fetch(bool &status_change)
             }
 
             const u_int8_t *l_buffer = fetchBuffer[tid];
-            if(ftHasFB) {
+            if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
                 l_buffer = curFT->getFetchBuffer();
             }
 
@@ -1917,12 +1922,11 @@ Fetch::fetch(bool &status_change)
 
             if (newMacro) {
 
-                if(!ftHasFB){
-                    lFetchBufferPC = fetchBufferPC[tid];
-                }
-
                 fetchAddr = this_pc.instAddr() & pc_mask;
-                blkOffset = (fetchAddr - lFetchBufferPC) / instSize;
+                blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
+                if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+                    blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
+                }
                 pcOffset = 0;
                 curMacroop = NULL;
             }
@@ -1948,6 +1952,11 @@ Fetch::fetch(bool &status_change)
                     if(ftCount <  numPredPerCycle)
                     {
                     curFT = ftq->readHead(tid);
+                    if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)){
+                        blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
+                    }
+
+
                 }
                 } else {
             // The update was not successful. The BPU predicted something
