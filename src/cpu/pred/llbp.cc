@@ -39,13 +39,13 @@ namespace branch_prediction
 LLBP::LLBP(const LLBPParams &params)
     : ConditionalPredictor(params),
       base(params.base),
+      stats(this),
       backingStorage(),
-      patternBuffer(params.patternBufferCapacity, 64, this->backingStorage),
+      patternBuffer(params.patternBufferCapacity, 4, this->backingStorage, stats.patternBufferEvictions),
       storageCapacity(params.storageCapacity),
       ctxCounterBits(params.ctxCounterBits),
       ptnCounterBits(params.ptnCounterBits),
       backingStorageLatency(params.backingStorageLatency),
-      stats(this),
       rcr(3, 64, 8, 2, params.tagWidthBits)
 {
     DPRINTF(LLBP, "Using experimental LLBP\n");
@@ -150,9 +150,9 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
 
     b = (void*)(bi);
 
-    LTAGE::LTageBranchInfo *ltage_bi = static_cast<LTAGE::LTageBranchInfo*>(bi->ltage_bi);
+    TAGE_SC_L::TageSCLBranchInfo *scltage_bi = static_cast<TAGE_SC_L::TageSCLBranchInfo*>(bi->ltage_bi);
 
-    auto tage_bi = ltage_bi->tageBranchInfo;
+    auto tage_bi = scltage_bi->tageBranchInfo;
     bi->overridden = false;
     bi->base_pred = ltage_prediction.taken;
 
@@ -187,11 +187,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                         uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
                         auto &pattern = *context.patterns.getEntry(key);
 
-                        if (pattern.hit == 0) {
-                            ++stats.patternUseful[0];
-                        }
-
-                        context.patterns.wasHit(key, stats.patternHits);
+                        context.patterns.wasHit(key);
                         entry.lastUsed = curCycle();
 
                         ++stats.demandHitsTotal;
@@ -287,8 +283,8 @@ int8_t LLBP::absPredCounter(int8_t counter)
  */
 void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
 {
-    LTAGE::LTageBranchInfo *ltage_bi =
-        static_cast<LTAGE::LTageBranchInfo *>(bi->ltage_bi);
+    TAGE_SC_L::TageSCLBranchInfo *ltage_bi =
+        static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi->ltage_bi);
 
     uint64_t cid = bi->cid;
 
@@ -329,7 +325,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
                 }
 
                 if (bi->getPrediction() == taken) {
-                    context.patterns.wasUseful(key, stats.patternUseful);
+                    context.patterns.wasUseful(key);
                 }
             }
         }
@@ -353,8 +349,9 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         if (bi->getPrediction() != taken) {
             if (i < base->getNumHistoryTables()) {
                 ++stats.allocationsTotal;
-                ++stats.patternHits[0];
-                uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i+1);
+                while (!base->tage->noSkip[i] && i < base->getNumHistoryTables())
+                    i = i+1;
+                uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
                 context.patterns.insertEntry(key, taken);
             }
         } 
@@ -368,20 +365,19 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
             backingStorage.erase(i);
         }
 
+        // TODO: Check if this is a skip table
         int tage_bank = 1;
         if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
             tage_bank = tage_bi->hitBank;
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
             tage_bank = tage_bi->altBank;
 
-        backingStorage.emplace(cid, Context(PatternSet(16, 4, 8, stats.patternSetOccupancy)));
+        backingStorage.emplace(cid, Context(PatternSet(64, 4, 8, stats)));
         Context& context = backingStorage.at(cid);
         ++stats.backingStorageInsertions;
 
         uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, tage_bank);
         context.patterns.insertEntry(key, taken);
-            
-        ++stats.patternHits[0];
     }
 }
 
@@ -574,6 +570,7 @@ void LLBP::RCR::restore(std::list<uint64_t>& vec)
 
 LLBP::LLBPStats::LLBPStats(LLBP *llbp)
     : statistics::Group(llbp),
+      parent(llbp),
       ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
               "Number of prefetches issued to the backing storage"),
       ADD_STAT(baseHitsTotal, statistics::units::Count::get(),
@@ -617,9 +614,9 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
       ADD_STAT(squashedOverrides, statistics::units::Count::get(),
               "Number of branches predicted by LLBP, but squashed before the outcome was known")
               {
-                patternHits.init(10).flags(statistics::pdf);
-                patternUseful.init(10).flags(statistics::pdf);
-                patternSetOccupancy.init(17).flags(statistics::pdf);
+                patternHits.init(11).flags(statistics::pdf);
+                patternUseful.init(11).flags(statistics::pdf);
+                patternSetOccupancy.init(llbp->base->getNumHistoryTables() + 1).flags(statistics::pdf);
               }
 
 } // namespace branch_prediction

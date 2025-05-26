@@ -38,7 +38,7 @@ Implementation of the last-level branch predictor (LLBP).
 #include "base/cache/cache_entry.hh"
 #include "base/statistics.hh"
 #include "base/types.hh"
-#include "cpu/pred/ltage.hh"
+#include "cpu/pred/tage_sc_l.hh"
 #include "params/LLBP.hh"
 
 namespace gem5
@@ -69,7 +69,42 @@ class LLBP : public ConditionalPredictor
                          void * &bp_history) override;
   protected:
 
-    LTAGE* base;
+    TAGE_SC_L* base;
+
+    struct LLBPStats : public statistics::Group
+    {
+        LLBPStats(LLBP *llbp);
+
+        void preDumpStats() override {
+            for(auto& ctx : parent->backingStorage) {
+                ctx.second.patterns.commitStats();
+            }
+        }
+
+        LLBP* parent;
+
+        statistics::Scalar prefetchesIssued;
+        statistics::Scalar baseHitsTotal;
+        statistics::Scalar demandHitsTotal;
+        statistics::Scalar demandHitsOverride;
+        statistics::Scalar demandHitsNoOverride;
+        statistics::Scalar demandMissesTotal;
+        statistics::Scalar demandMissesNoPattern;
+        statistics::Scalar demandMissesNoPrefetch;
+        statistics::Scalar demandMissesCold;
+        statistics::Scalar allocationsTotal;
+        statistics::SparseHistogram patternHits;
+        statistics::SparseHistogram patternUseful;
+        statistics::SparseHistogram patternSetOccupancy;
+        statistics::Scalar patternBufferEvictions;
+        statistics::Scalar backingStorageEvictions;
+        statistics::Scalar backingStorageInsertions;
+        statistics::Scalar correctOverridesTotal;
+        statistics::Scalar correctOverridesIdentical;
+        statistics::Scalar wrongOverridesTotal;
+        statistics::Scalar wrongOverridesIdentical;
+        statistics::Scalar squashedOverrides;
+    } stats;
 
     Cycles calculateRemainingLatency(Cycles insertTime);
 
@@ -113,6 +148,7 @@ class LLBP : public ConditionalPredictor
         int8_t counter;
         int hit = 0;
         int useful = 0;
+        bool valid = false;
     };
 
     class PatternSet {
@@ -121,19 +157,22 @@ class LLBP : public ConditionalPredictor
             int numEntries,
             int setSize,
             int bankBits,
-            statistics::Vector& totalOccupancy
+            LLBPStats& stats
         ):  bankBits(bankBits),
             setSize(setSize),
             occupancy(0),
-            totalOccupancy(totalOccupancy)
+            stats(stats)
         {
             assert(numEntries % setSize == 0);
             this->numSets = numEntries / setSize;
-            ++totalOccupancy[0];
             sets.resize(numSets);
             for (auto& set : sets) {
                 set.resize(setSize);
             }
+        }
+
+        ~PatternSet() {
+            commitStats();
         }
 
         int getID(uint64_t key) {
@@ -150,37 +189,30 @@ class LLBP : public ConditionalPredictor
         void insertEntry(uint64_t key, bool taken) {
             auto& set = getSet(key);
             Pattern& victim = findVictimPattern(set);
+            if (victim.valid) {
+                stats.patternUseful.sample(victim.useful);
+                stats.patternHits.sample(victim.hit);
+            }
             victim.tag = key;
             victim.counter = taken ? 0 : -1;
             victim.hit = 0;
             victim.useful = 0;
+            victim.valid = true;
 
-            if (occupancy < totalOccupancy.size() - 1) {
-                --totalOccupancy[occupancy];
-                ++totalOccupancy[occupancy + 1];
-            }
             saturatingAdd(occupancy, numSets*setSize);
         }
 
-        void wasUseful(uint64_t key, statistics::Vector& usefulTotal) {
+        void wasUseful(uint64_t key) {
             Pattern* p = getEntry(key);
             if (p) {
-                int useful = p->useful++;
-                if (useful < usefulTotal.size() - 1) {
-                    --usefulTotal[useful];
-                    ++usefulTotal[useful + 1];
-                }
+                p->useful++;
             }
         }
 
-        void wasHit(uint64_t key, statistics::Vector& hitsTotal) {
+        void wasHit(uint64_t key) {
             Pattern* p = getEntry(key);
             if (p) {
-                int hits = p->hit++;
-                if (hits < hitsTotal.size() - 1) {
-                    --hitsTotal[hits];
-                    ++hitsTotal[hits + 1];
-                }
+                p->hit++;
             }
         }
         
@@ -193,6 +225,18 @@ class LLBP : public ConditionalPredictor
 
         int getBank(uint64_t key) {
             return bitmaskLowerN(bankBits) & key;
+        }
+
+        void commitStats() {
+            stats.patternSetOccupancy.sample(occupancy);
+            for (auto& set: sets) {
+                for (auto& pat: set) {
+                    if (pat.valid) {
+                        stats.patternUseful.sample(pat.useful);
+                        stats.patternHits.sample(pat.hit);
+                    }
+                }
+            }
         }
 
         static int absConfidence(int8_t ctr) {
@@ -217,6 +261,7 @@ class LLBP : public ConditionalPredictor
                 ++n;
             }
         }
+
       private:
         std::vector<Pattern>& getSet(uint64_t key) {
             int id = getID(key);
@@ -226,7 +271,7 @@ class LLBP : public ConditionalPredictor
 
         Pattern* findPatternInSet(uint64_t key, std::vector<Pattern>& set) {
             auto result = std::find_if(set.begin(), set.end(), [key](Pattern& pat) {
-                return pat.tag == key;
+                return pat.tag == key && pat.valid;
             });
 
             if (result == set.end())
@@ -236,6 +281,13 @@ class LLBP : public ConditionalPredictor
         }
 
         Pattern& findVictimPattern(std::vector<Pattern>& set) {
+            auto firstInvalid = std::find_if(set.begin(), set.end(), [](Pattern& e) {
+                return !e.valid;
+            });
+
+            if (firstInvalid != set.end())
+                return *firstInvalid;
+
             auto result = std::min_element(set.begin(), set.end(), [&](const Pattern& a, const Pattern& b) {
                 return absConfidence(a.counter) < absConfidence(b.counter);
             });
@@ -247,7 +299,8 @@ class LLBP : public ConditionalPredictor
         int numSets;
         int setSize;      
         int occupancy;
-        statistics::Vector& totalOccupancy;
+
+        LLBPStats& stats;
         std::vector<std::vector<Pattern>> sets;
     };
 
@@ -259,7 +312,6 @@ class LLBP : public ConditionalPredictor
         uint8_t confidence;
 
         Context(PatternSet patterns): patterns(patterns), confidence(0) {}
-        
     };
 
  
@@ -277,9 +329,16 @@ class LLBP : public ConditionalPredictor
 
     class PatternBuffer {
       public:
-        PatternBuffer(int numEntries, int setSize, BackingStorage& backingStorage)
+        PatternBuffer(
+            int numEntries,
+            int setSize,
+            BackingStorage& backingStorage,
+            statistics::Scalar& patternBufferEvictions
+        )
           : setSize(setSize),
-            backingStorage(backingStorage) {
+            backingStorage(backingStorage),
+            patternBufferEvictions(patternBufferEvictions) 
+        {
             assert(numEntries % setSize == 0);
             this->numSets = numEntries / setSize;
 
@@ -294,6 +353,9 @@ class LLBP : public ConditionalPredictor
             if (!backingStorage.count(cid))
                 return;
             PatternBufferEntry& victim = findVictim(set);
+            if (victim.valid) {
+                ++patternBufferEvictions;
+            }
             victim.cid = cid;
             victim.insertTime = now;
             victim.lastUsed = now;
@@ -349,6 +411,7 @@ class LLBP : public ConditionalPredictor
         int numSets;
         int setSize;
         BackingStorage& backingStorage;
+        statistics::Scalar& patternBufferEvictions;
         std::vector<std::vector<PatternBufferEntry>> sets;
     } patternBuffer;
 
@@ -365,32 +428,6 @@ class LLBP : public ConditionalPredictor
     int findVictimPattern(int min, Context& ctx);
     uint64_t findVictimContext();
 
-    struct LLBPStats : public statistics::Group
-    {
-        LLBPStats(LLBP *llbp);
-
-        statistics::Scalar prefetchesIssued;
-        statistics::Scalar baseHitsTotal;
-        statistics::Scalar demandHitsTotal;
-        statistics::Scalar demandHitsOverride;
-        statistics::Scalar demandHitsNoOverride;
-        statistics::Scalar demandMissesTotal;
-        statistics::Scalar demandMissesNoPattern;
-        statistics::Scalar demandMissesNoPrefetch;
-        statistics::Scalar demandMissesCold;
-        statistics::Scalar allocationsTotal;
-        statistics::Vector patternHits;
-        statistics::Vector patternUseful;
-        statistics::Vector patternSetOccupancy;
-        statistics::Scalar patternBufferEvictions;
-        statistics::Scalar backingStorageEvictions;
-        statistics::Scalar backingStorageInsertions;
-        statistics::Scalar correctOverridesTotal;
-        statistics::Scalar correctOverridesIdentical;
-        statistics::Scalar wrongOverridesTotal;
-        statistics::Scalar wrongOverridesIdentical;
-        statistics::Scalar squashedOverrides;
-    } stats;
 
 
     /* From LLBP Source Code */

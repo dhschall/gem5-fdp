@@ -548,10 +548,13 @@ class TAGEBase : public SimObject
     /** Use taken only history. */
     const bool takenOnlyHistory;
 
+    public:
     // Tells which tables are active
     // (for the base TAGE implementation all are active)
     // Some other classes use this for handling associativity
     std::vector<bool> noSkip;
+
+    protected:
 
     const bool speculativeHistUpdate;
 

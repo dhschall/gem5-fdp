@@ -802,8 +802,8 @@ class LLBP(ConditionalPredictor):
     cxx_class = "gem5::branch_prediction::LLBP"
     cxx_header = "cpu/pred/llbp.hh"
 
-    base = Param.LTAGE("Base predictor")
-    tagWidthBits = Param.Int(14, "RCR CTWidth")
+    base = Param.TAGE_SC_L("Base predictor")
+    tagWidthBits = Param.Int(63, "RCR CTWidth")
     patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity")
     storageCapacity = Param.Int(14000, "Storage Capacity")
     ptnCounterBits = Param.Int(3, "Bits in Pattern Counter")

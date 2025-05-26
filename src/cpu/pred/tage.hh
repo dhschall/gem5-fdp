@@ -76,8 +76,10 @@ namespace branch_prediction
 
 class TAGE: public ConditionalPredictor
 {
-  protected:
+  public:
     TAGEBase *tage;
+  
+  protected:
 
     Random::RandomPtr rng = Random::genRandom();
 

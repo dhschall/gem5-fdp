@@ -182,7 +182,6 @@ class TAGE_SC_L: public LTAGE
     void branchPlaceholder(ThreadID tid, Addr pc,
                                 bool uncond, void * &bp_history) override;
 
-  protected:
 
     struct TageSCLBranchInfo : public LTageBranchInfo
     {
@@ -205,6 +204,8 @@ class TAGE_SC_L: public LTAGE
     {
         SC = LAST_LTAGE_PROVIDER_TYPE + 1
     };
+
+  protected:
     const bool useSC;
 
 };
