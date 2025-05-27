@@ -1974,23 +1974,57 @@ Fetch::fetch(bool &status_change)
         // or not.
         inRom = isRomMicroPC(this_pc.microPC());
     }
+    DPRINTF(Fetch, "Done fetching: ftHasFB: %s, "
+            "predictedBranch: %s, numInst: %i, blkOffset: %i, "
+            "fetchQueue[tid].size(): %i, numInsts: %i, "
+            "curMacroop: %i, dec_ptr->instReady(): %i\n",
+            fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr),
+            predictedBranch ? "true" : "false",
+            numInst, blkOffset, fetchQueue[tid].size(), numInsts,
+            curMacroop ? 1 : 0, dec_ptr->instReady() ? 1 : 0);
 
+    if (!fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached end of "
+                "fetch buffer.\n", tid);
+        fetchStats.stopFetchReasonReachFetchBufferLimit++;
+    }
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
                 "instruction encountered.\n", tid);
         fetchStats.stopFetchReasonReachBranchBW++;
-    } else if (numInst >= fetchWidth) {
+    } 
+    if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth "
                 "for this cycle.\n", tid);
         fetchStats.stopFetchReasonReachInstFetchLimit++;
-    } else if (blkOffset >= fetchBufferSize) {
+    }
+    if ((blkOffset >= fetchBufferSize) || (blkOffset >= numInsts)) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end "
                 "fetch buffer.\n", tid);
         fetchStats.stopFetchReasonReachFetchBufferLimit++;
-    } else if (decoupledFrontEnd && !curFT) {
+    }
+    if (decoupledFrontEnd && !curFT) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached end of fetch "
                 "target.\n", tid);
         fetchStats.stopFetchReasonReachFTBW++;
+    }
+    if (fetchQueue[tid].size() >= fetchQueueSize) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch queue "
+                "limit.\n", tid);
+        fetchStats.stopFetchReasonReachFetchQueueLimit++;
+    }
+    if (quiesce) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, quiesce instruction "
+                "encountered.\n", tid);
+        fetchStats.stopFetchReasonQuiesce++;
+    }
+    if (mispredict) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, mispredict detected.\n", tid);
+        fetchStats.stopFetchReasonMispredict++;
+    }
+    if (!(curMacroop || dec_ptr->instReady())) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, decoder is not ready.\n", tid);
+        fetchStats.stopFetchReasonDecoderNotReady++;
     }
 
     fetchStats.ftNumber.sample(ftCount);

@@ -662,6 +662,10 @@ class Fetch
         statistics::Scalar stopFetchReasonReachInstFetchLimit;
         statistics::Scalar stopFetchReasonReachFetchBufferLimit;
         statistics::Scalar stopFetchReasonReachFTBW;
+        statistics::Scalar stopFetchReasonReachFetchQueueLimit;
+        statistics::Scalar stopFetchReasonQuiesce;
+        statistics::Scalar stopFetchReasonMispredict;
+        statistics::Scalar stopFetchReasonDecoderNotReady;
 
 
         statistics::Distribution instrAccessLatency;
