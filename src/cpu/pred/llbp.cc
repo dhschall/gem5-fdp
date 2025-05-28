@@ -156,18 +156,20 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
     bi->overridden = false;
     bi->base_pred = ltage_prediction.taken;
 
-        
+
 
     int8_t llbp_confidence = 0;
 
     if (cond_branch)
     {
         int tage_bank = 0;
-        
+
         if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
             tage_bank = tage_bi->hitBank;
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
             tage_bank = tage_bi->altBank;
+        if (tage_bi->provider == TAGE_SC_L::LOOP || tage_bi->provider == TAGE_SC_L::SC)
+            tage_bank = base->getNumHistoryTables();
         if (tage_bank)
            ++stats.baseHitsTotal;
 
@@ -224,7 +226,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
             bi,
             branch_pc, bi->getPrediction(), llbp_confidence,
             bi->overridden ? "true" : "false");
-    
+
     Cycles latency = ltage_prediction.latency;
     return Prediction {.taken = bi->getPrediction(), .latency = latency};
 }
@@ -247,9 +249,9 @@ LLBP::updateHistories(
 
         // Insert the next prefetch context into the pattern buffer
         uint64_t pcid = rcr.getPCID();
-        if (backingStorage.count(pcid)) 
+        if (backingStorage.count(pcid))
         {
-            if (patternBuffer.get(pcid) == nullptr) 
+            if (patternBuffer.get(pcid) == nullptr)
             {
                 ++stats.prefetchesIssued;
                 patternBuffer.insert(pcid, curCycle());
@@ -303,8 +305,8 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
             LLBP::Pattern* p = context.patterns.getEntry(key);
 
             if (p) {
-                LLBP::Pattern& pattern = *p;   
-            
+                LLBP::Pattern& pattern = *p;
+
                 int8_t conf_before = pattern.counter;
                 TAGEBase::ctrUpdate(pattern.counter, taken, ptnCounterBits);
                 int8_t conf_after = pattern.counter;
@@ -354,7 +356,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
                 uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
                 context.patterns.insertEntry(key, taken);
             }
-        } 
+        }
     }
     else
     {
@@ -596,7 +598,7 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
       ADD_STAT(patternUseful, statistics::units::Count::get(),
               "Number of times any pattern was useful (distribution)"),
       ADD_STAT(patternSetOccupancy, statistics::units::Count::get(),
-              "Number of patterns used in the pattern sets (distribution)"),    
+              "Number of patterns used in the pattern sets (distribution)"),
       ADD_STAT(patternBufferEvictions, statistics::units::Count::get(),
               "Number of pattern sets evicted from the pattern buffer due to capacity limits"),
       ADD_STAT(backingStorageEvictions, statistics::units::Count::get(),
