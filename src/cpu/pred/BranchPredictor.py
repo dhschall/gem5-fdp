@@ -810,6 +810,13 @@ class LLBP(ConditionalPredictor):
     ctxCounterBits = Param.Int(2, "Bits in Context Replacement Counter")
     backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
 
+class LLBPRef(ConditionalPredictor):
+    type = "LLBPRef"
+    cxx_class = "gem5::branch_prediction::LLBPRef"
+    cxx_header = "cpu/pred/llbp_ref.hh"
+    inf = Param.Bool(
+        False, "Use infinite storage capacity for the backing storage"
+    )
 
 class MultiperspectivePerceptron(ConditionalPredictor):
     type = "MultiperspectivePerceptron"
