@@ -54,6 +54,7 @@
 #include "base/debug.hh"
 #include "base/output.hh"
 #include "cpu/base.hh"
+#include "cpu/o3/cpu.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Loader.hh"
 #include "debug/Quiesce.hh"
@@ -492,58 +493,10 @@ void
 workbegin(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
     DPRINTF(PseudoInst, "pseudo_inst::workbegin(%i, %i)\n", workid, threadid);
-    System *sys = tc->getSystemPtr();
-    const System::Params &params = sys->params();
-
-    if (params.exit_on_work_items) {
-        exitSimLoop("workbegin", static_cast<int>(workid));
-        return;
-    }
-
-    DPRINTF(WorkItems, "Work Begin workid: %d, threadid %d\n", workid,
-            threadid);
-    tc->getCpuPtr()->workItemBegin();
-    sys->workItemBegin(threadid, workid);
-
-    //
-    // If specified, determine if this is the specific work item the user
-    // identified
-    //
-    if (params.work_item_id == -1 || params.work_item_id == workid) {
-
-        uint64_t systemWorkBeginCount = sys->incWorkItemsBegin();
-        int cpuId = tc->getCpuPtr()->cpuId();
-
-        if (params.work_cpus_ckpt_count != 0 &&
-            sys->markWorkItem(cpuId) >= params.work_cpus_ckpt_count) {
-            //
-            // If active cpus equals checkpoint count, create checkpoint
-            //
-            exitSimLoop("checkpoint");
-        }
-
-        if (systemWorkBeginCount == params.work_begin_ckpt_count) {
-            //
-            // Note: the string specified as the cause of the exit event must
-            // exactly equal "checkpoint" inorder to create a checkpoint
-            //
-            exitSimLoop("checkpoint");
-        }
-
-        if (systemWorkBeginCount == params.work_begin_exit_count) {
-            //
-            // If a certain number of work items started, exit simulation
-            //
-            exitSimLoop("work started count reach");
-        }
-
-        if (cpuId == params.work_begin_cpu_id_exit) {
-            //
-            // If work started on the cpu id specified, exit simulation
-            //
-            exitSimLoop("work started on specific cpu");
-        }
-    }
+    // is bundle entry point (call), trigger record / replay
+    o3::CPU* cpu = (o3::CPU*)(tc->getCpuPtr());
+    assert(cpu != nullptr);
+    cpu->startRecordingTask(tc, workid);
 }
 
 //
@@ -555,52 +508,10 @@ void
 workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
 {
     DPRINTF(PseudoInst, "pseudo_inst::workend(%i, %i)\n", workid, threadid);
-    System *sys = tc->getSystemPtr();
-    const System::Params &params = sys->params();
-
-    if (params.exit_on_work_items) {
-        exitSimLoop("workend", static_cast<int>(workid));
-        return;
-    }
-
-    DPRINTF(WorkItems, "Work End workid: %d, threadid %d\n", workid, threadid);
-    tc->getCpuPtr()->workItemEnd();
-    sys->workItemEnd(threadid, workid);
-
-    //
-    // If specified, determine if this is the specific work item the user
-    // identified
-    //
-    if (params.work_item_id == -1 || params.work_item_id == workid) {
-
-        uint64_t systemWorkEndCount = sys->incWorkItemsEnd();
-        int cpuId = tc->getCpuPtr()->cpuId();
-
-        if (params.work_cpus_ckpt_count != 0 &&
-            sys->markWorkItem(cpuId) >= params.work_cpus_ckpt_count) {
-            //
-            // If active cpus equals checkpoint count, create checkpoint
-            //
-            exitSimLoop("checkpoint");
-        }
-
-        if (params.work_end_ckpt_count != 0 &&
-            systemWorkEndCount == params.work_end_ckpt_count) {
-            //
-            // If total work items completed equals checkpoint count, create
-            // checkpoint
-            //
-            exitSimLoop("checkpoint");
-        }
-
-        if (params.work_end_exit_count != 0 &&
-            systemWorkEndCount == params.work_end_exit_count) {
-            //
-            // If total work items completed equals exit count, exit simulation
-            //
-            exitSimLoop("work items exit count reached");
-        }
-    }
+    // is bundle entry point (return), trigger record / replay
+    o3::CPU *cpu = (o3::CPU*)(tc->getCpuPtr());
+    assert(cpu != nullptr);
+    cpu->finishRecordingTask(tc, workid);
 }
 
 } // namespace pseudo_inst

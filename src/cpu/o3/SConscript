@@ -43,6 +43,7 @@ import sys
 Import('*')
 
 if not env['CONF']['USE_NULL_ISA']:
+    SimObject('Recorder.py', sim_objects=['Recorder'])
     SimObject('FUPool.py', sim_objects=['FUPool'])
     SimObject('FuncUnitConfig.py', sim_objects=[])
     SimObject('BaseO3CPU.py', sim_objects=['BaseO3CPU'], enums=[
@@ -70,6 +71,7 @@ if not env['CONF']['USE_NULL_ISA']:
     Source('store_set.cc')
     Source('thread_context.cc')
     Source('thread_state.cc')
+    Source('recorder.cc')
 
     DebugFlag('BAC')
     DebugFlag('CommitRate')

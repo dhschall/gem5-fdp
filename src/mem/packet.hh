@@ -297,6 +297,9 @@ class Packet : public Printable, public Extensible<Packet>
     typedef uint32_t FlagsType;
     typedef gem5::Flags<FlagsType> Flags;
 
+    Addr srcbb = 0;
+    bool from_fdp = false;
+
   private:
     enum : FlagsType
     {

@@ -61,6 +61,9 @@
 #include "sim/process.hh"
 #include "sim/stat_control.hh"
 #include "sim/system.hh"
+#include "mem/cache/prefetch/hp.hh" // cypredar
+#include "mem/cache/prefetch/associative_set_impl.hh"
+#include "cpu/o3/recorder.hh"
 
 namespace gem5
 {
@@ -1484,6 +1487,66 @@ CPU::htmSendAbortSignal(ThreadID tid, uint64_t htm_uid,
     // TODO include correct error handling here
     if (!iew.ldstQueue.getDataPort().sendTimingReq(abort_pkt)) {
         panic("HTM abort signal was not sent to the memory subsystem.");
+    }
+}
+
+// triggered by pseudo instructions
+void CPU::startRecordingTask(gem5::ThreadContext *tc, uint64_t taskid){
+    if (recorder->tid_comdata.size() != 0 && recorder->temporal_compactor.size() + recorder->curr_comdata.size() < 40)
+        return;
+
+    recorder->finishListening(tc, 0);
+    recorder->startListening(tc, taskid);
+    startReplayingTask(tc, taskid);
+}
+
+// same as startRecordingTask, return instructions are also bundle's entries
+void CPU::finishRecordingTask(gem5::ThreadContext *tc, uint64_t taskid){
+    if (recorder->tid_comdata.size() != 0 && recorder->temporal_compactor.size() + recorder->curr_comdata.size() < 40)
+        return;
+
+    recorder->finishListening(tc, 0);
+    recorder->startListening(tc, taskid);
+    startReplayingTask(tc, taskid);
+}
+
+void CPU::startReplayingTask(gem5::ThreadContext *tc, uint64_t taskid){
+    if (!hwp) return; // return if replay prefetcher not specified
+    Recorder::IndexEntry *idx_entry = recorder->index.findEntry(taskid, false);
+    if (idx_entry == nullptr) { // not found
+        return;
+    } else { // found
+        recorder->index.accessEntry(idx_entry);
+    }
+    // not found in all history
+    if (recorder->tid_ptrace_last.count(taskid) == 0 || recorder->tid_ptrace_last[taskid]->empty())
+        return;
+
+    prefetch::HierarchicalPrefetcher *hp = dynamic_cast<prefetch::HierarchicalPrefetcher *>(hwp);
+    if (hp != nullptr) {
+        assert(recorder->tasks_in_mem.count(taskid) > 0);
+        std::deque<uint64_t> segs(recorder->tid_comregions[taskid].segs.begin(), recorder->tid_comregions[taskid].segs.end());
+        std::deque<int> seglist(recorder->tid_comregions[taskid].seglist.begin(), recorder->tid_comregions[taskid].seglist.end());
+        assert(segs.size() == seglist.size());
+
+        if (segs.size() == 0) return;
+        if (segs.size() == 1) {
+            assert(seglist[0] == recorder->tid_comregions[taskid].lastlen);
+
+            recorder->replaying_timingcomsegs.clear(); // nessesary
+            hp->startSegTimingReplaying(recorder->tid_comregions[taskid].lastlen, recorder->tid_comregions[taskid].rlist, seglist, taskid);
+            hp->pushSegTiming();
+            return;
+        }
+
+        uint64_t segs0 = segs[0];
+        segs.pop_back();
+        segs.pop_back();
+        segs.push_front(segs0 / 2);
+        recorder->replaying_timingcomsegs = segs;
+
+        hp->startSegTimingReplaying(recorder->tid_comregions[taskid].lastlen, recorder->tid_comregions[taskid].rlist, seglist, taskid);
+        hp->pushSegTiming();
     }
 }
 

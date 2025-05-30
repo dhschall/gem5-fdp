@@ -675,7 +675,8 @@ def makeLinuxX86System(
         # Mark the rest of physical memory as available
         X86E820Entry(
             addr=0x100000,
-            size="%dB" % (self.mem_ranges[0].size() - 0x100000),
+            # size="%dB" % (self.mem_ranges[0].size() - 0x100000),
+            size="%dB" % (self.mem_ranges[0].size() - 0x1100000),
             range_type=1,
         ),
     ]

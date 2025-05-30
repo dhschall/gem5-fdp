@@ -928,6 +928,11 @@ Cache::serviceMSHRTargets(MSHR *mshr, const PacketPtr pkt, CacheBlk *blk)
     if (blk && !from_core && from_pref) {
         blk->setPrefetched();
     }
+    if (blk && mshr->srcbb) {
+        blk->srcbb = mshr->srcbb;
+        assert(mshr->miss_vaddr);
+        blk->miss_vaddr = mshr->miss_vaddr;
+    }
 
     if (!mshr->hasLockedRMWReadTarget()) {
         maintainClusivity(targets.hasFromCache, blk);

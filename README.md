@@ -1,3 +1,52 @@
+
+# Hierarchical Prefetching for Gem5
+
+---
+
+This repository provides the implementation for **Hierarchical Prefetching (HP)**, a software-hardware instruction prefetcher designed for server applications. It also includes a reference implementation of the **Entangling Instruction Prefetcher (EIP)**.
+
+Our implementations are built upon the FDIP framework within [gem5-fdp](https://github.com/gem5-hpca/gem5-fdp).
+
+## How to use
+
+We included simple example scripts how to run HP or EIP:
+
+```
+# build gem5
+scons build/X86/gem5.opt
+# run simulation with HP
+./example_hp.sh
+# run simulation with EIP
+./example_eip.sh
+```
+
+Since HP is a software-hardware co-designed prefetching method, we provide a convenient way to insert instructions within gem5. This involves using [m5ops](https://www.gem5.org/documentation/general_docs/m5ops/) to insert pseudo-instructions, specifically `m5_work_begin` and `m5_work_end`, at the call and return points of a Bundle. The first parameter for these pseudo-instructions is the `bundle-id`, and the second parameter is unused, defaulting to 0.
+
+```
+m5_work_begin(bundle_id, 0);
+bundle_function();
+m5_work_end(bundle_id, 0);
+```
+
+## Reference our work
+
+This work was done for our recent paper **Hierarchical Prefetching: A Software-Hardware Instruction Prefetcher for Server Applications** accepted to ASPLOS 2025. If you use our work, please cite our paper:
+
+```
+@inproceedings{zhang2025hierarchical,
+  title={Hierarchical Prefetching: A Software-Hardware Instruction Prefetcher for Server Applications},
+  author={Zhang, Tingji and Grot, Boris and He, Wenjian and Lv, Yashuai and Qu, Peng and Su, Fang and Wang, Wenxin and Zhang, Guowei and Zhang, Xuefeng and Zhang, Youhui},
+  booktitle={Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 2},
+  pages={529--544},
+  year={2025}
+}
+```
+
+
+---
+---
+
+
 # Fetch Directed Instruction Prefetching for gem5
 
 This is the development repository for **Fetch Directed Instruction Prefetching

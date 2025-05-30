@@ -456,6 +456,11 @@ class CPU : public BaseCPU
 
     std::vector<BaseISA *> isa;
 
+  public: // cypredar
+    void startRecordingTask(gem5::ThreadContext *tc, uint64_t taskid);
+    void finishRecordingTask(gem5::ThreadContext *tc, uint64_t taskid);
+    void startReplayingTask(gem5::ThreadContext *tc, uint64_t taskid);
+
   public:
     /** Enum to give each stage a specific index, so when calling
      *  activateStage() or deactivateStage(), they can specify which stage

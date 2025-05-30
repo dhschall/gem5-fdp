@@ -57,10 +57,12 @@
 #include "base/types.hh"
 #include "debug/Cache.hh"
 #include "debug/CachePort.hh"
+#include "debug/CountTask.hh"
 #include "enums/Clusivity.hh"
 #include "mem/cache/cache_blk.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr_queue.hh"
+#include "mem/cache/prefetch/eip.hh"
 #include "mem/cache/tags/base.hh"
 #include "mem/cache/write_queue.hh"
 #include "mem/cache/write_queue_entry.hh"
@@ -1285,6 +1287,8 @@ class BaseCache : public ClockedObject
         }
     }
 
+    void updateEIP(Addr addr, bool is_secure);
+    
     bool inMissQueue(Addr addr, bool is_secure) const {
         return mshrQueue.findMatch(addr, is_secure);
     }

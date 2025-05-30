@@ -149,6 +149,12 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         _cpuId = cpuList.size();
     }
 
+    // cypredar
+    recorder = p.recorder;
+    recorder->setCpu(this, p.system->getRequestorId(this, "record"), hwp);
+    hwp = p.hwp;
+    hp = p.hp;
+
     // add self to global list of CPUs
     cpuList.push_back(this);
 

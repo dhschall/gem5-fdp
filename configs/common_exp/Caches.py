@@ -1,6 +1,5 @@
-# -*- mode:python -*-
-
-# Copyright (c) 2023 The University of Edinburgh
+# Copyright (c) 2012 ARM Limited
+# Copyright (c) 2020 Barkhausen Institut
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -12,7 +11,7 @@
 # unmodified and in its entirety in all distributions of the software,
 # modified or unmodified, in source code or in binary form.
 #
-# Copyright (c) 2006 The Regents of The University of Michigan
+# Copyright (c) 2006-2007 The Regents of The University of Michigan
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -38,34 +37,78 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-Import('*')
+from m5.defines import buildEnv
+from m5.objects import *
 
-SimObject('Prefetcher.py', sim_objects=[
-    'BasePrefetcher', 'MultiPrefetcher', 'QueuedPrefetcher',
-    'StridePrefetcherHashedSetAssociative', 'StridePrefetcher',
-    'TaggedPrefetcher', 'IndirectMemoryPrefetcher', 'SignaturePathPrefetcher',
-    'SignaturePathPrefetcherV2', 'AccessMapPatternMatching', 'AMPMPrefetcher',
-    'DeltaCorrelatingPredictionTables', 'DCPTPrefetcher',
-    'IrregularStreamBufferPrefetcher', 'SlimAMPMPrefetcher',
-    'BOPPrefetcher', 'SBOOEPrefetcher', 'STeMSPrefetcher', 'PIFPrefetcher',
-    'FetchDirectedPrefetcher', 'EntanglingPrefetcher', 'HierarchicalPrefetcher'])
 
-Source('access_map_pattern_matching.cc')
-Source('base.cc')
-Source('multi.cc')
-Source('bop.cc')
-Source('delta_correlating_prediction_tables.cc')
-Source('irregular_stream_buffer.cc')
-Source('indirect_memory.cc')
-Source('pif.cc')
-Source('queued.cc')
-Source('sbooe.cc')
-Source('signature_path.cc')
-Source('signature_path_v2.cc')
-Source('slim_ampm.cc')
-Source('spatio_temporal_memory_streaming.cc')
-Source('stride.cc')
-Source('tagged.cc')
-Source('fdp.cc')
-Source('eip.cc')
-Source('hp.cc')
+
+class L1Cache(Cache):
+    assoc = 2
+    tag_latency = 2
+    data_latency = 2
+    response_latency = 2
+    mshrs = 4
+    tgts_per_mshr = 20
+
+
+class L1_ICache(L1Cache):
+    size = '32kB'
+    assoc = 8
+    is_read_only = True
+    writeback_clean = True
+
+
+class L1_DCache(L1Cache):
+    size = '48kB'
+    assoc = 12
+
+
+class L2Cache(Cache):
+    size = '1024kB'
+    assoc = 8
+    tag_latency = 20
+    data_latency = 20
+    response_latency = 20
+    mshrs = 20
+    tgts_per_mshr = 12
+    write_buffers = 8
+
+
+class L3Cache(Cache):
+    size = '8MB'
+    assoc = 16
+    tag_latency = 50
+    data_latency = 50
+    response_latency = 50
+    mshrs = 30
+    tgts_per_mshr = 2
+
+
+class IOCache(Cache):
+    assoc = 8
+    tag_latency = 50
+    data_latency = 50
+    response_latency = 50
+    mshrs = 20
+    size = "1kB"
+    tgts_per_mshr = 12
+
+
+class L2Bus(CoherentXBar):
+    width = 80
+    header_latency = 0
+    frontend_latency = 0
+    forward_latency = 0
+    response_latency = 0
+    snoop_response_latency = 0
+    snoop_filter = SnoopFilter(lookup_latency=0)
+
+
+class L3Bus(CoherentXBar):
+    width = 80
+    header_latency = 0
+    frontend_latency = 0
+    forward_latency = 0
+    response_latency = 0
+    snoop_response_latency = 0
+    snoop_filter = SnoopFilter(lookup_latency=0)

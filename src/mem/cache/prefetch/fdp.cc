@@ -106,6 +106,7 @@ FetchDirectedPrefetcher::notifyPfAddr(Addr addr, bool virtual_addr)
                 || (inMissQueue(pkt->getAddr(), pkt->isSecure())))) {
         stats.pfInCache++;
         DPRINTF(HWPrefetch, "Drop Packet. In Cache / MSHR\n");
+        delete pkt;
         return;
     }
 

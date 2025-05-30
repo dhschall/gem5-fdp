@@ -70,6 +70,8 @@ namespace gem5
 class CacheBlk : public TaggedEntry
 {
   public:
+    Addr srcbb = 0;
+    Addr miss_vaddr = 0;
     /**
      * Cache block's enum listing the supported coherence bits. The valid
      * bit is not defined here because it is part of a TaggedEntry.

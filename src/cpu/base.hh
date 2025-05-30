@@ -58,6 +58,9 @@
 #include "sim/probe/probe.hh"
 #include "sim/signal.hh"
 #include "sim/system.hh"
+#include "cpu/o3/recorder.hh" // cypredar
+#include "mem/cache/prefetch/base.hh"
+#include "mem/cache/base.hh"
 
 namespace gem5
 {
@@ -103,6 +106,11 @@ class CPUProgressEvent : public Event
 
 class BaseCPU : public ClockedObject
 {
+  public:
+    Recorder *recorder;
+    prefetch::Base *hwp;
+    bool hp = false;
+    
   protected:
 
     /// Instruction count used for SPARC misc register

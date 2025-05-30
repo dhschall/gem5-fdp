@@ -56,6 +56,7 @@
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/base.hh"
+#include "mem/cache/prefetch/eip.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
@@ -349,6 +350,24 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // delay of the xbar.
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
+                // eip
+                if (mshr->srcbb != 0) {
+                    // late prefetch (partial hit), confidence --
+                    assert(mshr->miss_vaddr);
+                    prefetch::EntanglingPrefetcher *eip = dynamic_cast<prefetch::EntanglingPrefetcher *>(prefetcher);
+                    if (eip != nullptr) {
+                        prefetch::EntanglingPrefetcher::BB *table_entry = eip->index.findEntry(mshr->srcbb, false);
+                        if (table_entry != nullptr) { // found in table
+                            for (int i = 0; i < table_entry->dsts.size(); i++) {
+                                if (table_entry->dsts[i].addr == mshr->miss_vaddr >> 6) {
+                                    table_entry->dsts[i].conf--;
+                                    if (table_entry->dsts[i].conf < 0)
+                                        table_entry->dsts[i].conf = 0;
+                                }
+                            }
+                        }
+                    }
+                }
                 if (mshr->getNumTargets() >= numTarget) {
                     noTargetMSHR = mshr;
                     setBlocked(Blocked_NoTargets);
@@ -395,7 +414,12 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
             // Here we are using forward_time, modelling the latency of
             // a miss (outbound) just as forwardLatency, neglecting the
             // lookupLatency component.
-            allocateMissBuffer(pkt, forward_time);
+            MSHR * new_mshr = allocateMissBuffer(pkt, forward_time);
+            if (pkt->req->hasVaddr()) {
+                new_mshr->miss_vaddr = pkt->req->getVaddr();
+                new_mshr->access = true;
+                new_mshr->start_time = curTick();
+            }
         }
     }
 }
@@ -535,6 +559,20 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(initial_tgt->pkt)
             .mshrMissLatency[pkt->req->requestorId()] += miss_latency;
+    }
+
+    // eip
+    // compute demand miss (and late prefetch) latency
+    if (mshr->access == true) {
+        Tick lat_tick = curTick() - mshr->start_time;
+        Addr miss_baddr = mshr->miss_vaddr >> 6;
+        
+        prefetch::EntanglingPrefetcher *eip = dynamic_cast<prefetch::EntanglingPrefetcher *>(prefetcher);
+        if (eip != nullptr) {
+            eip->lat_buffer.push_back(std::make_pair(miss_baddr, lat_tick));
+            if (eip->lat_buffer.size() > eip->lat_buffer_size)
+                eip->lat_buffer.pop_front();
+        }
     }
 
     PacketList writebacks;
@@ -929,7 +967,18 @@ BaseCache::getNextQueueEntry()
                 // allocate an MSHR and return it, note
                 // that we send the packet straight away, so do not
                 // schedule the send
-                return allocateMissBuffer(pkt, curTick(), false);
+                MSHR *new_mshr = allocateMissBuffer(pkt, curTick(), false);
+                // when working with FDP, identify packets from it
+                if (pkt->from_fdp && pkt->req->hasVaddr()) {
+                    new_mshr->miss_vaddr = pkt->req->getVaddr();
+                    new_mshr->access = true;
+                    new_mshr->start_time = curTick();
+                }
+                if (pkt->srcbb != 0) {
+                    new_mshr->srcbb = pkt->srcbb;
+                    assert(new_mshr->miss_vaddr);
+                }
+                return new_mshr;
             }
         }
     }
@@ -1660,12 +1709,49 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
     return victim;
 }
 
+// cypredar
+void BaseCache::updateEIP(Addr addr, bool is_secure) {
+    CacheBlk *blk = tags->findBlock(addr, is_secure);
+    assert(blk);
+    assert(blk->wasPrefetched());
+    if (blk->srcbb) {
+        assert(blk->miss_vaddr);
+        prefetch::EntanglingPrefetcher *eip = dynamic_cast<prefetch::EntanglingPrefetcher *>(prefetcher);
+        prefetch::EntanglingPrefetcher::BB *table_entry = eip->index.findEntry(blk->srcbb, false);
+        if (table_entry != nullptr) { // found in table
+            for (int i = 0; i < table_entry->dsts.size(); i++) {
+                if (table_entry->dsts[i].addr == blk->miss_vaddr >> 6) {
+                    table_entry->dsts[i].conf++;
+                    if (table_entry->dsts[i].conf > 3)
+                        table_entry->dsts[i].conf = 3;
+                }
+            }
+        }
+    }
+}
+
 void
 BaseCache::invalidateBlock(CacheBlk *blk)
 {
     // If block is still marked as prefetched, then it hasn't been used
     if (blk->wasPrefetched()) {
         prefetcher->prefetchUnused();
+    }
+
+    // cypredar
+    if (blk->srcbb) {
+        assert(blk->miss_vaddr);
+        prefetch::EntanglingPrefetcher *eip = dynamic_cast<prefetch::EntanglingPrefetcher *>(prefetcher);
+        prefetch::EntanglingPrefetcher::BB *table_entry = eip->index.findEntry(blk->srcbb, false);
+        if (table_entry != nullptr) { // found in table
+            for (int i = 0; i < table_entry->dsts.size(); i++) {
+                if (table_entry->dsts[i].addr == blk->miss_vaddr >> 6) {
+                    table_entry->dsts[i].conf--;
+                    if (table_entry->dsts[i].conf < 0)
+                        table_entry->dsts[i].conf = 0;
+                }
+            }
+        }
     }
 
     // Notify that the data contents for this address are no longer present

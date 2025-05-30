@@ -81,6 +81,12 @@ class MSHR : public QueueEntry, public Printable
     friend class Queue;
     friend class MSHRQueue;
 
+  public:
+    bool access = false;
+    Tick start_time = 0;
+    Addr miss_vaddr = 0;
+    Addr srcbb = 0;
+
   private:
 
     /** Flag set by downstream caches */

@@ -703,3 +703,54 @@ class FetchDirectedPrefetcher(BasePrefetcher):
         False,
         "Perfrom functional translations instead of timing (for testing)",
     )
+
+
+class HierarchicalPrefetcher(BasePrefetcher):
+    type = "HierarchicalPrefetcher"
+    cxx_class = "gem5::prefetch::HierarchicalPrefetcher"
+    cxx_header = "mem/cache/prefetch/hp.hh"
+
+    cpu = Param.BaseCPU(Parent.any, "The CPU to train the predictor")
+    latency = Param.Cycles(1, "Latency for generated prefetches")
+    translate_functional = Param.Bool(
+        False,
+        "Perfrom functional translations instead of timing (for testing)",
+    )
+    hp_port = RequestPort("to L3")
+
+
+class EntanglingPrefetcher(BasePrefetcher):
+    type = "EntanglingPrefetcher"
+    cxx_class = 'gem5::prefetch::EntanglingPrefetcher'
+    cxx_header = "mem/cache/prefetch/eip.hh"
+    cxx_exports = [PyBindMethod("addEventProbeRetiredInsts")]
+
+    cpu = Param.BaseCPU(Parent.any, "The CPU to train the predictor")
+    latency = Param.Cycles(1, "Latency for generated prefetches")
+    translate_functional = Param.Bool(
+        False,
+        "Perfrom functional translations instead of timing (for testing)",
+    )
+
+    use_virtual_addresses = True
+    buffer_entries = Param.Unsigned(40, "Entries in the temp. compactor")
+
+    index_entries = Param.MemorySize("4096", "Number of entries in the index")
+    index_assoc = Param.Unsigned(16, "Associativity of the index")
+
+    index_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1, assoc=Parent.index_assoc, size=Parent.index_entries
+        ),
+        "Indexing policy of the index",
+    )
+    index_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the index"
+    )
+
+    def listenFromProbeRetiredInstructions(self, simObj):
+        if not isinstance(simObj, SimObject):
+            raise TypeError("argument must be of SimObject type")
+        self.addEvent(
+            HWPProbeEventRetiredInsts(self, simObj, "RetiredInstsPC")
+        )

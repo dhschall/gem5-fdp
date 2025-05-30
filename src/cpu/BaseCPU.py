@@ -54,6 +54,8 @@ from m5.objects.SubSystem import SubSystem
 from m5.objects.ClockDomain import *
 from m5.objects.Platform import Platform
 from m5.objects.ResetPort import ResetResponsePort
+from m5.objects.Recorder import Recorder
+from m5.objects.Prefetcher import *
 
 default_tracer = ExeTracer()
 
@@ -106,6 +108,10 @@ class BaseCPU(ClockedObject):
         300,
         "Latency to enter power gating state when all contexts are suspended",
     )
+
+    recorder = Param.Recorder(Recorder(), "Recorder to cpu")
+    hwp = Param.BasePrefetcher(NULL, "Replay prefetcher")
+    hp = Param.Bool(False, "hp")
 
     power_gating_on_idle = Param.Bool(
         False,
