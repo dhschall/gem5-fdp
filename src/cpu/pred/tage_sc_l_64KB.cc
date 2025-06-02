@@ -254,6 +254,7 @@ TAGE_SC_L_TAGE_64KB::handleAllocAndUReset(
                         gtable[i][bi->tableIndices[i]].tag = bi->tableTags[i];
                         gtable[i][bi->tableIndices[i]].ctr = taken ? 0 : -1;
                         numAllocated++;
+                        ++stats.allocationsTotal;
                         maxAllocReached = (numAllocated == maxNumAlloc);
                         I += 2;
                         break;

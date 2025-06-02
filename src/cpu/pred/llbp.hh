@@ -76,6 +76,7 @@ class LLBP : public ConditionalPredictor
         LLBPStats(LLBP *llbp);
 
         void preDumpStats() override {
+            if (!parent) return;
             for(auto& ctx : parent->backingStorage) {
                 ctx.second.patterns.commitStats();
             }
@@ -171,6 +172,16 @@ class LLBP : public ConditionalPredictor
             }
         }
 
+        PatternSet(int bankBits, LLBPStats& stats)
+        :   bankBits(bankBits),
+            occupancy(0),
+            stats(stats)
+        {
+            unbounded = true;
+            numSets = 1;
+            setSize = 0;
+        }
+
         ~PatternSet() {
             commitStats();
         }
@@ -181,23 +192,37 @@ class LLBP : public ConditionalPredictor
         }
 
         Pattern* getEntry(uint64_t key) {
+            if (unbounded) {
+                Pattern& res = unboundedSet[key];
+                if (!res.valid) return nullptr;
+                return &res;
+            }
             auto& set = getSet(key);
             Pattern* result = findPatternInSet(key, set);
             return result;
         }
 
         void insertEntry(uint64_t key, bool taken) {
-            auto& set = getSet(key);
-            Pattern& victim = findVictimPattern(set);
-            if (victim.valid) {
-                stats.patternUseful.sample(victim.useful);
-                stats.patternHits.sample(victim.hit);
+            if (unbounded) {
+                Pattern& tgt = unboundedSet[key];
+                tgt.tag = key;
+                tgt.counter = taken ? 0 : -1;
+                tgt.hit = 0;
+                tgt.useful = 0;
+                tgt.valid = true;
+            } else {
+                auto& set = getSet(key);
+                Pattern& victim = findVictimPattern(set);
+                if (victim.valid) {
+                    stats.patternUseful.sample(victim.useful);
+                    stats.patternHits.sample(victim.hit);
+                }
+                victim.tag = key;
+                victim.counter = taken ? 0 : -1;
+                victim.hit = 0;
+                victim.useful = 0;
+                victim.valid = true;
             }
-            victim.tag = key;
-            victim.counter = taken ? 0 : -1;
-            victim.hit = 0;
-            victim.useful = 0;
-            victim.valid = true;
 
             saturatingAdd(occupancy, numSets*setSize);
         }
@@ -216,9 +241,9 @@ class LLBP : public ConditionalPredictor
             }
         }
         
-        uint64_t calculateKey(int* tageTags, int* tageIndices, int tageBank) {
-            uint64_t tag = tageTags[tageBank];
-            uint64_t index = tageIndices[tageBank];
+        uint64_t calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, gem5::Addr pc) {
+            uint64_t tag = tageBi->tableTags[tageBank];
+            uint64_t index = tageBi->tableIndices[tageBank];
             uint64_t bank = tageBank;
             return ((tag << 49) | (index << bankBits) | bank);
         }
@@ -301,6 +326,8 @@ class LLBP : public ConditionalPredictor
         int occupancy;
 
         LLBPStats& stats;
+        std::unordered_map<uint64_t, Pattern> unboundedSet;
+        bool unbounded = false;
         std::vector<std::vector<Pattern>> sets;
     };
 

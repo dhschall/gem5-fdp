@@ -41,12 +41,12 @@ LLBP::LLBP(const LLBPParams &params)
       base(params.base),
       stats(this),
       backingStorage(),
-      patternBuffer(params.patternBufferCapacity, 4, this->backingStorage, stats.patternBufferEvictions),
+      patternBuffer(params.patternBufferCapacity, 64, this->backingStorage, stats.patternBufferEvictions),
       storageCapacity(params.storageCapacity),
       ctxCounterBits(params.ctxCounterBits),
       ptnCounterBits(params.ptnCounterBits),
       backingStorageLatency(params.backingStorageLatency),
-      rcr(3, 64, 8, 2, params.tagWidthBits)
+      rcr(3, 16, 8, 2, params.tagWidthBits)
 {
     DPRINTF(LLBP, "Using experimental LLBP\n");
     DPRINTF(LLBP, "RCR: T=%d,  W=%d,  D=%d,  S=%d,  tagWidthBits=%d\n",
@@ -84,6 +84,7 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
     if (resteer) {
         if (bi->rcrBackup.size()) {
             rcr.restore(bi->rcrBackup);
+            rcr.update(pc, inst, taken);
         }
 
         patternBuffer.clearInFlight(curCycle(), backingStorageLatency);
@@ -186,7 +187,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                     int i = findBestPattern(context, tage_bi, branch_pc);
                     if (i > 0)
                     {
-                        uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
+                        uint64_t key = context.patterns.calculateKey(tage_bi, i, branch_pc);
                         auto &pattern = *context.patterns.getEntry(key);
 
                         context.patterns.wasHit(key);
@@ -301,7 +302,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         int i = bi->index;
         if (i > 0 && bi->overridden)
         {
-            uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
+            uint64_t key = context.patterns.calculateKey(tage_bi, i, pc);
             LLBP::Pattern* p = context.patterns.getEntry(key);
 
             if (p) {
@@ -351,9 +352,10 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         if (bi->getPrediction() != taken) {
             if (i < base->getNumHistoryTables()) {
                 ++stats.allocationsTotal;
+                i = i+1;
                 while (!base->tage->noSkip[i] && i < base->getNumHistoryTables())
                     i = i+1;
-                uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, i);
+                uint64_t key = context.patterns.calculateKey(tage_bi, i, pc);
                 context.patterns.insertEntry(key, taken);
             }
         }
@@ -374,11 +376,11 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
             tage_bank = tage_bi->altBank;
 
-        backingStorage.emplace(cid, Context(PatternSet(64, 4, 8, stats)));
+        backingStorage.emplace(cid, Context(PatternSet(64, 64, 8, stats)));
         Context& context = backingStorage.at(cid);
         ++stats.backingStorageInsertions;
 
-        uint64_t key = context.patterns.calculateKey(tage_bi->tableTags, tage_bi->tableIndices, tage_bank);
+        uint64_t key = context.patterns.calculateKey(tage_bi, tage_bank, pc);
         context.patterns.insertEntry(key, taken);
     }
 }
@@ -397,7 +399,8 @@ int LLBP::findBestPattern(Context &ctx, TAGEBase::BranchInfo *bi, Addr pc)
 {
     for (int i = base->getNumHistoryTables(); i > 0; i--)
     {
-        uint64_t key = ctx.patterns.calculateKey(bi->tableTags, bi->tableIndices, i);
+        if (!base->tage->noSkip[i]) continue;
+        uint64_t key = ctx.patterns.calculateKey(bi, i, pc);
         if (ctx.patterns.getEntry(key))
         {
             return i;
