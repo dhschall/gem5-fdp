@@ -803,12 +803,25 @@ class LLBP(ConditionalPredictor):
     cxx_header = "cpu/pred/llbp.hh"
 
     base = Param.TAGE_SC_L("Base predictor")
-    tagWidthBits = Param.Int(63, "RCR CTWidth")
-    patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity")
-    storageCapacity = Param.Int(14000, "Storage Capacity")
-    ptnCounterBits = Param.Int(3, "Bits in Pattern Counter")
-    ctxCounterBits = Param.Int(2, "Bits in Context Replacement Counter")
+
+    rcrType = Param.Int(3, "RCR Type of Branches to hash")
+    rcrWindow = Param.Int(8, "RCR Number of Branches to hash")
+    rcrDist = Param.Int(8, "RCR Number of Branches to skip")
+    rcrShift = Param.Int(2, "RCR Number of bits to shift PC by")
+    rcrTagWidth = Param.Int(14, "RCR Tag Width")
+
+    backingStorageCapacity = Param.Int(14000, "Backing Storage Capacity (in number of contexts)")
     backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
+
+    patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity (in number of contexts)")
+    patternBufferAssoc = Param.Int(4, "Pattern Buffer Associativity")
+
+    patternSetCapacity = Param.Int(64, "Pattern Set Capacity (>> base numTables) [0 for infinite]")
+    patternSetAssoc = Param.Int(4, "Pattern Set Associativity [ignored if cap = 0]")
+    patternSetBankBits = Param.Int(8, "Pattern Set amount of bits reserved for TAGE bank in key")
+
+    patternCounterWidth = Param.Int(3, "Bits in Pattern Direction Counter")
+    contextCounterWidth = Param.Int(2, "Bits in Context Replacement Counter")
 
 class LLBPRef(ConditionalPredictor):
     type = "LLBPRef"

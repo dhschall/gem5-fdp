@@ -96,7 +96,7 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar allocationsTotal;
         statistics::SparseHistogram patternHits;
         statistics::SparseHistogram patternUseful;
-        statistics::SparseHistogram patternSetOccupancy;
+        statistics::Histogram patternSetOccupancy;
         statistics::Scalar patternBufferEvictions;
         statistics::Scalar backingStorageEvictions;
         statistics::Scalar backingStorageInsertions;
@@ -442,11 +442,15 @@ class LLBP : public ConditionalPredictor
         std::vector<std::vector<PatternBufferEntry>> sets;
     } patternBuffer;
 
-    int storageCapacity;
-    int ctxCounterBits;
-    int ptnCounterBits;
-
+    int backingStorageCapacity;
     Cycles backingStorageLatency;
+    
+    int patternSetCapacity;
+    int patternSetAssoc;
+    int patternSetBankBits;
+
+    int contextCounterWidth;
+    int patternCounterWidth;
 
     int8_t absPredCounter(int8_t counter);
     void storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo* bi);
