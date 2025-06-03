@@ -171,6 +171,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Number of branches that were predicted taken incorrectly"),
     ADD_STAT(predictedNotTakenIncorrect, statistics::units::Count::get(),
              "Number of branches that were predicted not taken incorrectly"),
+    ADD_STAT(totalSlots, statistics::units::Count::get(),
+             "Required for Top-Down methodology, total number of issue pipeline slots"),
+    ADD_STAT(recoveryBubbles, statistics::units::Count::get(),
+             "Required for Top-Down methodology, number of slots required for recovery"),
     ADD_STAT(branchMispredicts, statistics::units::Count::get(),
              "Number of branch mispredicts detected at execute",
              predictedTakenIncorrect + predictedNotTakenIncorrect),
@@ -1288,6 +1292,8 @@ IEW::executeInsts()
 
             if (inst->mispredicted() && !loadNotExecuted) {
                 fetchRedirect[tid] = true;
+                recovery = true;
+                recovery_started = true;
 
                 DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
                         "Branch mispredict detected.\n",
@@ -1425,6 +1431,8 @@ IEW::tick()
     wbNumInst = 0;
     wbCycle = 0;
 
+    iewStats.totalSlots += issueWidth;
+
     wroteToTimeBuffer = false;
     updatedQueues = false;
 
@@ -1437,6 +1445,9 @@ IEW::tick()
 
     std::list<ThreadID>::iterator threads = activeThreads->begin();
     std::list<ThreadID>::iterator end = activeThreads->end();
+
+    if (recovery)
+        iewStats.recoveryBubbles += issueWidth;
 
     // Check stall and squash signals, dispatch any instructions.
     while (threads != end) {

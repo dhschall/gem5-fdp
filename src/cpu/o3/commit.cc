@@ -165,7 +165,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(committedInstType, statistics::units::Count::get(),
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
-               "number cycles where commit BW limit reached")
+               "number cycles where commit BW limit reached"),
+      ADD_STAT(committedInst, statistics::units::Count::get(),
+               "Required for Top-Down, number of committed instructions"),
+      ADD_STAT(recoveryBubbles, statistics::units::Count::get(),
+               "Required for Top-Down, recovery bubbles")
 {
     using namespace statistics;
 
@@ -993,6 +997,15 @@ Commit::commitInsts()
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
 
+                if (ismispred) {
+                    ismispred = false;
+                    stats.recoveryBubbles += (cpu->curCycle() - lastCommitCycle) * renameWidth;
+                }
+                if (head_inst->mispredicted()) {
+                    ismispred = true;
+                }
+                
+                lastCommitCycle = cpu->curCycle();
                 // hardware transactional memory
 
                 // update nesting depth
@@ -1104,6 +1117,7 @@ Commit::commitInsts()
 
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
+    stats.committedInst += num_committed;
 
     if (num_committed == commitWidth) {
         stats.commitEligibleSamples++;

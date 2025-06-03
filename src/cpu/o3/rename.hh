@@ -543,6 +543,11 @@ class Rename
         /** Top Down, IEW stall while there is an in flight load */
         statistics::Scalar storeStalls;
     } stats;
+
+  public:
+    const RenameStats& getStats() const { return stats; }
+
+    unsigned getWidth() const { return renameWidth; }
 };
 
 } // namespace o3

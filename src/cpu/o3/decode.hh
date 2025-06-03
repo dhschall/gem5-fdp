@@ -299,6 +299,8 @@ class Decode
      */
     bool squashAfterDelaySlot[MaxThreads];
 
+    unsigned fetchBubbles = 0;
+
     struct DecodeStats : public statistics::Group
     {
         DecodeStats(CPU *cpu);
@@ -325,7 +327,15 @@ class Decode
         statistics::Scalar decodedInsts;
         /** Stat for total number of squashed instructions. */
         statistics::Scalar squashedInsts;
+        /** Stat for Top-Down Methodology, number of instructions not delivered to backend */
+        statistics::Scalar fetchBubbles;
+        /** Stat for Top-Down Methodology, number of cycles in which no instructions are delivered to backend */
+        statistics::Scalar fetchBubblesMax;
     } stats;
+
+    public:
+
+    const DecodeStats& getStats() const { return stats; }
 };
 
 } // namespace o3

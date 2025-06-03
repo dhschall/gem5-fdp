@@ -490,7 +490,17 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** TDM, Number of commited instructions*/
+        statistics::Scalar committedInst;
+        /** TDM,Recovery bubbles*/
+        statistics::Scalar recoveryBubbles;
     } stats;
+
+    bool ismispred = false; uint64_t lastCommitCycle = 0; //TDM
+
+  public:
+    const CommitStats& getStats() const { return stats; }
+
 };
 
 } // namespace o3

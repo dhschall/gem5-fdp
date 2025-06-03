@@ -631,7 +631,7 @@ Rename::renameInsts(ThreadID tid)
 
         DynInstPtr inst = insts_to_rename.front();
 
-        //For all kind of instructions, check ROB and IQ first For load
+        //For all kind of instructions, check ROB and IQ first. For load
         //instruction, check LQ size and take into account the inflight loads
         //For store instruction, check SQ size and take into account the
         //inflight stores
