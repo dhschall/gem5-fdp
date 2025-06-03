@@ -121,7 +121,8 @@ class LLBP : public ConditionalPredictor
         statistics::Formula wrongOverridesUnique;
         statistics::Scalar squashedOverrides;
         statistics::Formula profitOrLoss;
-        statistics::Scalar lightningRegretHits;
+        statistics::Scalar lightningHitsTotal;
+        statistics::Scalar lightningHitsRegret;
     } stats;
 
     Cycles calculateRemainingLatency(Cycles insertTime);

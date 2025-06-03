@@ -217,6 +217,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                                 bi->overridden = true;
                                 bi->index = i;
                                 latency = Cycles(0);
+                                ++stats.lightningHitsTotal;
                             }
                         } else if (i >= tage_bank) {
                             ++stats.demandHitsOverride;
@@ -333,7 +334,7 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
     if (bi->lightningTarget) {
         if (bi->llbp_pred != bi->base_pred
         && bi->llbp_pred != taken) {
-            ++stats.lightningRegretHits;
+            ++stats.lightningHitsRegret;
         }
     }
 
@@ -665,8 +666,10 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "Number of branches predicted by LLBP, but squashed before the outcome was known"),
       ADD_STAT(profitOrLoss, statistics::units::Count::get(),
               "Net P/L of (unique correct overrides - unique wrong overrides)"),
-      ADD_STAT(lightningRegretHits, statistics::units::Count::get(),
-              "Number of branches (theoretically) additionally overridden by lightning, but turned out incorrect")
+      ADD_STAT(lightningHitsTotal, statistics::units::Count::get(),
+              "Number of branches overridden by lightning predictions"),
+      ADD_STAT(lightningHitsRegret, statistics::units::Count::get(),
+              "Number of branches (theoretically) overridden by lightning predictions, but turned out incorrect and different from base pred")
               {
                 patternHits.init(16).flags(statistics::pdf);
                 patternUseful.init(16).flags(statistics::pdf);
