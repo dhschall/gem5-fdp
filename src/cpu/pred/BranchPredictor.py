@@ -810,18 +810,38 @@ class LLBP(ConditionalPredictor):
     rcrShift = Param.Int(2, "RCR Number of bits to shift PC by")
     rcrTagWidth = Param.Int(14, "RCR Tag Width")
 
-    backingStorageCapacity = Param.Int(14000, "Backing Storage Capacity (in number of contexts)")
+    backingStorageCapacity = Param.Int(
+        14000, "Backing Storage Capacity (in number of contexts)"
+    )
     backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
 
-    patternBufferCapacity = Param.Int(64, "Pattern Buffer Capacity (in number of contexts)")
+    patternBufferCapacity = Param.Int(
+        64, "Pattern Buffer Capacity (in number of contexts)"
+    )
     patternBufferAssoc = Param.Int(4, "Pattern Buffer Associativity")
 
-    patternSetCapacity = Param.Int(64, "Pattern Set Capacity (>> base numTables) [0 for infinite]")
-    patternSetAssoc = Param.Int(4, "Pattern Set Associativity [ignored if cap = 0]")
-    patternSetBankBits = Param.Int(8, "Pattern Set amount of bits reserved for TAGE bank in key")
+    patternSetCapacity = Param.Int(
+        64, "Pattern Set Capacity (>> base numTables) [0 for infinite]"
+    )
+    patternSetAssoc = Param.Int(
+        4, "Pattern Set Associativity [ignored if cap = 0]"
+    )
+    patternSetBankBits = Param.Int(
+        8, "Pattern Set amount of bits reserved for TAGE bank in key"
+    )
 
     patternCounterWidth = Param.Int(3, "Bits in Pattern Direction Counter")
     contextCounterWidth = Param.Int(2, "Bits in Context Replacement Counter")
+
+    lightningPredEnabled = Param.Bool(
+        False,
+        "Whether to enable lightning predictions: override with 0 latency on high confidence branches",
+    )
+    lightningPredCutoff = Param.Int(
+        2,
+        "Lightning prediction cutoff: if the branch confidence is above this value, a lightning prediction is made",
+    )
+
 
 class LLBPRef(ConditionalPredictor):
     type = "LLBPRef"
@@ -830,6 +850,7 @@ class LLBPRef(ConditionalPredictor):
     inf = Param.Bool(
         False, "Use infinite storage capacity for the backing storage"
     )
+
 
 class MultiperspectivePerceptron(ConditionalPredictor):
     type = "MultiperspectivePerceptron"

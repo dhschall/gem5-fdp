@@ -39,12 +39,6 @@ namespace branch_prediction
 LLBP::LLBP(const LLBPParams &params)
     : ConditionalPredictor(params),
       base(params.base),
-      stats(this),
-      backingStorage(),
-      patternBuffer(params.patternBufferCapacity, 
-        params.patternBufferAssoc, 
-        this->backingStorage, 
-        stats.patternBufferEvictions),
       backingStorageCapacity(params.backingStorageCapacity),
       backingStorageLatency(params.backingStorageLatency),
       patternSetCapacity(params.patternSetCapacity),
@@ -52,10 +46,18 @@ LLBP::LLBP(const LLBPParams &params)
       patternSetBankBits(params.patternSetBankBits),
       contextCounterWidth(params.contextCounterWidth),
       patternCounterWidth(params.patternCounterWidth),
-      rcr(params.rcrType, 
-        params.rcrWindow, 
-        params.rcrDist, 
-        params.rcrShift, 
+      lightningPredEnabled(params.lightningPredEnabled),
+      lightningPredCutoff(params.lightningPredCutoff),
+      stats(this),
+      backingStorage(),
+      patternBuffer(params.patternBufferCapacity,
+        params.patternBufferAssoc,
+        this->backingStorage,
+        stats.patternBufferEvictions),
+      rcr(params.rcrType,
+        params.rcrWindow,
+        params.rcrDist,
+        params.rcrShift,
         params.rcrTagWidth)
 {
     DPRINTF(LLBP, "Using experimental LLBP\n");
@@ -167,7 +169,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
     bi->overridden = false;
     bi->base_pred = ltage_prediction.taken;
 
-
+    Cycles latency = ltage_prediction.latency;
 
     int8_t llbp_confidence = 0;
 
@@ -206,8 +208,17 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                         ++stats.demandHitsTotal;
                         llbp_confidence = pattern.counter;
                         bool llbp_prediction = llbp_confidence >= 0;
-                        if (i >= tage_bank)
-                        {
+
+                        // Override early if lightning is enabled
+                        if (PatternSet::absConfidence(llbp_confidence) > lightningPredCutoff) {
+                            bi->lightningTarget = true;
+                            bi->llbp_pred = llbp_prediction;
+                            if (lightningPredEnabled) {
+                                bi->overridden = true;
+                                bi->index = i;
+                                latency = Cycles(0);
+                            }
+                        } else if (i >= tage_bank) {
                             ++stats.demandHitsOverride;
                             bi->index = i;
                             bi->overridden = true;
@@ -216,19 +227,19 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                             ++stats.demandHitsNoOverride;
                         }
                     } else {
-                        ++stats.demandMissesNoPattern;
+                        ++stats.demandMissesPatternMiss;
                         ++stats.demandMissesTotal;
                     }
                 } else {
                     ++stats.demandMissesTotal;
                 }
             } else {
-                ++stats.demandMissesNoPrefetch;
+                ++stats.demandMissesContextNotPrefetched;
                 ++stats.demandMissesTotal;
             }
 
         } else {
-            ++stats.demandMissesCold;
+            ++stats.demandMissesContextUnknown;
             ++stats.demandMissesTotal;
         }
     }
@@ -238,7 +249,6 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
             branch_pc, bi->getPrediction(), llbp_confidence,
             bi->overridden ? "true" : "false");
 
-    Cycles latency = ltage_prediction.latency;
     return Prediction {.taken = bi->getPrediction(), .latency = latency};
 }
 
@@ -303,6 +313,30 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
 
     auto tage_bi = ltage_bi->tageBranchInfo;
 
+    // Update the gem5 statistics for override tracking
+    if (bi->overridden) {
+        if (bi->getPrediction() != taken) {
+            ++stats.wrongOverridesTotal;
+            if (bi->llbp_pred == bi->base_pred) {
+                ++stats.wrongOverridesIdentical;
+            }
+        } else {
+            ++stats.correctOverridesTotal;
+            if (bi->llbp_pred == bi->base_pred) {
+                ++stats.correctOverridesIdentical;
+            }
+        }
+    }
+
+    // Lightning predictions are counted as regrets if LLBP would have differed from base,
+    // and LLBP's guess would have been wrong (waiting for base would have saved a misprediction)
+    if (bi->lightningTarget) {
+        if (bi->llbp_pred != bi->base_pred
+        && bi->llbp_pred != taken) {
+            ++stats.lightningRegretHits;
+        }
+    }
+
     // Check whether the branch context is known
     // If not, we create a new context
     if (backingStorage.count(cid))
@@ -343,19 +377,6 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
             }
         }
 
-        if (bi->overridden) {
-            if (bi->getPrediction() != taken) {
-                ++stats.wrongOverridesTotal;
-                if (bi->llbp_pred == bi->base_pred) {
-                    ++stats.wrongOverridesIdentical;
-                }
-            } else {
-                ++stats.correctOverridesTotal;
-                if (bi->llbp_pred == bi->base_pred) {
-                    ++stats.correctOverridesIdentical;
-                }
-            }
-        }
 
         // If a misprediction occurs, we allocate a new pattern with longer history
         // in the context. The pattern with the weakest confidence is replaced.
@@ -594,6 +615,8 @@ void LLBP::RCR::restore(std::list<uint64_t>& vec)
 LLBP::LLBPStats::LLBPStats(LLBP *llbp)
     : statistics::Group(llbp),
       parent(llbp),
+      ADD_STAT(allocationsTotal, statistics::units::Count::get(),
+              "Total number of new patterns allocated in any pattern set"),
       ADD_STAT(prefetchesIssued, statistics::units::Count::get(),
               "Number of prefetches issued to the backing storage"),
       ADD_STAT(baseHitsTotal, statistics::units::Count::get(),
@@ -606,14 +629,14 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "On-demand hits to the pattern buffer, using the base predictor (LLBP dropped)"),
       ADD_STAT(demandMissesTotal, statistics::units::Count::get(),
               "Total on-demand misses to the pattern buffer"),
-      ADD_STAT(demandMissesNoPattern, statistics::units::Count::get(),
+      ADD_STAT(demandMissesPatternMiss, statistics::units::Count::get(),
               "On-demand misses to the pattern buffer, the chosen pattern-set did not contain the needed pattern"),
-      ADD_STAT(demandMissesNoPrefetch, statistics::units::Count::get(),
+      ADD_STAT(demandMissesContextTooLate, statistics::units::Count::get(),
+              "On-demand misses to the pattern buffer where the context was still delayed from insertion latency"),
+      ADD_STAT(demandMissesContextNotPrefetched, statistics::units::Count::get(),
               "On-demand misses to the pattern buffer where the context was not scheduled for insertion"),
-      ADD_STAT(demandMissesCold, statistics::units::Count::get(),
+      ADD_STAT(demandMissesContextUnknown, statistics::units::Count::get(),
               "On-demand misses to the pattern buffer where the context was not in the backing storage"),
-      ADD_STAT(allocationsTotal, statistics::units::Count::get(),
-              "Total number of new patterns allocated in any pattern set"),
       ADD_STAT(patternHits, statistics::units::Count::get(),
               "Number of times any pattern was hit (distribution)"),
       ADD_STAT(patternUseful, statistics::units::Count::get(),
@@ -629,17 +652,33 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
       ADD_STAT(correctOverridesTotal, statistics::units::Count::get(),
               "Number of branches predicted correctly by LLBP (LLBP was provider)"),
       ADD_STAT(correctOverridesIdentical, statistics::units::Count::get(),
-              "Number of branches predicted correctly by LLBP, but the base predictor would also be correct"),
+              "Number of branches predicted correctly by LLBP, but the base predictor would also be correct (neutral)"),
+      ADD_STAT(correctOverridesUnique, statistics::units::Count::get(),
+              "Number of branches predicted correctly by LLBP, where the base predictor would be incorrect (good)"),
       ADD_STAT(wrongOverridesTotal, statistics::units::Count::get(),
               "Number of branches predicted wrong by LLBP (LLBP was provider)"),
       ADD_STAT(wrongOverridesIdentical, statistics::units::Count::get(),
-              "Number of branches predicted wrong by LLBP, but the base predictor would also be wrong"),
+              "Number of branches predicted wrong by LLBP, but the base predictor would also be wrong (neutral)"),
+      ADD_STAT(wrongOverridesUnique, statistics::units::Count::get(),
+              "Number of branches predicted correctly by LLBP, where the base predictor would be correct (bad)"),
       ADD_STAT(squashedOverrides, statistics::units::Count::get(),
-              "Number of branches predicted by LLBP, but squashed before the outcome was known")
+              "Number of branches predicted by LLBP, but squashed before the outcome was known"),
+      ADD_STAT(profitOrLoss, statistics::units::Count::get(),
+              "Net P/L of (unique correct overrides - unique wrong overrides)"),
+      ADD_STAT(lightningRegretHits, statistics::units::Count::get(),
+              "Number of branches (theoretically) additionally overridden by lightning, but turned out incorrect")
               {
-                patternHits.init(0).flags(statistics::pdf);
-                patternUseful.init(0).flags(statistics::pdf);
-                patternSetOccupancy.init(parent->patternSetCapacity + 1).flags(statistics::pdf);
+                patternHits.init(16).flags(statistics::pdf);
+                patternUseful.init(16).flags(statistics::pdf);
+                if (parent)
+                    patternSetOccupancy.init(parent->patternSetCapacity + 1).flags(statistics::pdf);
+                else
+                    patternSetOccupancy.init(17).flags(statistics::pdf);
+
+                correctOverridesUnique = correctOverridesTotal - correctOverridesIdentical;
+                wrongOverridesUnique = wrongOverridesTotal - wrongOverridesIdentical;
+
+                profitOrLoss = correctOverridesUnique - wrongOverridesUnique;
               }
 
 } // namespace branch_prediction

@@ -71,6 +71,18 @@ class LLBP : public ConditionalPredictor
 
     TAGE_SC_L* base;
 
+    int backingStorageCapacity;
+    Cycles backingStorageLatency;
+
+    int patternSetCapacity;
+    int patternSetAssoc;
+    int patternSetBankBits;
+
+    int contextCounterWidth;
+    int patternCounterWidth;
+
+    bool lightningPredEnabled;
+    int lightningPredCutoff;
     struct LLBPStats : public statistics::Group
     {
         LLBPStats(LLBP *llbp);
@@ -84,16 +96,17 @@ class LLBP : public ConditionalPredictor
 
         LLBP* parent;
 
+        statistics::Scalar allocationsTotal;
         statistics::Scalar prefetchesIssued;
         statistics::Scalar baseHitsTotal;
         statistics::Scalar demandHitsTotal;
         statistics::Scalar demandHitsOverride;
         statistics::Scalar demandHitsNoOverride;
         statistics::Scalar demandMissesTotal;
-        statistics::Scalar demandMissesNoPattern;
-        statistics::Scalar demandMissesNoPrefetch;
-        statistics::Scalar demandMissesCold;
-        statistics::Scalar allocationsTotal;
+        statistics::Scalar demandMissesPatternMiss;
+        statistics::Scalar demandMissesContextTooLate;
+        statistics::Scalar demandMissesContextNotPrefetched;
+        statistics::Scalar demandMissesContextUnknown;
         statistics::SparseHistogram patternHits;
         statistics::SparseHistogram patternUseful;
         statistics::Histogram patternSetOccupancy;
@@ -102,9 +115,13 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar backingStorageInsertions;
         statistics::Scalar correctOverridesTotal;
         statistics::Scalar correctOverridesIdentical;
+        statistics::Formula correctOverridesUnique;
         statistics::Scalar wrongOverridesTotal;
         statistics::Scalar wrongOverridesIdentical;
+        statistics::Formula wrongOverridesUnique;
         statistics::Scalar squashedOverrides;
+        statistics::Formula profitOrLoss;
+        statistics::Scalar lightningRegretHits;
     } stats;
 
     Cycles calculateRemainingLatency(Cycles insertTime);
@@ -117,6 +134,7 @@ class LLBP : public ConditionalPredictor
         bool overridden;
         bool llbp_pred;
         bool base_pred;
+        bool lightningTarget;
         Addr pc;
         int index;
         bool conditional;
@@ -126,6 +144,7 @@ class LLBP : public ConditionalPredictor
 
         LLBPBranchInfo(Addr pc, bool conditional)
           : overridden(false),
+            lightningTarget(false),
             pc(pc),
             index(-1),
             conditional(conditional),
@@ -240,7 +259,7 @@ class LLBP : public ConditionalPredictor
                 p->hit++;
             }
         }
-        
+
         uint64_t calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, gem5::Addr pc) {
             uint64_t tag = tageBi->tableTags[tageBank];
             uint64_t index = tageBi->tableIndices[tageBank];
@@ -270,7 +289,7 @@ class LLBP : public ConditionalPredictor
             }
             return ctr;
         }
-        
+
         static uint64_t bitmaskLowerN(int n) {
             return (1 << n) - 1;
         }
@@ -280,7 +299,7 @@ class LLBP : public ConditionalPredictor
                 --n;
             }
         }
-        
+
         static void saturatingAdd(int& n, int max) {
             if (n < max) {
                 ++n;
@@ -301,7 +320,7 @@ class LLBP : public ConditionalPredictor
 
             if (result == set.end())
                 return nullptr;
-            
+
             return &*result;
         }
 
@@ -322,7 +341,7 @@ class LLBP : public ConditionalPredictor
 
         int bankBits;
         int numSets;
-        int setSize;      
+        int setSize;
         int occupancy;
 
         LLBPStats& stats;
@@ -341,7 +360,7 @@ class LLBP : public ConditionalPredictor
         Context(PatternSet patterns): patterns(patterns), confidence(0) {}
     };
 
- 
+
     typedef std::unordered_map<uint64_t, Context> BackingStorage;
 
     BackingStorage backingStorage;
@@ -364,7 +383,7 @@ class LLBP : public ConditionalPredictor
         )
           : setSize(setSize),
             backingStorage(backingStorage),
-            patternBufferEvictions(patternBufferEvictions) 
+            patternBufferEvictions(patternBufferEvictions)
         {
             assert(numEntries % setSize == 0);
             this->numSets = numEntries / setSize;
@@ -413,11 +432,11 @@ class LLBP : public ConditionalPredictor
         PatternBufferEntry* findEntry(uint64_t cid, std::vector<PatternBufferEntry>& set) {
             auto result = std::find_if(set.begin(), set.end(), [cid](PatternBufferEntry& e) {
                 return e.cid == cid && e.valid;
-            }); 
-            
+            });
+
             if (result == set.end())
                 return nullptr;
-            
+
             return &*result;
         }
 
@@ -428,7 +447,7 @@ class LLBP : public ConditionalPredictor
 
             if (firstInvalid != set.end())
                 return *firstInvalid;
-            
+
             auto worst = std::min_element(set.begin(), set.end(), [&](const PatternBufferEntry& a, const PatternBufferEntry& b) {
                 return a.insertTime < b.insertTime;
             });
@@ -442,15 +461,6 @@ class LLBP : public ConditionalPredictor
         std::vector<std::vector<PatternBufferEntry>> sets;
     } patternBuffer;
 
-    int backingStorageCapacity;
-    Cycles backingStorageLatency;
-    
-    int patternSetCapacity;
-    int patternSetAssoc;
-    int patternSetBankBits;
-
-    int contextCounterWidth;
-    int patternCounterWidth;
 
     int8_t absPredCounter(int8_t counter);
     void storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo* bi);
