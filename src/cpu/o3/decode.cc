@@ -565,6 +565,8 @@ Decode::tick()
 
     toRenameIndex = 0;
 
+    fetchBubbles = decodeWidth;
+
     list<ThreadID>::iterator threads = activeThreads->begin();
     list<ThreadID>::iterator end = activeThreads->end();
 

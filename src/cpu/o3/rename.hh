@@ -540,6 +540,8 @@ class Rename
         statistics::Scalar intReturned;
         /** Number of registers freed and written back to floating point free list*/
         statistics::Scalar fpReturned;
+        /** Top Down, IEW stall while there is an in flight load */
+        statistics::Scalar storeStalls;
     } stats;
 };
 

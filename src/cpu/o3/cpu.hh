@@ -601,6 +601,42 @@ class CPU : public BaseCPU
         /** Stat for total number of cycles the CPU spends descheduled due to a
          * quiesce operation or waiting for an interrupt. */
         statistics::Scalar quiesceCycles;
+
+        struct TopDownStats : statistics::Group {
+          TopDownStats(CPU *cpu);
+
+          struct TopDownL1 : statistics::Group{
+            TopDownL1(CPU *cpu);
+            statistics::Formula frontendBound;
+            statistics::Formula badSpeculation;
+            statistics::Formula backendBound;
+            statistics::Formula retiring;
+          } topDownL1;
+
+          struct TopDownFrontendBoundL2 : statistics::Group {
+            TopDownFrontendBoundL2(CPU *cpu);
+            statistics::Formula fetchLatency;
+            statistics::Formula fetchBandwidth;
+          } topDownFbL2;
+
+          struct TopDownBackendBoundL2 : statistics::Group {
+            TopDownBackendBoundL2(CPU *cpu);
+            statistics::Formula executionStalls;
+            statistics::Formula memoryBound;
+            statistics::Formula coreBound;
+          } topDownBbL2;
+
+          struct TopDownBackendBoundL3 : statistics::Group {
+            TopDownBackendBoundL3(CPU *cpu);
+            statistics::Formula l1Bound;
+            statistics::Formula l2Bound;
+            statistics::Formula l3Bound;
+            statistics::Formula extMemBound;
+            statistics::Formula storeBound;
+          } topDownBbMem;
+
+        } topDownStats;
+
     } cpuStats;
 
   public:
