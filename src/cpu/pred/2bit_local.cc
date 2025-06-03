@@ -76,6 +76,9 @@ LocalBP::LocalBP(const LocalBPParams &params)
 
     DPRINTF(Fetch, "instruction shift amount: %i\n",
             instShiftAmt);
+
+
+            printf("Using local predictor 2bit\n");
 }
 
 void LocalBP::branchPlaceholder(ThreadID tid, Addr pc,
