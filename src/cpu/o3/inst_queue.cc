@@ -219,7 +219,18 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
       ADD_STAT(fuBusyRate,
                statistics::units::Rate<statistics::units::Count,
                                        statistics::units::Count>::get(),
-               "FU busy rate (busy events/executed inst)")
+               "FU busy rate (busy events/executed inst)"),
+      ADD_STAT(numInstsExec0, statistics::units::Count::get(),
+               "0 instructions executed in a cycle"),
+      ADD_STAT(numInstsExec1, statistics::units::Count::get(),
+               "1 instruction executed in a cycle"),
+      ADD_STAT(numInstsExec2, statistics::units::Count::get(),
+               "2 instructions executed in a cycle"),
+      ADD_STAT(loadStallCycles, statistics::units::Cycle::get(),
+               "Top down, no uops executed and at least 1 in-flight load"),
+      ADD_STAT(L1miss, statistics::units::Cycle::get(), "l1miss"),
+      ADD_STAT(L2miss, statistics::units::Cycle::get(), "l2miss"),
+      ADD_STAT(L3miss, statistics::units::Cycle::get(), "l1miss")
 {
     instsAdded
         .prereq(instsAdded);
@@ -323,6 +334,14 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
         .flags(statistics::total)
         ;
     fuBusyRate = fuBusy / instsIssued;
+
+    numInstsExec0.prereq(numInstsExec0);
+    numInstsExec1.prereq(numInstsExec1);
+    numInstsExec2.prereq(numInstsExec2);
+
+    L1miss.prereq(L1miss);
+    L2miss.prereq(L2miss);
+    L3miss.prereq(L3miss);
 }
 
 InstructionQueue::IQIOStats::IQIOStats(statistics::Group *parent)
@@ -922,6 +941,30 @@ InstructionQueue::scheduleReadyInsts()
         cpu->activityThisCycle();
     } else {
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
+    }
+
+    int numBusyFUs = fuPool->numBusyFUs();
+
+    if (numBusyFUs == 0) {
+        iqStats.numInstsExec0++;
+    } else if (numBusyFUs == 1) {
+        iqStats.numInstsExec1++;
+    } else if (numBusyFUs == 2) {
+        iqStats.numInstsExec2++;
+    }
+
+    if (fuPool->isDrained() && iewStage->ldstQueue.numLoads()) {
+        iqStats.loadStallCycles++;
+        if (iewStage->ldstQueue.anyCacheLevelMisses(3)) {
+            iqStats.L1miss++;
+            iqStats.L2miss++;
+            iqStats.L3miss++;
+        } else if (iewStage->ldstQueue.anyCacheLevelMisses(2)) {
+            iqStats.L1miss++;
+            iqStats.L2miss++;
+        } else if (iewStage->ldstQueue.anyCacheLevelMisses(1)) {
+            iqStats.L1miss++;
+        }
     }
 }
 
