@@ -169,6 +169,8 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
     bi->overridden = false;
     bi->base_pred = ltage_prediction.taken;
 
+    bool lightningOverride = false;
+
     Cycles latency = ltage_prediction.latency;
 
     int8_t llbp_confidence = 0;
@@ -214,17 +216,20 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                             bi->lightningTarget = true;
                             bi->llbp_pred = llbp_prediction;
                             if (lightningPredEnabled) {
+                                lightningOverride = true;
                                 bi->overridden = true;
                                 bi->index = i;
                                 latency = Cycles(0);
                                 ++stats.lightningHitsTotal;
                             }
-                        } else if (i >= tage_bank) {
+                        }
+
+                        if (i >= tage_bank && !lightningOverride) {
                             ++stats.demandHitsOverride;
                             bi->index = i;
                             bi->overridden = true;
                             bi->llbp_pred = llbp_prediction;
-                        } else {
+                        } else if (!lightningOverride) {
                             ++stats.demandHitsNoOverride;
                         }
                     } else {
