@@ -54,7 +54,8 @@ namespace branch_prediction
 
 LLBPRef::LLBPRef(const LLBPRefParams &params)
     : ConditionalPredictor(params),
-      predictor(nullptr)
+      predictor(nullptr),
+      stats(this)
 {
     if (params.inf) {
         predictor = new LLBP::LLBPInfTageSCL64k();
@@ -65,7 +66,7 @@ LLBPRef::LLBPRef(const LLBPRefParams &params)
 
 LLBPRef::~LLBPRef()
 {
-    predictor->PrintStat(1.0);
+    static_cast<LLBP::LLBP*>(predictor)->PrintStat(1.0);
     delete predictor;
 }
 
@@ -81,7 +82,8 @@ LLBPRef::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
 Prediction
 LLBPRef::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 {
-    auto pred = predictor->GetPrediction(branch_addr);
+    auto pc = branch_addr >> instShiftAmt;
+    auto pred = predictor->GetPrediction(pc);
     return staticPrediction(pred);
 }
 
@@ -125,11 +127,13 @@ LLBPRef::update(ThreadID tid, Addr branch_addr, bool taken, void *&bp_history,
     if (opType == OPTYPE_OP) {
         return;
     }
+    auto pc = branch_addr >> instShiftAmt;
+    auto _target = target >> instShiftAmt;
 
     if (brtype == BranchType::DirectCond) {
-        predictor->UpdatePredictor(branch_addr, taken, false, target);
+        predictor->UpdatePredictor(pc, taken, false, _target);
     } else {
-        predictor->TrackOtherInst(branch_addr, opType, taken, target);
+        predictor->TrackOtherInst(pc, opType, taken, _target);
     }
 
 
@@ -137,6 +141,14 @@ LLBPRef::update(ThreadID tid, Addr branch_addr, bool taken, void *&bp_history,
 
 }
 
+void
+LLBPRef::LLBPStats::preDumpStats()
+{
+    // This function is called before the stats are dumped.
+    // We can use it to print some additional information.
+    // DPRINTF(LLBP, "LLBPRef: Pre-dump stats for predictor\n");
+    parent->predictor->PrintStat(1.0);
+}
 
 
 } // namespace branch_prediction

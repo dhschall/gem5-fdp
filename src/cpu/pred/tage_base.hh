@@ -463,7 +463,7 @@ class TAGEBase : public SimObject
      * Try to allocate an entry at index idx.
      * Returns true if the allocation was successful
     */
-    virtual bool allocateEntry(int idx, BranchInfo* bi, bool taken = false);
+    virtual int allocateEntry(int idx, BranchInfo* bi, bool taken = false);
 
     /**
      * Extra steps for calculating altTaken

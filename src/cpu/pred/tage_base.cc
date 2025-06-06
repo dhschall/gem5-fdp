@@ -492,17 +492,17 @@ TAGEBase::handleAllocAndUReset(bool alloc, bool taken, BranchInfo* bi,
     handleUReset();
 }
 
-bool
+int
 TAGEBase::allocateEntry(int idx, BranchInfo* bi, bool taken)
 {
     if (gtable[idx][bi->tableIndices[idx]].u != 0)
-        return false;
+        return 0;
 
     ++stats.allocationsTotal;
 
     gtable[idx][bi->tableIndices[idx]].tag = bi->tableTags[idx];
     gtable[idx][bi->tableIndices[idx]].ctr = (taken) ? 0 : -1;
-    return true;
+    return 1;
 }
 
 void

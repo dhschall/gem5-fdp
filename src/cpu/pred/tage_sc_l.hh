@@ -199,6 +199,10 @@ class TAGE_SC_L: public LTAGE
         }
     };
 
+    void update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo * &bi,
+                bool squashed, const StaticInstPtr & inst,
+                Addr target);
+
     // more provider types
     enum
     {

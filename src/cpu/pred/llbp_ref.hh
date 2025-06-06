@@ -50,11 +50,10 @@
 #include "cpu/pred/conditional.hh"
 #include "params/LLBPRef.hh"
 
-// namespace LLBP
-// {
-//   class LLBPTageSCL64k;
-// }
-class BasePredictor;
+namespace LLBP
+{
+  class LLBP;
+}
 
 namespace gem5
 {
@@ -98,7 +97,17 @@ class LLBPRef : public ConditionalPredictor
 
   private:
     // LLBP::LLBPTageSCL64k *predictor;
-    BasePredictor *predictor;  // Pointer to the LLBP predictor
+    LLBP::LLBP *predictor;  // Pointer to the LLBP predictor
+
+    struct LLBPStats : public statistics::Group
+    {
+      LLBPRef *parent;
+      LLBPStats(LLBPRef *_parent)
+            : statistics::Group(_parent, "LLBPRef"),
+              parent(_parent) {}
+
+        void preDumpStats() override;
+    } stats;
 };
 
 } // namespace branch_prediction

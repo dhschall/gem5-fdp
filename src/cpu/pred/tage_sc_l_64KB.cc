@@ -41,6 +41,8 @@
 
 #include "cpu/pred/tage_sc_l_64KB.hh"
 
+#include "debug/TageSCL.hh"
+
 namespace gem5
 {
 
@@ -248,24 +250,13 @@ TAGE_SC_L_TAGE_64KB::handleAllocAndUReset(
         for (int j = 0; j < 2; ++j) {
             int i = ((j == 0) ? I : (I ^ 1)) + 1;
             if (noSkip[i]) {
-                if (gtable[i][bi->tableIndices[i]].u == 0) {
-                    int8_t ctr = gtable[i][bi->tableIndices[i]].ctr;
-                    if (abs (2 * ctr + 1) <= 3) {
-                        gtable[i][bi->tableIndices[i]].tag = bi->tableTags[i];
-                        gtable[i][bi->tableIndices[i]].ctr = taken ? 0 : -1;
+                auto n = allocateEntry(i, bi, taken);
+                if (n > 0) {
                         numAllocated++;
-                        ++stats.allocationsTotal;
                         maxAllocReached = (numAllocated == maxNumAlloc);
                         I += 2;
                         break;
-                    } else {
-                        if (gtable[i][bi->tableIndices[i]].ctr > 0) {
-                            gtable[i][bi->tableIndices[i]].ctr--;
-                        } else {
-                            gtable[i][bi->tableIndices[i]].ctr++;
-                        }
-                    }
-                } else {
+                } else if (n < 0) {
                     penalty++;
                 }
             }
@@ -279,6 +270,32 @@ TAGE_SC_L_TAGE_64KB::handleAllocAndUReset(
 
     handleUReset();
 }
+
+int
+TAGE_SC_L_TAGE_64KB::allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken)
+{
+    if (gtable[idx][bi->tableIndices[idx]].u != 0)
+        return -1;
+
+    int8_t ctr = gtable[idx][bi->tableIndices[idx]].ctr;
+    if (abs (2 * ctr + 1) > 3) {
+        if (ctr > 0)
+            gtable[idx][bi->tableIndices[idx]].ctr--;
+        else
+            gtable[idx][bi->tableIndices[idx]].ctr++;
+        return 0;
+    }
+
+    DPRINTF(TageSCL, "TSL Alloc:%i, %i,%i\n", idx,
+            bi->tableIndices[idx], bi->tableTags[idx]);
+
+    ++stats.allocationsTotal;
+
+    gtable[idx][bi->tableIndices[idx]].tag = bi->tableTags[idx];
+    gtable[idx][bi->tableIndices[idx]].ctr = (taken) ? 0 : -1;
+    return 1;
+}
+
 
 void
 TAGE_SC_L_TAGE_64KB::handleTAGEUpdate(Addr branch_pc, bool taken,
@@ -306,27 +323,48 @@ TAGE_SC_L_TAGE_64KB::handleTAGEUpdate(Addr branch_pc, bool taken,
             gtable[bi->hitBank][bi->hitBankIndex].u = 0;
         }
 
-        if (bi->altTaken == taken) {
-            if (bi->altBank > 0) {
-                int8_t ctr = gtable[bi->altBank][bi->altBankIndex].ctr;
-                if (abs (2 * ctr + 1) == 7) {
-                    if (gtable[bi->hitBank][bi->hitBankIndex].u == 1) {
-                        if (bi->longestMatchPred == taken) {
-                          gtable[bi->hitBank][bi->hitBankIndex].u = 0;
-                        }
-                    }
-                }
+        if (isNotUseful(taken, bi)) {
+            if (gtable[bi->hitBank][bi->hitBankIndex].u > 0) {
+                gtable[bi->hitBank][bi->hitBankIndex].u--;
             }
         }
     } else {
         baseUpdate(branch_pc, taken, bi);
     }
 
-    if ((bi->longestMatchPred != bi->altTaken) &&
-        (bi->longestMatchPred == taken) &&
-        (gtable[bi->hitBank][bi->hitBankIndex].u < (1 << tagTableUBits) -1)) {
+    if (isUseful(taken, bi)) {
+        if(gtable[bi->hitBank][bi->hitBankIndex].u < ((1 << tagTableUBits) -1)) {
             gtable[bi->hitBank][bi->hitBankIndex].u++;
     }
+}
+}
+
+bool 
+TAGE_SC_L_TAGE_64KB::isUseful(bool taken, TAGEBase::BranchInfo* bi) const
+{
+    // If the longest prediction is correct but the alternate
+    // prediction is wrong the longest is useful.
+    return (bi->longestMatchPred != bi->altTaken) &&
+           (bi->longestMatchPred == taken);
+}
+
+bool 
+TAGE_SC_L_TAGE_64KB::isNotUseful(bool taken, TAGEBase::BranchInfo* bi) const
+{
+    // If both the longest and alternate predictions where correct
+    // we can possible free the longest entry to use it for other
+    // predictions.
+    if ((bi->altTaken == taken) && (bi->longestMatchPred == taken)) {
+        // We only clear if the alternate prediction has a
+        // high confidence.
+        if (bi->altBank > 0) {
+            int8_t ctr = gtable[bi->altBank][bi->altBankIndex].ctr;
+            if (abs (2 * ctr + 1) == 7) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 TAGE_SC_L_64KB::TAGE_SC_L_64KB(const TAGE_SC_L_64KBParams &params)

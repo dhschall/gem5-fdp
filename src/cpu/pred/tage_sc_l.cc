@@ -422,6 +422,21 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, void *&bp_history,
     assert(bp_history);
 
     TageSCLBranchInfo* bi = static_cast<TageSCLBranchInfo*>(bp_history);
+    update(tid, pc, taken, bi, squashed, inst, target);
+
+    if (squashed)
+        return;
+
+    delete bi;
+    bp_history = nullptr;
+}
+
+void
+TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo *&bi,
+                  bool squashed, const StaticInstPtr & inst, Addr target)
+{
+    assert(bi);
+
     TAGE_SC_L_TAGE::BranchInfo* tage_bi =
         static_cast<TAGE_SC_L_TAGE::BranchInfo *>(bi->tageBranchInfo);
 
@@ -475,11 +490,8 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, void *&bp_history,
                                             bi->scBranchInfo, target,
                                             tage->getPathHist(tid, false));
     }
-
-
-    delete bi;
-    bp_history = nullptr;
 }
+
 
 void
 TAGE_SC_L::squash(ThreadID tid, void * &bp_history)

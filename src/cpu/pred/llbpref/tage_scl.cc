@@ -372,6 +372,7 @@ void TageSCL::init_predictor() {
     for (int i = 0; i < NSECLOCAL; i++) {
         S_slhist[i] = 0;
     }
+    IMLIcount = 0;
 }
 
 
