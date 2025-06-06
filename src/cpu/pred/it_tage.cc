@@ -252,7 +252,7 @@ ITTAGE_TAGE::updateIndirect(ThreadID tid,
 
 
 
-bool
+int
 ITTAGE_TAGE::allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken)
 {
     if (TAGEBase::allocateEntry(idx, bi, taken)) {
@@ -264,9 +264,9 @@ ITTAGE_TAGE::allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken)
         assert(idx <= nHistoryTables);
         assert(b->tableIndices[idx] < (1<<(logTagTableSizes[idx])));
         set(tgtTable[idx][b->tableIndices[idx]].target, b->corrTarget);
-        return true;
+        return 1;
     }
-    return false;
+    return 0;
 }
 
 

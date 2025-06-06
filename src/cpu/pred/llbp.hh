@@ -39,7 +39,9 @@ Implementation of the last-level branch predictor (LLBP).
 #include "base/statistics.hh"
 #include "base/types.hh"
 #include "cpu/pred/tage_sc_l.hh"
+#include "cpu/pred/tage_sc_l_64KB.hh"
 #include "params/LLBP.hh"
+#include "params/LLBP_TAGE_64KB.hh"
 
 namespace gem5
 {
@@ -72,7 +74,7 @@ class LLBP : public ConditionalPredictor
     TAGE_SC_L* base;
 
     int backingStorageCapacity;
-    Cycles backingStorageLatency;
+    const Cycles backingStorageLatency;
 
     int patternSetCapacity;
     int patternSetAssoc;
@@ -107,6 +109,10 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar demandMissesContextTooLate;
         statistics::Scalar demandMissesContextNotPrefetched;
         statistics::Scalar demandMissesContextUnknown;
+        statistics::Scalar demandMissesPfInflight;
+        statistics::Scalar ctxHits;
+        statistics::Scalar ptrnHits;
+
         statistics::SparseHistogram patternHits;
         statistics::SparseHistogram patternUseful;
         statistics::Histogram patternSetOccupancy;
@@ -137,7 +143,8 @@ class LLBP : public ConditionalPredictor
         bool base_pred;
         bool lightningTarget;
         Addr pc;
-        int index;
+        int index; // TODO: rename this to hitIndex of llbpHit
+        uint64_t key;
         bool conditional;
         std::list<uint64_t> rcrBackup;
         uint64_t cid;
@@ -165,27 +172,33 @@ class LLBP : public ConditionalPredictor
 
     struct Pattern
     {
-        uint64_t tag;
-        int8_t counter;
+        uint64_t tag = 0;
+        int8_t counter = 0;
         int hit = 0;
         int useful = 0;
         bool valid = false;
     };
 
     class PatternSet {
+        typedef typename std::vector<Pattern> set_t;
       public:
         PatternSet(
             int numEntries,
-            int setSize,
+            int associativity,
             int bankBits,
             LLBPStats& stats
-        ):  bankBits(bankBits),
-            setSize(setSize),
+        ):  bankBits(bankBits), // TODO: Remove
+            associativity(associativity),
+            numSets(numEntries / associativity),
+            setMask(numSets - 1),
+            setSize(numEntries / numSets),
+            unbounded(false),
             occupancy(0),
             stats(stats)
         {
             assert(numEntries % setSize == 0);
-            this->numSets = numEntries / setSize;
+            assert(associativity * numSets == numEntries);
+            // this->numSets = numEntries / setSize;
             sets.resize(numSets);
             for (auto& set : sets) {
                 set.resize(setSize);
@@ -194,22 +207,42 @@ class LLBP : public ConditionalPredictor
 
         PatternSet(int bankBits, LLBPStats& stats)
         :   bankBits(bankBits),
+            associativity(1),
+            numSets(1),
+            setMask(0),
+            setSize(0),
+            unbounded(true),
             occupancy(0),
             stats(stats)
         {
-            unbounded = true;
-            numSets = 1;
-            setSize = 0;
         }
 
         ~PatternSet() {
             commitStats();
         }
 
-        int getID(uint64_t key) {
-            uint64_t bank = getBank(key);
-            return bank / setSize;
+        // key_t index(const key_t& key) { return key & _set_mask; }
+
+        // set_t& getSet(const key_t& key) {
+        //     return _cache[index(key)];
+        // }
+
+        
+        // int getBank(uint64_t key) {
+        //     // FIX: THIS IS BOGUS!
+        //     return bitmaskLowerN(bankBits) & key;
+        // }
+
+        set_t& getSet(uint64_t key) {
+            int idx = int(key & setMask);
+            assert(idx < sets.size());
+            return sets[idx];
         }
+
+        // int getID(uint64_t key) {
+        //     uint64_t bank = getBank(key);
+        //     return bank / setSize;
+        // }
 
         Pattern* getEntry(uint64_t key) {
             if (unbounded) {
@@ -217,7 +250,7 @@ class LLBP : public ConditionalPredictor
                 if (!res.valid) return nullptr;
                 return &res;
             }
-            auto& set = getSet(key);
+            set_t& set = getSet(key);
             Pattern* result = findPatternInSet(key, set);
             return result;
         }
@@ -231,7 +264,7 @@ class LLBP : public ConditionalPredictor
                 tgt.useful = 0;
                 tgt.valid = true;
             } else {
-                auto& set = getSet(key);
+                set_t& set = getSet(key);
                 Pattern& victim = findVictimPattern(set);
                 if (victim.valid) {
                     stats.patternUseful.sample(victim.useful);
@@ -244,7 +277,7 @@ class LLBP : public ConditionalPredictor
                 victim.valid = true;
             }
 
-            saturatingAdd(occupancy, numSets*setSize);
+            saturatingAdd(occupancy, associativity * numSets);
         }
 
         void wasUseful(uint64_t key) {
@@ -261,19 +294,12 @@ class LLBP : public ConditionalPredictor
             }
         }
 
-        uint64_t calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, gem5::Addr pc) {
-            uint64_t tag = tageBi->tableTags[tageBank];
-            uint64_t index = tageBi->tableIndices[tageBank];
-            uint64_t bank = tageBank;
-            return ((tag << 49) | (index << bankBits) | bank);
-        }
-
-        int getBank(uint64_t key) {
-            return bitmaskLowerN(bankBits) & key;
-        }
-
         void commitStats() {
-            stats.patternSetOccupancy.sample(occupancy);
+            if (unbounded) {
+                stats.patternSetOccupancy.sample(unboundedSet.size());
+            } else {
+                stats.patternSetOccupancy.sample(occupancy);
+            }
             for (auto& set: sets) {
                 for (auto& pat: set) {
                     if (pat.valid) {
@@ -291,7 +317,7 @@ class LLBP : public ConditionalPredictor
             return ctr;
         }
 
-        static uint64_t bitmaskLowerN(int n) {
+        static uint64_t bitmaskLowerN(int n) { // TODO unused
             return (1 << n) - 1;
         }
 
@@ -308,13 +334,8 @@ class LLBP : public ConditionalPredictor
         }
 
       private:
-        std::vector<Pattern>& getSet(uint64_t key) {
-            int id = getID(key);
-            assert(id < sets.size());
-            return sets[id];
-        }
 
-        Pattern* findPatternInSet(uint64_t key, std::vector<Pattern>& set) {
+        Pattern* findPatternInSet(uint64_t key, set_t& set) {
             auto result = std::find_if(set.begin(), set.end(), [key](Pattern& pat) {
                 return pat.tag == key && pat.valid;
             });
@@ -325,7 +346,7 @@ class LLBP : public ConditionalPredictor
             return &*result;
         }
 
-        Pattern& findVictimPattern(std::vector<Pattern>& set) {
+        Pattern& findVictimPattern(set_t& set) {
             auto firstInvalid = std::find_if(set.begin(), set.end(), [](Pattern& e) {
                 return !e.valid;
             });
@@ -340,15 +361,17 @@ class LLBP : public ConditionalPredictor
             return *result;
         }
 
-        int bankBits;
-        int numSets;
-        int setSize;
+        const int bankBits;
+        const int associativity;
+        const int numSets;
+        const uint64_t setMask;
+        const int setSize;
+        const bool unbounded;
         int occupancy;
 
         LLBPStats& stats;
         std::unordered_map<uint64_t, Pattern> unboundedSet;
-        bool unbounded = false;
-        std::vector<std::vector<Pattern>> sets;
+        std::vector<set_t> sets;
     };
 
     class Context
@@ -362,6 +385,8 @@ class LLBP : public ConditionalPredictor
     };
 
 
+    // TODO: Make this a set-associative cache
+    // Use the underlying structure (template) that is used for the pattern set.
     typedef std::unordered_map<uint64_t, Context> BackingStorage;
 
     BackingStorage backingStorage;
@@ -462,6 +487,33 @@ class LLBP : public ConditionalPredictor
         std::vector<std::vector<PatternBufferEntry>> sets;
     } patternBuffer;
 
+    TAGEBase::FoldedHistory fghrT1[40];
+    TAGEBase::FoldedHistory fghrT2[40];
+
+    uint64_t KEY[40]; // Key for each history length
+    void calculateKeys(Addr pc);
+
+    public:
+    // The branch info of the branch that currently gets updated.
+    // A bit of a hack to communicate the LLBP prediction information
+    // to the base predictor.
+    LLBPBranchInfo *curUpdateBi = nullptr; // The branch info of the current update
+
+    protected:
+    // TODO: move all parameters together, make them const and add details. Do the same in the python file.
+    const int TTWidth; // Tag table width in bits
+    const bool optimalPrefetching; // Ignores prefetching into the PB
+    // const int patternSetSize; // Number of patterns per context
+    // const int patternSetAssociativity; // Associativity of the pattern set
+    // const int patternSetSetSize; // Number of sets in the pattern set
+
+    // A map to filter the used history lengths.
+    std::vector<int> fltTables;
+    int branchCount = 0; // Number of branches executed
+
+    uint64_t calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, Addr pc);
+
+
 
     int8_t absPredCounter(int8_t counter);
     void storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo* bi);
@@ -529,6 +581,31 @@ class LLBP : public ConditionalPredictor
         // Get the prefetch context ID
         uint64_t getPCID();
     } rcr;
+};
+
+class LLBP_TAGE_64KB : public TAGE_SC_L_TAGE_64KB
+{
+    LLBP *parent;
+    
+    public:
+    LLBP_TAGE_64KB(const LLBP_TAGE_64KBParams &p)
+      : TAGE_SC_L_TAGE_64KB(p)
+    {}
+
+    void handleAllocAndUReset(bool alloc, bool taken,
+                              TAGEBase::BranchInfo* bi, int nrand) override;
+
+    void handleTAGEUpdate(Addr branch_pc, bool taken,
+                          TAGEBase::BranchInfo* bi) override;
+    int allocateEntry(int bank, TAGEBase::BranchInfo* bi, bool taken) override;
+    bool isUseful(bool taken, TAGEBase::BranchInfo* bi) const override;
+    bool isNotUseful(bool taken, TAGEBase::BranchInfo* bi) const override;
+
+    void setParent(LLBP *p) {
+        parent = p;
+    }
+
+    std::vector<int> alloc_banks;
 };
 
 } // namespace branch_prediction

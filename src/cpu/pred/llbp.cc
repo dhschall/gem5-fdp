@@ -43,7 +43,8 @@ LLBP::LLBP(const LLBPParams &params)
       backingStorageLatency(params.backingStorageLatency),
       patternSetCapacity(params.patternSetCapacity),
       patternSetAssoc(params.patternSetAssoc),
-      patternSetBankBits(params.patternSetBankBits),
+      patternSetBankBits(/* Bits for bucket */ patternSetAssoc ? ceilLog2(patternSetAssoc) : 0 +
+                         /* Bits for bank (36) */ ceilLog2(36)),
       contextCounterWidth(params.contextCounterWidth),
       patternCounterWidth(params.patternCounterWidth),
       lightningPredEnabled(params.lightningPredEnabled),
@@ -54,12 +55,17 @@ LLBP::LLBP(const LLBPParams &params)
         params.patternBufferAssoc,
         this->backingStorage,
         stats.patternBufferEvictions),
+    TTWidth(params.patterTagBits),
+    optimalPrefetching(backingStorageLatency == Cycles(0)),
       rcr(params.rcrType,
         params.rcrWindow,
         params.rcrDist,
         params.rcrShift,
         params.rcrTagWidth)
 {
+    // assert(floorLog2(patternSetAssoc)
+    // TODO: Add assert to check that the base predictor is of type LLBP_TAGE_64KB
+    static_cast<LLBP_TAGE_64KB *>(base->tage)->setParent(this);
     DPRINTF(LLBP, "Using experimental LLBP\n");
     DPRINTF(LLBP, "RCR: T=%d,  W=%d,  D=%d,  S=%d,  tagWidthBits=%d\n",
             rcr.T, rcr.W, rcr.D, rcr.S, params.rcrTagWidth);
@@ -70,7 +76,56 @@ LLBP::LLBP(const LLBPParams &params)
 void
 LLBP::init()
 {
-    base->init();
+    // First initialize the base predictor
+    base->tage->init();
+
+    // for (int i = 1; i <= base->getNumHistoryTables(); i++) {
+    //     auto m = (i%2) ? base->tage->histLengths[i] : base->tage->histLengths[i]+2;
+    //     fghrT1[i].init(m, TTWidth);
+    //     fghrT2[i].init(m, TTWidth - 1);
+    //     printf("T1[%d]: HistLen=%d, Width=%d\n",
+    //            i, m, TTWidth);
+    // }
+
+    fltTables.resize(base->getNumHistoryTables() + 1, 0);
+
+#define FILTER_TABLES
+#ifdef FILTER_TABLES
+    // LLBP does not provide for all different history lenghts in
+    // TAGE a prediction only for the following once which where
+    // empirically determined. Note this
+    // are not the actual length but the table indices in TAGE.
+    auto l = {6,10,13,14,15,16,17,18,  19,20,22,24,26,28,32,36};
+
+#else
+    std::list<int> l;
+    for (int i = 1; i <= base->getNumHistoryTables(); i++) {
+        if (base->tage->noSkip[i]) {
+            l.push_back(i);
+        }
+    }
+#endif //FILTER_TABLES
+
+    int n = 0;
+    for (auto i : l) {
+        // To reduce the complexity of the multiplexer LLBP groups
+        // always four consecutive history lenght in one bucket.
+        // As the pattern sets are implemented a set associative
+        // structure the lower bits determine the set=bucket.
+        // The `fltTable`-map not only filters the history lengths
+        // but also maps each length the correct pattern set index.
+        // E.e. for the four way associativity the following function
+        // ensures that history length 6,10,13,14 gets assign
+        // 0,4,8,12 with the lowest two bits 0b00. Thus, the set will
+        // be the same.
+        auto pa = patternSetAssoc ? patternSetAssoc : 1;
+        auto bucket = n / pa;
+        fltTables[i] = ((i) << ceilLog2(pa) ) | bucket;
+        printf("%i=>%i:%i:%i ", i, n, bucket, fltTables[i]);
+        n++;
+    }
+    printf("\n");
+
 }
 
 void
@@ -92,18 +147,29 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
 {
     assert(bp_history);
     LLBPBranchInfo *bi = static_cast<LLBPBranchInfo *>(bp_history);
+    TAGE_SC_L::TageSCLBranchInfo *tage_bi = static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi->ltage_bi);
 
     if (resteer) {
         if (bi->rcrBackup.size()) {
             rcr.restore(bi->rcrBackup);
-            rcr.update(pc, inst, taken);
+            rcr.update(pc >> instShiftAmt, inst, taken);
         }
 
         patternBuffer.clearInFlight(curCycle(), backingStorageLatency);
 
-        base->update(tid, pc, taken, bi->ltage_bi, resteer, inst, target);
+        // base->update(tid, pc, taken, bi->ltage_bi, resteer, inst, target);
+        base->update(tid, pc, taken, tage_bi, resteer, inst, target);
         return;
     }
+
+    // This is a bit a hackish way to communicate the LLBP override information
+    // to the base predictor. The base predictor will use the current bi
+    // in its update and allocation functions
+    curUpdateBi = bi;
+
+    // Do the base predictor update.
+    base->update(tid, pc, taken, tage_bi, resteer, inst, target);
+
 
     if (inst->isCondCtrl())
         storageUpdate(tid, pc, taken, bi);
@@ -115,20 +181,31 @@ LLBP::update(ThreadID tid, Addr pc, bool taken,
         rcr_cont.append(std::to_string(v) + " | ");
 
 
-    DPRINTF(LLBP, "CUPDATE @ %lld [thread %d] Updated %s on %lld (%s): ccid=%llu, "
-            "uncond=%s, sz=%d, RCR: %s\n",
-            bi,
-            tid,
-            taken ? "true" : "false",
-            pc,
-            inst->getName().c_str(),
-            rcr.getCCID(),
-            inst->isUncondCtrl() ? "true" : "false",
+    DPRINTF(LLBP, "LLBP::%s(pc=%llx, inst=%s, taken=%i, resteer=%i): "
+            "ccid=%llu, uncond=%i, sz=%d, RCR: %s\n",
+            __func__,
+            pc, inst->getName().c_str(),
+            taken, resteer,
+            bi->cid,
+            inst->isUncondCtrl(),
             backingStorage.size(),
             rcr_cont
         );
 
-    base->update(tid, pc, taken, bi->ltage_bi, resteer, inst, target);
+    // auto& tHist = base->tage->threadHistory[tid];
+    // for (int n = tage_bi->tageBranchInfo->nGhist; n > 0; n--) {
+    //     bool bit = *(tHist.gHist+n-1);
+    //     DPRINTF(LLBP, "B:%i\n", bit);
+    //     for (int i = 1; i <= base->getNumHistoryTables(); i++) {
+    //         if (base->tage->noSkip[i]) {
+    //             fghrT1[i].update(tHist.gHist+n-1);
+    //             fghrT2[i].update(tHist.gHist+n-1);
+    //         }
+    //     }
+    // }
+
+    branchCount++;
+    delete tage_bi;
 
     delete bi;
     bp_history = nullptr;
@@ -150,15 +227,46 @@ LLBP::lookup(ThreadID tid, Addr pc, void *&bp_history)
     return retval;
 }
 
-Prediction
-LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
+void
+LLBP::calculateKeys(Addr pc)
 {
-    Addr pc = branch_pc;
+    // TODO: Not needed anymore
+    std::string s = "";
+    for (int i = 1; i <= base->getNumHistoryTables(); i++) {
+        // if (base->tage->noSkip[i]) {
+        if (fltTables[i] > 0) {
+            uint64_t key = pc >> instShiftAmt;
+            key ^= fghrT1[i].comp ^ (fghrT2[i].comp << 1);
+            key &= ((1ULL << uint64_t(TTWidth)) - 1ULL);
+            KEY[i] = uint64_t(key) << 10ULL | uint64_t(fltTables[i]);
+            s.append(std::to_string(i) + ":" + std::to_string(KEY[i]) + " | ");
+        }
+    }
+    DPRINTF(LLBP, "LLBP::%s(pc=%#llx): Keys: %s\n", __func__, pc, s);
+}
 
+uint64_t
+LLBP::calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, Addr pc)
+{
+    uint64_t key = pc >> instShiftAmt;
+    uint64_t tag = tageBi->tableTags[tageBank];
+    uint64_t index = tageBi->tableIndices[tageBank];
+    // Align the index to the upper bits of the key
+    // TODO: Parametrize this
+    // 10 bits is the number of bits used in the TAGEBase::gindex
+    index <<= uint64_t(TTWidth - 10);
+    key ^= tag ^ index;
+    key &= ((1ULL << uint64_t(TTWidth)) - 1ULL);
+    return uint64_t(key) << patternSetBankBits | uint64_t(fltTables[tageBank]);
+}
+
+Prediction
+LLBP::predict(ThreadID tid, Addr pc, bool cond_branch, void *&b)
+{
     LLBPBranchInfo *bi = new LLBPBranchInfo(pc, cond_branch);
 
     Prediction ltage_prediction = base->predict(
-        tid, branch_pc, cond_branch, bi->ltage_bi
+        tid, pc, cond_branch, bi->ltage_bi
     );
 
     b = (void*)(bi);
@@ -175,6 +283,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
 
     if (cond_branch)
     {
+        // calculateKeys(pc);
         int tage_bank = 0;
 
         if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
@@ -186,69 +295,107 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
         if (tage_bank)
            ++stats.baseHitsTotal;
 
-        auto ccid = rcr.getCCID();
-        bi->index = tage_bank;
-        bi->cid = ccid;
-        if (backingStorage.count(ccid)) {
-            auto& context = backingStorage.at(ccid);
-            PatternBufferEntry* pbe = patternBuffer.get(ccid);
+        bi->cid = rcr.getCCID();
+        bi->index = 0;
+        bi->llbp_pred = false;
+        DPRINTF(LLBP,"%i L2Predict: %lx\n", branchCount, bi->cid);
+        if (backingStorage.count(bi->cid)) {
+            stats.ctxHits++;
+            auto& context = backingStorage.at(bi->cid);
+
+            bool is_prefetched = false;
+            PatternBufferEntry* pbe = patternBuffer.get(bi->cid);
             if (pbe) {
-                auto& entry = *pbe;
-                Cycles additionalLatency = calculateRemainingLatency(entry.insertTime);
-                if (additionalLatency == 0) {
-                    int i = findBestPattern(context, tage_bi, branch_pc);
-                    if (i > 0)
-                    {
-                        uint64_t key = context.patterns.calculateKey(tage_bi, i, branch_pc);
-                        auto &pattern = *context.patterns.getEntry(key);
-
-                        context.patterns.wasHit(key);
-                        entry.lastUsed = curCycle();
-
-                        ++stats.demandHitsTotal;
-                        llbp_confidence = pattern.counter;
-                        bool llbp_prediction = llbp_confidence >= 0;
-
-                        // Override early if lightning is enabled
-                        if (PatternSet::absConfidence(llbp_confidence) > lightningPredCutoff) {
-                            bi->lightningTarget = true;
-                            bi->llbp_pred = llbp_prediction;
-                            if (lightningPredEnabled) {
-                                bi->overridden = true;
-                                bi->index = i;
-                                latency = Cycles(0);
-                                ++stats.lightningHitsTotal;
-                            }
-                        } else if (i >= tage_bank) {
-                            ++stats.demandHitsOverride;
-                            bi->index = i;
-                            bi->overridden = true;
-                            bi->llbp_pred = llbp_prediction;
-                        } else {
-                            ++stats.demandHitsNoOverride;
-                        }
-                    } else {
-                        ++stats.demandMissesPatternMiss;
-                        ++stats.demandMissesTotal;
-                    }
-                } else {
-                    ++stats.demandMissesTotal;
+                if (calculateRemainingLatency(pbe->insertTime) <= 0) {
+                    is_prefetched = true;
+                    pbe->lastUsed = curCycle();
                 }
-            } else {
-                ++stats.demandMissesContextNotPrefetched;
-                ++stats.demandMissesTotal;
             }
 
+            // TODO: The function is used only once, we should inline it
+            // for better readability.
+            // Also store the key in the branch info
+            // to avoid the second calculation.
+            bi->index = findBestPattern(context, tage_bi, pc);
+            if (bi->index > 0) {
+                stats.ptrnHits++;
+            }
+
+            // If the tag matches and its prefetches we can use the prediction
+            if ((bi->index > 0) && (is_prefetched || optimalPrefetching)) {
+                uint64_t key = calculateKey(tage_bi, bi->index, pc);
+                // uint64_t key = KEY[i];
+                auto &pattern = *context.patterns.getEntry(key);
+
+                context.patterns.wasHit(key);
+
+                ++stats.demandHitsTotal;
+                llbp_confidence = pattern.counter;
+                bool llbp_prediction = llbp_confidence >= 0;
+
+                // // Override early if lightning is enabled
+                // if (PatternSet::absConfidence(llbp_confidence) > lightningPredCutoff) {
+                //     bi->lightningTarget = true;
+                //     bi->llbp_pred = llbp_prediction;
+                //     if (lightningPredEnabled) {
+                //         bi->overridden = true;
+                //         bi->index = i;
+                //         latency = Cycles(0);
+                //         ++stats.lightningHitsTotal;
+                //     }
+                // } else
+                if (bi->index >= tage_bank) {
+                    ++stats.demandHitsOverride;
+                    bi->overridden = true;
+                    bi->llbp_pred = llbp_prediction;
+                } else {
+                    ++stats.demandHitsNoOverride;
+                }
+                DPRINTF(LLBP, "LLBPHit:%i,CID=%llx, K:%llx,p%i, "
+                        "TageHit:%i,p:%i override:%i\n",
+                        bi->index, bi->cid, key, llbp_prediction,
+                        tage_bank, bi->base_pred,
+                        bi->overridden);
+            } else {
+                // No pattern found it the PB
+                ++stats.demandMissesTotal;
+
+                // Identify whether its a prefetch related miss or
+                // a tag miss
+                if (bi->index > 0) {
+                    if (pbe) {
+                        ++stats.demandMissesPfInflight;
+                    } else {
+                        ++stats.demandMissesContextNotPrefetched;
+                    }
+                } else {
+                    ++stats.demandMissesPatternMiss;
+                }
+            }
         } else {
             ++stats.demandMissesContextUnknown;
             ++stats.demandMissesTotal;
         }
+        DPRINTF(LLBP, "LLBP::%s(pc=%#llx): CID=%lx, Base:[Hit=%i,p=%i] LLBP:[Hit=%i,p=%i] confidence=%d, overridden=%s\n",
+            __func__,
+            pc,
+            bi->cid,
+            tage_bi->hitBank, bi->base_pred,
+            bi->index, bi->llbp_pred,
+            llbp_confidence,
+            bi->overridden);
     }
-    DPRINTF(LLBP, "LLBP: Final Prediction @ %lld for %lx is %d, "
-            "confidence=%d, overridden=%s\n",
-            bi,
-            branch_pc, bi->getPrediction(), llbp_confidence,
-            bi->overridden ? "true" : "false");
+
+    if (bi->overridden) {
+        // Overridden prediction
+        tage_bi->tagePred = bi->llbp_pred;
+        tage_bi->longestMatchPred = tage_bi->altTaken = bi->llbp_pred;
+        tage_bi->hitBank = tage_bi->altBank = 0;
+        tage_bi->provider = TAGEBase::BIMODAL_ONLY;
+        scltage_bi->lpBranchInfo->predTaken = bi->llbp_pred;
+        scltage_bi->lpBranchInfo->loopPredUsed = false;
+        scltage_bi->scBranchInfo->usedScPred = false;
+    }
 
     return Prediction {.taken = bi->getPrediction(), .latency = latency};
 }
@@ -261,15 +408,23 @@ LLBP::updateHistories(
     void *&bp_history)
 {
     LLBPBranchInfo *bi;
-
-    rcr.update(pc, inst, taken);
-
     if (bp_history == nullptr) {
         assert(uncond);
         bi = new LLBPBranchInfo(pc, !uncond);
         bp_history = (void*)(bi);
+    } else {
+        bi = static_cast<LLBPBranchInfo *>(bp_history);
+    }
 
-        // Insert the next prefetch context into the pattern buffer
+
+    // Backup the RCR state in case we need to restore it.
+    rcr.backup(bi->rcrBackup);
+
+    // Update the RCR with the current branch
+    if (rcr.update(pc >> instShiftAmt, inst, taken)) {
+
+        // If the RCR has updated the context ID, we need to
+        // check whether we have to prefetch the context.
         uint64_t pcid = rcr.getPCID();
         if (backingStorage.count(pcid))
         {
@@ -279,11 +434,8 @@ LLBP::updateHistories(
                 patternBuffer.insert(pcid, curCycle());
             }
         }
-    } else {
-        bi = static_cast<LLBPBranchInfo *>(bp_history);
     }
 
-    rcr.backup(bi->rcrBackup);
     base->updateHistories(tid, pc, uncond, taken, target, inst, bi->ltage_bi);
 }
 
@@ -307,12 +459,84 @@ int8_t LLBP::absPredCounter(int8_t counter)
  */
 void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
 {
-    TAGE_SC_L::TageSCLBranchInfo *ltage_bi =
-        static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi->ltage_bi);
+    // TAGE_SC_L::TageSCLBranchInfo *ltage_bi =
+    //     static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi->ltage_bi);
 
     uint64_t cid = bi->cid;
 
-    auto tage_bi = ltage_bi->tageBranchInfo;
+
+    auto tage_bi = static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi->ltage_bi)->tageBranchInfo;
+
+    DPRINTF(LLBP, "LLBP::%s(pc=%lx, taken=%i) "
+            "cid=%llu, index=%d, "
+            "prediction=%d, mispred=%d, "
+            "llbp_pred=%d, base_pred=%d, overridden=%i\n",
+            __func__, pc, taken,
+            cid, bi->index,
+            bi->getPrediction(), taken != bi->getPrediction(),
+            bi->llbp_pred, bi->base_pred, bi->overridden);
+
+
+
+    /**************************************************
+     * Allocation
+     *
+     * If the branch was mispredicted, we allocate a new pattern
+     * with longer history in the context.
+     * The pattern with the weakest confidence is replaced.
+     ***************************************************/
+    // if (bi->getPrediction() != taken) {
+    auto& alloc_banks = static_cast<LLBP_TAGE_64KB *>(base->tage)->alloc_banks;
+    if (alloc_banks.size() > 0) {
+
+        // Check if the context already exists
+        if (!backingStorage.count(cid)) {
+
+            // If not, we create a new context
+            while (backingStorage.size() >= backingStorageCapacity)
+            {
+                ++stats.backingStorageEvictions;
+                uint64_t i = findVictimContext();
+                backingStorage.erase(i);
+            }
+            DPRINTF(LLBP, "LLBP: CTX Alloc:%llx,\n", cid);
+            // backingStorage.emplace(cid, Context(PatternSet(64*8, 64*8, 8, stats)));
+            if (patternSetCapacity == 0) {
+                backingStorage.emplace(cid, Context(PatternSet(patternSetBankBits, stats)));
+            } else {
+                // FIX: The Associativity is actually the set size, not the associativity
+                backingStorage.emplace(cid, Context(PatternSet(
+                    patternSetCapacity, patternSetAssoc, patternSetBankBits/* TODO Remove! */, stats
+                )));
+            }
+            ++stats.backingStorageInsertions;
+        }
+
+        Context& context = backingStorage.at(cid);
+
+        // uint64_t key = context.patterns.calculateKey(tage_bi, tage_bank, pc);
+        // context.patterns.insertEntry(key, taken);
+
+        for (auto bank : alloc_banks) {
+            if (fltTables[bank]) {
+                uint64_t key = calculateKey(tage_bi, bank, pc);
+                // uint64_t key = KEY[j];
+                DPRINTF(LLBP, "LLBP Alloc:%i, %llx\n", bank, key);
+                ++stats.allocationsTotal;
+                context.patterns.insertEntry(key, taken);
+            }
+        }
+    }
+
+
+
+
+
+
+    /**************************************************
+     * Update
+     *
+     */
 
     // Update the gem5 statistics for override tracking
     if (bi->overridden) {
@@ -344,10 +568,11 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
     {
         LLBP::Context& context = backingStorage.at(cid);
 
-        int i = bi->index;
-        if (i > 0 && bi->overridden)
+        // int i = bi->index;
+        if (bi->index > 0 && bi->overridden)
         {
-            uint64_t key = context.patterns.calculateKey(tage_bi, i, pc);
+            uint64_t key = calculateKey(tage_bi, bi->index, pc);
+            // uint64_t key = KEY[i];
             LLBP::Pattern* p = context.patterns.getEntry(key);
 
             if (p) {
@@ -357,8 +582,13 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
                 TAGEBase::ctrUpdate(pattern.counter, taken, patternCounterWidth);
                 int8_t conf_after = pattern.counter;
 
-                DPRINTF(LLBP, "LLBP: Storage C %llu T %lld: %d -> %d (%s)\n",
-                        cid, key, conf_before, conf_after, taken ? "taken" : "not taken");
+                DPRINTF(LLBP, "LLBP::%s() CID=%llx key=%llx: %d -> %d (%s)\n",
+                        __func__, cid, key, conf_before, conf_after, taken ? "taken" : "not taken");
+                // This function updates the context replacement counter
+                // - If a pattern becomes confident (correct prediction)
+                //   the replacement counter is increased
+                // - If a pattern becomes low confident (incorrect prediction)
+                //   the replacement counter is decreased
                 if (pattern.counter == (taken ? 1 : -2))
                 {
                     // Context is now medium confidence
@@ -379,50 +609,48 @@ void LLBP::storageUpdate(ThreadID tid, Addr pc, bool taken, LLBPBranchInfo *bi)
         }
 
 
-        // If a misprediction occurs, we allocate a new pattern with longer history
-        // in the context. The pattern with the weakest confidence is replaced.
-        if (bi->getPrediction() != taken) {
-            if (i < base->getNumHistoryTables()) {
-                ++stats.allocationsTotal;
-                i = i+1;
-                while (!base->tage->noSkip[i] && i < base->getNumHistoryTables())
-                    i = i+1;
-                uint64_t key = context.patterns.calculateKey(tage_bi, i, pc);
-                context.patterns.insertEntry(key, taken);
-            }
-        }
+        // // If a misprediction occurs, we allocate a new pattern with longer history
+        // // in the context. The pattern with the weakest confidence is replaced.
+        // if (bi->getPrediction() != taken) {
+        //     if (i < base->getNumHistoryTables()) {
+        //         ++stats.allocationsTotal;
+        //         i = i+1;
+        //         while (!base->tage->noSkip[i] && i < base->getNumHistoryTables())
+        //             i = i+1;
+        //         uint64_t key = context.patterns.calculateKey(tage_bi, i, pc);
+        //         context.patterns.insertEntry(key, taken);
+        //     }
+        // }
+    // }
+    // else
+    // {
+    //     while (backingStorage.size() >= backingStorageCapacity)
+    //     {
+    //         ++stats.backingStorageEvictions;
+    //         uint64_t i = findVictimContext();
+    //         backingStorage.erase(i);
+    //     }
+
+    //     // TODO: Check if this is a skip table
+    //     int tage_bank = 1;
+    //     if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
+    //         tage_bank = tage_bi->hitBank;
+    //     if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
+    //         tage_bank = tage_bi->altBank;
+
+
+    //     if (patternSetCapacity == 0) {
+    //         backingStorage.emplace(cid, Context(PatternSet(patternSetBankBits, stats)));
+    //     } else {
+    //         backingStorage.emplace(cid, Context(PatternSet(
+    //             patternSetCapacity, patternSetAssoc, patternSetBankBits, stats
+    //         )));
+    //     }
+
     }
-    else
-    {
-        while (backingStorage.size() >= backingStorageCapacity)
-        {
-            ++stats.backingStorageEvictions;
-            uint64_t i = findVictimContext();
-            backingStorage.erase(i);
-        }
-
-        // TODO: Check if this is a skip table
-        int tage_bank = 1;
-        if (tage_bi->provider == TAGEBase::TAGE_LONGEST_MATCH)
-            tage_bank = tage_bi->hitBank;
-        if (tage_bi->provider == TAGEBase::TAGE_ALT_MATCH)
-            tage_bank = tage_bi->altBank;
 
 
-        if (patternSetCapacity == 0) {
-            backingStorage.emplace(cid, Context(PatternSet(patternSetBankBits, stats)));
-        } else {
-            backingStorage.emplace(cid, Context(PatternSet(
-                patternSetCapacity, patternSetAssoc, patternSetBankBits, stats
-            )));
-        }
 
-        Context& context = backingStorage.at(cid);
-        ++stats.backingStorageInsertions;
-
-        uint64_t key = context.patterns.calculateKey(tage_bi, tage_bank, pc);
-        context.patterns.insertEntry(key, taken);
-    }
 }
 
 /**
@@ -439,8 +667,10 @@ int LLBP::findBestPattern(Context &ctx, TAGEBase::BranchInfo *bi, Addr pc)
 {
     for (int i = base->getNumHistoryTables(); i > 0; i--)
     {
-        if (!base->tage->noSkip[i]) continue;
-        uint64_t key = ctx.patterns.calculateKey(bi, i, pc);
+        // if (!base->tage->noSkip[i]) continue;
+        if (fltTables[i] == 0) continue;
+        uint64_t key = calculateKey(bi, i, pc);
+        // uint64_t key = KEY[i];
         if (ctx.patterns.getEntry(key))
         {
             return i;
@@ -532,11 +762,13 @@ LLBP::RCR::calcHash(int n, int skip, int shift)
 
 uint64_t LLBP::RCR::getCCID()
 {
+    // return 0;
     return ctxs.ccid;
 }    // Hash of all branches
 
 uint64_t LLBP::RCR::getPCID()
 {
+    // return 0;
     return ctxs.pcid;
 }
 
@@ -638,6 +870,13 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "On-demand misses to the pattern buffer where the context was not scheduled for insertion"),
       ADD_STAT(demandMissesContextUnknown, statistics::units::Count::get(),
               "On-demand misses to the pattern buffer where the context was not in the backing storage"),
+      ADD_STAT(demandMissesPfInflight, statistics::units::Count::get(),
+              "On-demand misses to the pattern buffer where the context was not scheduled for insertion"),
+              // TODO fix stats
+      ADD_STAT(ctxHits, statistics::units::Count::get(),
+              "Total number of new patterns allocated in any pattern set"),
+      ADD_STAT(ptrnHits, statistics::units::Count::get(),
+              "Total number of new patterns allocated in any pattern set"),
       ADD_STAT(patternHits, statistics::units::Count::get(),
               "Number of times any pattern was hit (distribution)"),
       ADD_STAT(patternUseful, statistics::units::Count::get(),
@@ -670,19 +909,104 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "Number of branches overridden by lightning predictions"),
       ADD_STAT(lightningHitsRegret, statistics::units::Count::get(),
               "Number of branches (theoretically) overridden by lightning predictions, but turned out incorrect and different from base pred")
-              {
-                patternHits.init(16).flags(statistics::pdf);
-                patternUseful.init(16).flags(statistics::pdf);
-                if (parent)
-                    patternSetOccupancy.init(parent->patternSetCapacity + 1).flags(statistics::pdf);
-                else
-                    patternSetOccupancy.init(17).flags(statistics::pdf);
+{
+    patternHits.init(16).flags(statistics::pdf);
+    patternUseful.init(16).flags(statistics::pdf);
+    if (parent)
+        patternSetOccupancy.init(parent->patternSetCapacity ?
+                                    parent->patternSetCapacity + 1 :
+                                    16).flags(statistics::pdf);
+    else
+        patternSetOccupancy.init(17).flags(statistics::pdf);
 
-                correctOverridesUnique = correctOverridesTotal - correctOverridesIdentical;
-                wrongOverridesUnique = wrongOverridesTotal - wrongOverridesIdentical;
+    correctOverridesUnique = correctOverridesTotal - correctOverridesIdentical;
+    wrongOverridesUnique = wrongOverridesTotal - wrongOverridesIdentical;
 
-                profitOrLoss = correctOverridesUnique - wrongOverridesUnique;
-              }
+    profitOrLoss = correctOverridesUnique - wrongOverridesUnique;
+}
+
+
+void
+LLBP_TAGE_64KB::handleAllocAndUReset(bool alloc, bool taken, TAGEBase::BranchInfo* bi, int nrand)
+{
+    alloc_banks.clear();
+
+    // If LLBP has overridden the base predictor and a misprediction occured
+    // we need to let the base predictor know which length of the history
+    // has been matched.
+    bool modified = false;
+    if (parent->curUpdateBi->overridden) {
+        // If LLBP was provider we allocate if the prediction was wrong
+        // and the history length is shorter than the maximum.
+        alloc = (parent->curUpdateBi->llbp_pred != taken) && (parent->curUpdateBi->index < nHistoryTables);
+        bi->hitBank = parent->curUpdateBi->index;
+        modified = true;
+    }
+    // Do the actual allocation
+    TAGE_SC_L_TAGE_64KB::handleAllocAndUReset(alloc, taken, bi, nrand);
+
+    // Afterwards, reset the override otherwise the base predictor
+    // will update an incorrect entry
+    if (modified) {
+        bi->hitBank = 0;
+    }
+}
+
+int
+LLBP_TAGE_64KB::allocateEntry(int bank, TAGEBase::BranchInfo* bi, bool taken)
+{
+    auto r = TAGE_SC_L_TAGE_64KB::allocateEntry(bank, bi, taken);
+
+    // If the allocation was successful, record the table bank such that
+    // LLBP can allocate a new pattern with the same history length.
+    if (r > 0) {
+        alloc_banks.push_back(bank);
+    }
+    return r;
+}
+
+void
+LLBP_TAGE_64KB::handleTAGEUpdate(Addr pc, bool taken, TAGEBase::BranchInfo* bi)
+{
+    // Update the usefulness
+    if (parent->curUpdateBi->index > 0) {
+        // If TAGE was provider, it was correct and
+        // LLBP was incorrect this prediction was useful.
+        if ((!parent->curUpdateBi->overridden) && (bi->longestMatchPred == taken) && (parent->curUpdateBi->llbp_pred != taken)) {
+            if (bi->hitBank > 0) {
+                if(gtable[bi->hitBank][bi->hitBankIndex].u < ((1 << tagTableUBits) -1)) {
+                    gtable[bi->hitBank][bi->hitBankIndex].u++;
+                }
+            }
+        }
+    }
+    // Only update the providing component if LLBP has overridden than
+    // don't update TAGE. The BIM might be updated if the LLBP override
+    // is weak confidence.
+    if (parent->curUpdateBi->overridden) { 
+        // if (parent->overridePred != taken) {
+
+        // }
+        return;
+    }
+    // If not overridden do the normal TAGE update
+    TAGE_SC_L_TAGE_64KB::handleTAGEUpdate(pc, taken, bi);
+}
+
+bool
+LLBP_TAGE_64KB::isUseful(bool taken, TAGEBase::BranchInfo* bi) const
+{
+    // If LLBP overrides we do the usefulness update in `handleTAGEUpdate`
+    return (parent->curUpdateBi->index > 0) ? false
+           : TAGE_SC_L_TAGE_64KB::isUseful(taken, bi);
+}
+
+bool
+LLBP_TAGE_64KB::isNotUseful(bool taken, TAGEBase::BranchInfo* bi) const
+{
+    return (parent->curUpdateBi->index > 0) ? false
+           : TAGE_SC_L_TAGE_64KB::isNotUseful(taken, bi);
+}
 
 } // namespace branch_prediction
 } // namespace gem5

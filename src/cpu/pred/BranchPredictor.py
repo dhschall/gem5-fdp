@@ -796,6 +796,10 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     loop_predictor = TAGE_SC_L_8KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
 
+class LLBP_TAGE_64KB(TAGE_SC_L_TAGE_64KB):
+    type = "LLBP_TAGE_64KB"
+    cxx_class = "gem5::branch_prediction::LLBP_TAGE_64KB"
+    cxx_header = "cpu/pred/llbp.hh"
 
 class LLBP(ConditionalPredictor):
     type = "LLBP"
@@ -813,6 +817,7 @@ class LLBP(ConditionalPredictor):
     backingStorageCapacity = Param.Int(
         14000, "Backing Storage Capacity (in number of contexts)"
     )
+    patterTagBits = Param.Int(14, "Number of bits in the pattern tag (TTWidth)")
     backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
 
     patternBufferCapacity = Param.Int(
