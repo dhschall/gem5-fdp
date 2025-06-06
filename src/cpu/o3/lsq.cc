@@ -452,7 +452,8 @@ LSQ::sendRetryResp()
     dcachePort.sendRetryResp();
 }
 
-bool LSQ::anyCacheLevelMisses(int level) {
+bool 
+LSQ::anyCacheLevelMisses(int level) {
   for (LSQUnit &unit : thread) {
     for (auto &entry : unit.loadQueue) {
       if (entry.valid() && entry.hasRequest()) {

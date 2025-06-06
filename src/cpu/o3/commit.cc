@@ -171,22 +171,32 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(recoveryBubblesMissprediction, statistics::units::Cycle::get(),
                "Required for Top-Down, recovery bubbles"),
       ADD_STAT(recoveryBubblesMemoryNuke, statistics::units::Cycle::get(),
-               "Required for Top-Down, recovery bubbles") {
-  using namespace statistics;
+               "Required for Top-Down, recovery bubbles") 
+{
+    using namespace statistics;
 
-  commitSquashedInsts.prereq(commitSquashedInsts);
-  commitNonSpecStalls.prereq(commitNonSpecStalls);
-  branchMispredicts.prereq(branchMispredicts);
+    commitSquashedInsts.prereq(commitSquashedInsts);
+    commitNonSpecStalls.prereq(commitNonSpecStalls);
+    branchMispredicts.prereq(branchMispredicts);
 
-  numCommittedDist.init(0, commit->commitWidth, 1).flags(statistics::pdf);
+    numCommittedDist
+        .init(0,commit->commitWidth,1)
+        .flags(statistics::pdf);
 
-  amos.init(cpu->numThreads).flags(total);
+    amos
+        .init(cpu->numThreads)
+        .flags(total);
 
-  membars.init(cpu->numThreads).flags(total);
+    membars
+        .init(cpu->numThreads)
+        .flags(total);
 
-  functionCalls.init(commit->numThreads).flags(total);
+    functionCalls
+        .init(commit->numThreads)
+        .flags(total);
 
-  committedInstType.init(commit->numThreads, enums::Num_OpClass)
+    committedInstType
+        .init(commit->numThreads,enums::Num_OpClass)
       .flags(total | pdf | dist);
 
   committedInstType.ysubnames(enums::OpClassStrings);

@@ -356,13 +356,17 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
                "Total number of cycles that CPU has spent quiesced or waiting "
                "for an interrupt"),
-      topDownStats(cpu) {
-  // Register any of the O3CPU's stats here.
-  timesIdled.prereq(timesIdled);
+      topDownStats(cpu) 
+{
+    // Register any of the O3CPU's stats here.
+    timesIdled
+        .prereq(timesIdled);
 
-  idleCycles.prereq(idleCycles);
+    idleCycles
+        .prereq(idleCycles);
 
-  quiesceCycles.prereq(quiesceCycles);
+    quiesceCycles
+        .prereq(quiesceCycles);
 }
 
 CPU::CPUStats::TopDownStats::TopDownStats(CPU *cpu)
