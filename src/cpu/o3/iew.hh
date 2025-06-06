@@ -364,11 +364,6 @@ class IEW
      */
     bool updateLSQNextCycle;
 
-    /** Required for Top-Down, determines if recovery is happening */
-    bool recovery = false;
-
-    bool recovery_started = false;
-
   private:
     /** Records if there is a fetch redirect on this cycle for each thread. */
     bool fetchRedirect[MaxThreads];
@@ -419,6 +414,7 @@ class IEW
     /** Maximum size of the skid buffer. */
     unsigned skidBufferMax;
 
+
     struct IEWStats : public statistics::Group
     {
         IEWStats(CPU *cpu);
@@ -451,10 +447,6 @@ class IEW
         statistics::Scalar predictedTakenIncorrect;
         /** Stat for total number of incorrect predicted not taken branches. */
         statistics::Scalar predictedNotTakenIncorrect;
-        /** Stat for Top-Down Methodology, total number of issue-pipeline slots */
-        statistics::Scalar totalSlots;
-        /** Stat for Top-Down Methodology, number of cycles for recovery */
-        statistics::Scalar recoveryBubbles;
         /** Stat for total number of mispredicted branches detected at
          *  execute. */
         statistics::Formula branchMispredicts;
@@ -483,9 +475,6 @@ class IEW
         /** Average number of woken instructions per writeback. */
         statistics::Formula wbFanout;
     } iewStats;
-
-  public:
-    const IEWStats& getStats() const { return iewStats; }
 };
 
 } // namespace o3

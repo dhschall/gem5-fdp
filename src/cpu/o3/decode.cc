@@ -160,22 +160,23 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
                "Number of squashed instructions handled by decode"),
       ADD_STAT(fetchBubbles, statistics::units::Count::get(),
-               "Stat for Top-Down Methodology, number of instructions not delivered to backend"),
+               "Stat for Top-Down Methodology, number of instructions not "
+               "delivered to backend"),
       ADD_STAT(fetchBubblesMax, statistics::units::Count::get(),
-               "Stat for Top-Down Methodology, number of cycles in which no instructions are delivered to backend")
-{
-    idleCycles.prereq(idleCycles);
-    blockedCycles.prereq(blockedCycles);
-    runCycles.prereq(runCycles);
-    unblockCycles.prereq(unblockCycles);
-    squashCycles.prereq(squashCycles);
-    branchResolved.prereq(branchResolved);
-    branchMispred.prereq(branchMispred);
-    controlMispred.prereq(controlMispred);
-    decodedInsts.prereq(decodedInsts);
-    squashedInsts.prereq(squashedInsts);
-    fetchBubbles.prereq(fetchBubbles);
-    fetchBubblesMax.prereq(fetchBubblesMax);
+               "Stat for Top-Down Methodology, number of cycles in which no "
+               "instructions are delivered to backend") {
+  idleCycles.prereq(idleCycles);
+  blockedCycles.prereq(blockedCycles);
+  runCycles.prereq(runCycles);
+  unblockCycles.prereq(unblockCycles);
+  squashCycles.prereq(squashCycles);
+  branchResolved.prereq(branchResolved);
+  branchMispred.prereq(branchMispred);
+  controlMispred.prereq(controlMispred);
+  decodedInsts.prereq(decodedInsts);
+  squashedInsts.prereq(squashedInsts);
+  fetchBubbles.prereq(fetchBubbles);
+  fetchBubblesMax.prereq(fetchBubblesMax);
 }
 
 void
@@ -588,8 +589,8 @@ Decode::tick()
         decode(status_change, tid);
 
         stats.fetchBubbles += fetchBubbles;
-        if (fetchBubbles == decodeWidth) 
-            stats.fetchBubblesMax++;
+        if (fetchBubbles == decodeWidth)
+          stats.fetchBubblesMax++;
     }
 
     if (status_change) {
@@ -614,11 +615,11 @@ Decode::decode(bool &status_change, ThreadID tid)
     //     check if stall conditions have passed
 
     if (decodeStatus[tid] == Blocked) {
-        fetchBubbles -= decodeWidth;
-        ++stats.blockedCycles;
+      fetchBubbles -= decodeWidth;
+      ++stats.blockedCycles;
     } else if (decodeStatus[tid] == Squashing) {
-        fetchBubbles -= decodeWidth;
-        ++stats.squashCycles;
+      fetchBubbles -= decodeWidth;
+      ++stats.squashCycles;
     }
 
     // Decode should try to decode as many instructions as its bandwidth

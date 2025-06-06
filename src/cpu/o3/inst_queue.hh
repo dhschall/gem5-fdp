@@ -573,9 +573,8 @@ class InstructionQueue
         statistics::Scalar vecAluAccesses;
     } iqIOStats;
 
-    public:
-    const IQStats& getStats() const { return iqStats; }
-
+  public:
+    const IQStats &getStats() const { return iqStats; }
 };
 
 } // namespace o3

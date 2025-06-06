@@ -168,36 +168,28 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
                "number cycles where commit BW limit reached"),
       ADD_STAT(committedInst, statistics::units::Count::get(),
                "Required for Top-Down, number of committed instructions"),
-      ADD_STAT(recoveryBubbles, statistics::units::Count::get(),
-               "Required for Top-Down, recovery bubbles")
-{
-    using namespace statistics;
+      ADD_STAT(recoveryBubblesMissprediction, statistics::units::Cycle::get(),
+               "Required for Top-Down, recovery bubbles"),
+      ADD_STAT(recoveryBubblesMemoryNuke, statistics::units::Cycle::get(),
+               "Required for Top-Down, recovery bubbles") {
+  using namespace statistics;
 
-    commitSquashedInsts.prereq(commitSquashedInsts);
-    commitNonSpecStalls.prereq(commitNonSpecStalls);
-    branchMispredicts.prereq(branchMispredicts);
+  commitSquashedInsts.prereq(commitSquashedInsts);
+  commitNonSpecStalls.prereq(commitNonSpecStalls);
+  branchMispredicts.prereq(branchMispredicts);
 
-    numCommittedDist
-        .init(0,commit->commitWidth,1)
-        .flags(statistics::pdf);
+  numCommittedDist.init(0, commit->commitWidth, 1).flags(statistics::pdf);
 
-    amos
-        .init(cpu->numThreads)
-        .flags(total);
+  amos.init(cpu->numThreads).flags(total);
 
-    membars
-        .init(cpu->numThreads)
-        .flags(total);
+  membars.init(cpu->numThreads).flags(total);
 
-    functionCalls
-        .init(commit->numThreads)
-        .flags(total);
+  functionCalls.init(commit->numThreads).flags(total);
 
-    committedInstType
-        .init(commit->numThreads,enums::Num_OpClass)
-        .flags(total | pdf | dist);
+  committedInstType.init(commit->numThreads, enums::Num_OpClass)
+      .flags(total | pdf | dist);
 
-    committedInstType.ysubnames(enums::OpClassStrings);
+  committedInstType.ysubnames(enums::OpClassStrings);
 }
 
 void
@@ -965,6 +957,12 @@ Commit::commitInsts()
             DPRINTF(Commit, "Retiring squashed instruction from "
                     "ROB.\n");
 
+            if (!isMissPredicted && !isMemoryViolation) {
+              stats.numMachineClear++;
+              isMemoryViolation = true;
+              recoveryBubbleStart = cpu->curCycle();
+            }
+
             rob->retireHead(commit_thread);
 
             ++stats.commitSquashedInsts;
@@ -997,15 +995,22 @@ Commit::commitInsts()
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
 
-                if (ismispred) {
-                    ismispred = false;
-                    stats.recoveryBubbles += (cpu->curCycle() - lastCommitCycle) * renameWidth;
+                if (isMissPredicted) {
+                  stats.recoveryBubblesMissprediction +=
+                      uint64_t(cpu->curCycle() - recoveryBubbleStart);
+                } else if (isMemoryViolation) {
+                  stats.recoveryBubblesMemoryNuke +=
+                      uint64_t(cpu->curCycle() - recoveryBubbleStart);
                 }
+
+                isMemoryViolation = false;
+                isMissPredicted = false;
+
                 if (head_inst->mispredicted()) {
-                    ismispred = true;
+                  recoveryBubbleStart = cpu->curCycle();
+                  isMissPredicted = true;
                 }
-                
-                lastCommitCycle = cpu->curCycle();
+
                 // hardware transactional memory
 
                 // update nesting depth

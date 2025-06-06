@@ -605,7 +605,7 @@ class CPU : public BaseCPU
         struct TopDownStats : statistics::Group {
           TopDownStats(CPU *cpu);
 
-          struct TopDownL1 : statistics::Group{
+          struct TopDownL1 : statistics::Group {
             TopDownL1(CPU *cpu);
             statistics::Formula frontendBound;
             statistics::Formula badSpeculation;
@@ -618,6 +618,12 @@ class CPU : public BaseCPU
             statistics::Formula fetchLatency;
             statistics::Formula fetchBandwidth;
           } topDownFbL2;
+
+          // struct TopDownBadSpeculationL2 : statistics::Group{
+          //   TopDownBadSpeculationL2(CPU *cpu);
+          //   statistics::Formula branchMissPredicts;
+          //   statistics::Formula machineClears;
+          // }
 
           struct TopDownBackendBoundL2 : statistics::Group {
             TopDownBackendBoundL2(CPU *cpu);

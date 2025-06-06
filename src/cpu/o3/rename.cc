@@ -118,7 +118,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(IQFullEvents, statistics::units::Count::get(),
                "Number of times rename has blocked due to IQ full"),
       ADD_STAT(LQFullEvents, statistics::units::Count::get(),
-               "Number of times rename has blocked due to LQ full" ),
+               "Number of times rename has blocked due to LQ full"),
       ADD_STAT(SQFullEvents, statistics::units::Count::get(),
                "Number of times rename has blocked due to SQ full"),
       ADD_STAT(fullRegistersEvents, statistics::units::Count::get(),
@@ -147,46 +147,48 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
                "count of temporary serializing insts renamed"),
       ADD_STAT(skidInsts, statistics::units::Count::get(),
                "count of insts added to the skid buffer"),
-      ADD_STAT(intReturned, statistics::units::Count::get(),
-               "count of registers freed and written back to integer free list"),
+      ADD_STAT(
+          intReturned, statistics::units::Count::get(),
+          "count of registers freed and written back to integer free list"),
       ADD_STAT(fpReturned, statistics::units::Count::get(),
-               "count of registers freed and written back to floating point free list"),
+               "count of registers freed and written back to floating point "
+               "free list"),
       ADD_STAT(storeStalls, statistics::units::Cycle::get(),
-               "Number of cycles with few uops executed and no more stores can be issued")
-{
-    squashCycles.prereq(squashCycles);
-    idleCycles.prereq(idleCycles);
-    blockCycles.prereq(blockCycles);
-    serializeStallCycles.flags(statistics::total);
-    runCycles.prereq(idleCycles);
-    unblockCycles.prereq(unblockCycles);
+               "Number of cycles with few uops executed and no more stores can "
+               "be issued") {
+  squashCycles.prereq(squashCycles);
+  idleCycles.prereq(idleCycles);
+  blockCycles.prereq(blockCycles);
+  serializeStallCycles.flags(statistics::total);
+  runCycles.prereq(idleCycles);
+  unblockCycles.prereq(unblockCycles);
 
-    renamedInsts.prereq(renamedInsts);
-    squashedInsts.prereq(squashedInsts);
+  renamedInsts.prereq(renamedInsts);
+  squashedInsts.prereq(squashedInsts);
 
-    ROBFullEvents.prereq(ROBFullEvents);
-    IQFullEvents.prereq(IQFullEvents);
-    LQFullEvents.prereq(LQFullEvents);
-    SQFullEvents.prereq(SQFullEvents);
-    fullRegistersEvents.prereq(fullRegistersEvents);
+  ROBFullEvents.prereq(ROBFullEvents);
+  IQFullEvents.prereq(IQFullEvents);
+  LQFullEvents.prereq(LQFullEvents);
+  SQFullEvents.prereq(SQFullEvents);
+  fullRegistersEvents.prereq(fullRegistersEvents);
 
-    renamedOperands.prereq(renamedOperands);
-    lookups.prereq(lookups);
-    intLookups.prereq(intLookups);
-    fpLookups.prereq(fpLookups);
-    vecLookups.prereq(vecLookups);
-    vecPredLookups.prereq(vecPredLookups);
-    matLookups.prereq(matLookups);
+  renamedOperands.prereq(renamedOperands);
+  lookups.prereq(lookups);
+  intLookups.prereq(intLookups);
+  fpLookups.prereq(fpLookups);
+  vecLookups.prereq(vecLookups);
+  vecPredLookups.prereq(vecPredLookups);
+  matLookups.prereq(matLookups);
 
-    committedMaps.prereq(committedMaps);
-    undoneMaps.prereq(undoneMaps);
-    serializing.flags(statistics::total);
-    tempSerializing.flags(statistics::total);
-    skidInsts.flags(statistics::total);
+  committedMaps.prereq(committedMaps);
+  undoneMaps.prereq(undoneMaps);
+  serializing.flags(statistics::total);
+  tempSerializing.flags(statistics::total);
+  skidInsts.flags(statistics::total);
 
-    intReturned.prereq(intReturned);
-    fpReturned.prereq(fpReturned);
-    storeStalls.prereq(storeStalls);
+  intReturned.prereq(intReturned);
+  fpReturned.prereq(fpReturned);
+  storeStalls.prereq(storeStalls);
 }
 
 void
@@ -631,7 +633,7 @@ Rename::renameInsts(ThreadID tid)
 
         DynInstPtr inst = insts_to_rename.front();
 
-        //For all kind of instructions, check ROB and IQ first. For load
+        //For all kind of instructions, check ROB and IQ first For load
         //instruction, check LQ size and take into account the inflight loads
         //For store instruction, check SQ size and take into account the
         //inflight stores
@@ -652,12 +654,11 @@ Rename::renameInsts(ThreadID tid)
                         tid);
                 source = SQ;
                 incrFullStat(source);
-                if (iew_ptr->fuPool->isDrained()){
-                    stats.storeStalls++;
+                if (iew_ptr->fuPool->isDrained()) {
+                  stats.storeStalls++;
                 }
                 break;
             }
-
         }
 
         insts_to_rename.pop_front();

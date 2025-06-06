@@ -487,20 +487,25 @@ class Commit
         statistics::Vector functionCalls;
         /** Committed instructions by instruction type (OpClass) */
         statistics::Vector2d committedInstType;
-
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
-        /** TDM, Number of commited instructions*/
+        /** Top Down Methodology, Number of commited instructions*/
         statistics::Scalar committedInst;
-        /** TDM,Recovery bubbles*/
-        statistics::Scalar recoveryBubbles;
+        statistics::Scalar numMachineClear;
+        /** Top Down Methodology, Recovery bubbles, miss predictions*/
+        statistics::Scalar recoveryBubblesMissprediction;
+        /** Top Down Methodology, Recovery bubbles, memory nukes */
+        statistics::Scalar recoveryBubblesMemoryNuke;
+
     } stats;
 
-    bool ismispred = false; uint64_t lastCommitCycle = 0; //TDM
+    // Top Down Methodology
+    Cycles recoveryBubbleStart;
+    bool isMissPredicted = false;
+    bool isMemoryViolation = false;
 
   public:
-    const CommitStats& getStats() const { return stats; }
-
+    const CommitStats &getStats() const { return stats; }
 };
 
 } // namespace o3

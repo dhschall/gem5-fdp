@@ -205,8 +205,7 @@ class FUPool : public SimObject
     void takeOverFrom() {};
 
     /** Returns the number of free FUs */
-    int numBusyFUs() const
-    {
+    int numBusyFUs() const {
       int busy = 0;
       for (int i = 0; i < numFU; ++i) {
         if (unitBusy[i])

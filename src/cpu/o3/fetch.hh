@@ -592,9 +592,6 @@ class Fetch
         /** Rate of how often fetch was idle. */
         statistics::Formula idleRate;
     } fetchStats;
-
-  public:
-    const FetchStatGroup& getStats() const { return fetchStats; }
 };
 
 } // namespace o3

@@ -545,7 +545,7 @@ class Rename
     } stats;
 
   public:
-    const RenameStats& getStats() const { return stats; }
+    const RenameStats &getStats() const { return stats; }
 
     unsigned getWidth() const { return renameWidth; }
 };
