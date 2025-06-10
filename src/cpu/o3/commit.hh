@@ -492,18 +492,7 @@ class Commit
         statistics::Scalar commitEligibleSamples;
         /** Top Down Methodology, Number of commited instructions*/
         statistics::Scalar committedInst;
-        statistics::Scalar numMachineClear;
-        /** Top Down Methodology, Recovery bubbles, miss predictions*/
-        statistics::Scalar recoveryBubblesMissprediction;
-        /** Top Down Methodology, Recovery bubbles, memory nukes */
-        statistics::Scalar recoveryBubblesMemoryNuke;
-
     } stats;
-
-    // Top Down Methodology
-    Cycles recoveryBubbleStart;
-    bool isMissPredicted = false;
-    bool isMemoryViolation = false;
 
   public:
     const CommitStats &getStats() const { return stats; }

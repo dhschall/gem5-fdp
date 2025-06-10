@@ -337,6 +337,8 @@ class Decode
 
   public:
     const DecodeStats &getStats() const { return stats; }
+
+    Cycles getFetchToDecodeDelay() { return fetchToDecodeDelay; }
 };
 
 } // namespace o3

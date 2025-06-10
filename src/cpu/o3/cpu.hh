@@ -641,13 +641,13 @@ class CPU : public BaseCPU
             statistics::Formula storeBound;
           } topDownBbMem;
 
-          struct TopDownFrontendBoundL3 : statistics::Group {
-            TopDownFrontendBoundL3(CPU *cpu);
-            statistics::Formula iTlbMiss;
-            statistics::Formula iCacheMiss;
-            statistics::Formula branchResteer;
-            statistics::Formula others;
-          } topDownFlL3;
+          // struct TopDownFrontendBoundL3 : statistics::Group {
+          //   TopDownFrontendBoundL3(CPU *cpu);
+          //   statistics::Formula iTlbMiss;
+          //   statistics::Formula iCacheMiss;
+          //   statistics::Formula branchResteer;
+          //   statistics::Formula others;
+          // } topDownFlL3;
 
         } topDownStats;
 

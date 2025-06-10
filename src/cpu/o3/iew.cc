@@ -1331,6 +1331,7 @@ IEW::executeInsts()
 
                 ++iewStats.memOrderViolationEvents;
             }
+
         } else {
             // Reset any state associated with redirects that will not
             // be used.

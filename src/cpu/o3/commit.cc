@@ -167,11 +167,7 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
                "number cycles where commit BW limit reached"),
       ADD_STAT(committedInst, statistics::units::Count::get(),
-               "Required for Top-Down, number of committed instructions"),
-      ADD_STAT(recoveryBubblesMissprediction, statistics::units::Cycle::get(),
-               "Required for Top-Down, recovery bubbles"),
-      ADD_STAT(recoveryBubblesMemoryNuke, statistics::units::Cycle::get(),
-               "Required for Top-Down, recovery bubbles") 
+               "Required for Top-Down, number of committed instructions")
 {
     using namespace statistics;
 
@@ -967,12 +963,6 @@ Commit::commitInsts()
             DPRINTF(Commit, "Retiring squashed instruction from "
                     "ROB.\n");
 
-            if (!isMissPredicted && !isMemoryViolation) {
-              stats.numMachineClear++;
-              isMemoryViolation = true;
-              recoveryBubbleStart = cpu->curCycle();
-            }
-
             rob->retireHead(commit_thread);
 
             ++stats.commitSquashedInsts;
@@ -1004,22 +994,6 @@ Commit::commitInsts()
                     ->committedInstType[head_inst->opClass()]++;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
-
-                if (isMissPredicted) {
-                  stats.recoveryBubblesMissprediction +=
-                      uint64_t(cpu->curCycle() - recoveryBubbleStart);
-                } else if (isMemoryViolation) {
-                  stats.recoveryBubblesMemoryNuke +=
-                      uint64_t(cpu->curCycle() - recoveryBubbleStart);
-                }
-
-                isMemoryViolation = false;
-                isMissPredicted = false;
-
-                if (head_inst->mispredicted()) {
-                  recoveryBubbleStart = cpu->curCycle();
-                  isMissPredicted = true;
-                }
 
                 // hardware transactional memory
 

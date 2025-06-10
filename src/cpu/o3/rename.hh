@@ -548,6 +548,8 @@ class Rename
     const RenameStats &getStats() const { return stats; }
 
     unsigned getWidth() const { return renameWidth; }
+
+    int getDecodeToRenameDelay() { return decodeToRenameDelay; }
 };
 
 } // namespace o3

@@ -371,7 +371,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
 CPU::CPUStats::TopDownStats::TopDownStats(CPU *cpu)
     : statistics::Group(cpu, "TopDownStats"), topDownL1(cpu), topDownFbL2(cpu),
-      topDownBsL2(cpu), topDownBbL2(cpu), topDownBbMem(cpu), topDownFlL3(cpu) {}
+      topDownBsL2(cpu), topDownBbL2(cpu), topDownBbMem(cpu) {}
 
 CPU::CPUStats::TopDownStats::TopDownL1::TopDownL1(CPU *cpu)
     : statistics::Group(cpu, "TopDownL1"),
@@ -387,28 +387,39 @@ CPU::CPUStats::TopDownStats::TopDownL1::TopDownL1(CPU *cpu)
       ADD_STAT(backendBound,
                statistics::units::Rate<statistics::units::Count,
                                        statistics::units::Count>::get(),
-               "Backend Bound, fraction of slots lost due to backend resource "
-               "constraints."),
+               "Backend Bound, fraction of slots lost due to backend resource"
+               " constraints."),
       ADD_STAT(
           retiring,
           statistics::units::Rate<statistics::units::Count,
                                   statistics::units::Count>::get(),
           "Retiring, fraction of slots successfully retired by the backend") {
-  // L1
-  frontendBound = cpu->decode.getStats().fetchBubbles /
-                  (cpu->rename.getWidth() * cpu->baseStats.numCycles);
+    // L1
+    frontendBound = cpu->decode.getStats().fetchBubbles /
+                    (cpu->rename.getWidth() * cpu->baseStats.numCycles);
 
-  badSpeculation = (cpu->rename.getStats().renamedInsts -
-                    cpu->commit.getStats().committedInst +
-                    (cpu->commit.getStats().recoveryBubblesMissprediction +
-                    cpu->commit.getStats().recoveryBubblesMemoryNuke) 
-                    * cpu->rename.getWidth()) /
-                   (cpu->rename.getWidth() * cpu->baseStats.numCycles);
+    int recoveryCycleToDecode = cpu->decode.getFetchToDecodeDelay();
 
-  retiring = cpu->commit.getStats().committedInst /
-             (cpu->rename.getWidth() * cpu->baseStats.numCycles);
-             
-  backendBound = 1 - (frontendBound + badSpeculation + retiring);
+    int recoveryCycleToIEW = cpu->decode.getFetchToDecodeDelay() + 
+    cpu->rename.getDecodeToRenameDelay() + cpu->iew.getRenameToIEWDelay();
+
+    auto wastedSlots = cpu->rename.getStats().renamedInsts -
+                cpu->commit.getStats().committedInst;
+    
+    auto decodeBranchMispred = (int)recoveryCycleToDecode 
+                * cpu->decode.getStats().branchMispred;
+
+    auto iewBranchMispred = (int)recoveryCycleToIEW 
+                * cpu->iew.getStats().branchMispredicts;
+
+    badSpeculation = (wastedSlots + (decodeBranchMispred + iewBranchMispred) 
+                * cpu->rename.getWidth()) /
+                (cpu->rename.getWidth() * cpu->baseStats.numCycles);
+
+    retiring = cpu->commit.getStats().committedInst /
+                (cpu->rename.getWidth() * cpu->baseStats.numCycles);
+                
+    backendBound = 1 - (frontendBound + badSpeculation + retiring);
 }
 
 CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(
@@ -441,50 +452,21 @@ CPU::CPUStats::TopDownStats::TopDownBadSpeculationL2
       ADD_STAT(machineClears,
       statistics::units::Rate<statistics::units::Count,
       statistics::units::Count>::get(),
-               "Machine Clears")
+               "Memory Order Violations")
 {
-    branchMissPredicts = cpu->commit.getStats().recoveryBubblesMissprediction 
-                    / (cpu->commit.getStats().recoveryBubblesMissprediction +
-                    cpu->commit.getStats().recoveryBubblesMemoryNuke);
+    auto &iewMissPred = cpu->iew.getStats().branchMispredicts;
+    auto &decodeMissPred = cpu->decode.getStats().branchMispred;
 
-    machineClears = cpu->commit.getStats().recoveryBubblesMemoryNuke /
-    (cpu->commit.getStats().recoveryBubblesMissprediction +
-                    cpu->commit.getStats().recoveryBubblesMemoryNuke);
+    auto brMispredictFraction = (iewMissPred + decodeMissPred) / (iewMissPred 
+    + decodeMissPred + cpu->iew.getStats().memOrderViolationEvents);
+
+    branchMissPredicts = brMispredictFraction 
+        * cpu->cpuStats.topDownStats.topDownL1.badSpeculation;
+
+    machineClears = cpu->cpuStats.topDownStats.topDownL1.badSpeculation
+        - branchMissPredicts;
 }
 
-CPU::CPUStats::TopDownStats::TopDownFrontendBoundL3
-::TopDownFrontendBoundL3(CPU *cpu)
-    : statistics::Group(cpu, "TopDownL3_FrontendBound"),
-      ADD_STAT(iTlbMiss,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
-               "Instruction TLB Miss Stalls"),
-      ADD_STAT(iCacheMiss,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
-               "Instruction Cache Miss Stalls"),
-      ADD_STAT(branchResteer,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
-               "Branch Resteer Stalls"),
-      ADD_STAT(others,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
-               "Others")
-{
-    auto sum = cpu->fetchStats[0]->icacheStallCycles + 
-    cpu->fetch.getStats().tlbCycles + cpu->fetch.getStats().ftqStallCycles
-    + cpu->fetch.getStats().miscStallCycles;
-    
-    iTlbMiss = cpu->fetch.getStats().tlbCycles / sum;
-
-    //TODO: change 0 with tid?
-    iCacheMiss = cpu->fetchStats[0]->icacheStallCycles / sum;
-
-    branchResteer = cpu->fetch.getStats().ftqStallCycles / sum;
-
-    others = cpu->fetch.getStats().miscStallCycles / sum;
-}
 
 CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
     CPU *cpu)
