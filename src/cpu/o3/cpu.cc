@@ -371,7 +371,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
 CPU::CPUStats::TopDownStats::TopDownStats(CPU *cpu)
     : statistics::Group(cpu, "TopDownStats"), topDownL1(cpu), topDownFbL2(cpu),
-      topDownBbL2(cpu), topDownBbMem(cpu) {}
+      topDownBsL2(cpu), topDownBbL2(cpu), topDownBbMem(cpu), topDownFlL3(cpu) {}
 
 CPU::CPUStats::TopDownStats::TopDownL1::TopDownL1(CPU *cpu)
     : statistics::Group(cpu, "TopDownL1"),
@@ -431,25 +431,60 @@ CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(
       cpu->cpuStats.topDownStats.topDownL1.frontendBound - fetchLatency;
 }
 
-// CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(CPU
-// *cpu)
-//     : statistics::Group(cpu, "TopDownL2_FrontendBound"),
-//       ADD_STAT(fetchLatency,
-//       statistics::units::Rate<statistics::units::Count,
-//       statistics::units::Count>::get(),
-//                "Fetch Latency Bound, frontend stalls due to instruction cache
-//                inefficiency"),
-//       ADD_STAT(fetchBandwidth,
-//       statistics::units::Rate<statistics::units::Count,
-//       statistics::units::Count>::get(),
-//                "Fetch Bandwidth Bound, frontend stalls due to decoder
-//                inefficiency")
-// {
-//     // Frontend L2
-//     fetchLatency = cpu->decode.getStats().fetchBubblesMax /
-//     (cpu->baseStats.numCycles); fetchBandwidth =
-//     cpu->cpuStats.topDownStats.topDownL1.frontendBound - fetchLatency;
-// }
+CPU::CPUStats::TopDownStats::TopDownBadSpeculationL2
+::TopDownBadSpeculationL2(CPU *cpu)
+    : statistics::Group(cpu, "TopDownL2_BadSpeculation"),
+      ADD_STAT(branchMissPredicts,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Branch Miss Predicts"),
+      ADD_STAT(machineClears,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Machine Clears")
+{
+    branchMissPredicts = cpu->commit.getStats().recoveryBubblesMissprediction 
+                    / (cpu->commit.getStats().recoveryBubblesMissprediction +
+                    cpu->commit.getStats().recoveryBubblesMemoryNuke);
+
+    machineClears = cpu->commit.getStats().recoveryBubblesMemoryNuke /
+    (cpu->commit.getStats().recoveryBubblesMissprediction +
+                    cpu->commit.getStats().recoveryBubblesMemoryNuke);
+}
+
+CPU::CPUStats::TopDownStats::TopDownFrontendBoundL3
+::TopDownFrontendBoundL3(CPU *cpu)
+    : statistics::Group(cpu, "TopDownL3_FrontendBound"),
+      ADD_STAT(iTlbMiss,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Instruction TLB Miss Stalls"),
+      ADD_STAT(iCacheMiss,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Instruction Cache Miss Stalls"),
+      ADD_STAT(branchResteer,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Branch Resteer Stalls"),
+      ADD_STAT(others,
+      statistics::units::Rate<statistics::units::Count,
+      statistics::units::Count>::get(),
+               "Others")
+{
+    auto sum = cpu->fetchStats[0]->icacheStallCycles + 
+    cpu->fetch.getStats().tlbCycles + cpu->fetch.getStats().ftqStallCycles
+    + cpu->fetch.getStats().miscStallCycles;
+    
+    iTlbMiss = cpu->fetch.getStats().tlbCycles / sum;
+
+    //TODO: change 0 with tid?
+    iCacheMiss = cpu->fetchStats[0]->icacheStallCycles / sum;
+
+    branchResteer = cpu->fetch.getStats().ftqStallCycles / sum;
+
+    others = cpu->fetch.getStats().miscStallCycles / sum;
+}
 
 CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
     CPU *cpu)
@@ -469,8 +504,6 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
                      cpu->iew.instQueue.getStats().numInstsExec1 +
                      cpu->iew.instQueue.getStats().numInstsExec2) /
                     (cpu->baseStats.numCycles);
-  // memoryBound = (cpu->iew.instQueue.getStats().loadStallCycles +
-  // cpu->rename.getStats().SQFullEvents) / (cpu->baseStats.numCycles);
   memoryBound = (cpu->iew.instQueue.getStats().loadStallCycles +
                  cpu->rename.getStats().storeStalls) /
                 (cpu->baseStats.numCycles);

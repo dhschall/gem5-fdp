@@ -164,19 +164,20 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
                "delivered to backend"),
       ADD_STAT(fetchBubblesMax, statistics::units::Count::get(),
                "Stat for Top-Down Methodology, number of cycles in which no "
-               "instructions are delivered to backend") {
-  idleCycles.prereq(idleCycles);
-  blockedCycles.prereq(blockedCycles);
-  runCycles.prereq(runCycles);
-  unblockCycles.prereq(unblockCycles);
-  squashCycles.prereq(squashCycles);
-  branchResolved.prereq(branchResolved);
-  branchMispred.prereq(branchMispred);
-  controlMispred.prereq(controlMispred);
-  decodedInsts.prereq(decodedInsts);
-  squashedInsts.prereq(squashedInsts);
-  fetchBubbles.prereq(fetchBubbles);
-  fetchBubblesMax.prereq(fetchBubblesMax);
+               "instructions are delivered to backend") 
+{
+    idleCycles.prereq(idleCycles);
+    blockedCycles.prereq(blockedCycles);
+    runCycles.prereq(runCycles);
+    unblockCycles.prereq(unblockCycles);
+    squashCycles.prereq(squashCycles);
+    branchResolved.prereq(branchResolved);
+    branchMispred.prereq(branchMispred);
+    controlMispred.prereq(controlMispred);
+    decodedInsts.prereq(decodedInsts);
+    squashedInsts.prereq(squashedInsts);
+    fetchBubbles.prereq(fetchBubbles);
+    fetchBubblesMax.prereq(fetchBubblesMax);
 }
 
 void
@@ -590,7 +591,7 @@ Decode::tick()
 
         stats.fetchBubbles += fetchBubbles;
         if (fetchBubbles == decodeWidth)
-          stats.fetchBubblesMax++;
+            stats.fetchBubblesMax++;
     }
 
     if (status_change) {
@@ -663,7 +664,9 @@ Decode::decodeInsts(ThreadID tid)
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
-        return;
+        // if (timeBuffer->access(tid)->fetchInfo[tid].squash)
+        //     fetchBubbles -= decodeWidth;
+        // return;
     } else if (decodeStatus[tid] == Unblocking) {
         DPRINTF(Decode, "[tid:%i] Unblocking, removing insts from skid "
                 "buffer.\n",tid);

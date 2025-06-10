@@ -487,6 +487,7 @@ class Commit
         statistics::Vector functionCalls;
         /** Committed instructions by instruction type (OpClass) */
         statistics::Vector2d committedInstType;
+
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
         /** Top Down Methodology, Number of commited instructions*/

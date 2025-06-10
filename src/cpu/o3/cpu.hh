@@ -619,11 +619,11 @@ class CPU : public BaseCPU
             statistics::Formula fetchBandwidth;
           } topDownFbL2;
 
-          // struct TopDownBadSpeculationL2 : statistics::Group{
-          //   TopDownBadSpeculationL2(CPU *cpu);
-          //   statistics::Formula branchMissPredicts;
-          //   statistics::Formula machineClears;
-          // }
+          struct TopDownBadSpeculationL2 : statistics::Group{
+            TopDownBadSpeculationL2(CPU *cpu);
+            statistics::Formula branchMissPredicts;
+            statistics::Formula machineClears;
+          } topDownBsL2;
 
           struct TopDownBackendBoundL2 : statistics::Group {
             TopDownBackendBoundL2(CPU *cpu);
@@ -640,6 +640,14 @@ class CPU : public BaseCPU
             statistics::Formula extMemBound;
             statistics::Formula storeBound;
           } topDownBbMem;
+
+          struct TopDownFrontendBoundL3 : statistics::Group {
+            TopDownFrontendBoundL3(CPU *cpu);
+            statistics::Formula iTlbMiss;
+            statistics::Formula iCacheMiss;
+            statistics::Formula branchResteer;
+            statistics::Formula others;
+          } topDownFlL3;
 
         } topDownStats;
 
