@@ -589,9 +589,12 @@ Decode::tick()
 
         decode(status_change, tid);
 
-        stats.fetchBubbles += fetchBubbles;
-        if (fetchBubbles == decodeWidth)
+        // Check if branch missprediction is detected while decoding
+        if (!(decodeStatus[tid] == Squashing)) {
+          stats.fetchBubbles += fetchBubbles;
+          if (fetchBubbles == decodeWidth)
             stats.fetchBubblesMax++;
+        }
     }
 
     if (status_change) {
@@ -664,9 +667,7 @@ Decode::decodeInsts(ThreadID tid)
                 " early.\n",tid);
         // Should I change the status to idle?
         ++stats.idleCycles;
-        // if (timeBuffer->access(tid)->fetchInfo[tid].squash)
-        //     fetchBubbles -= decodeWidth;
-        // return;
+        return;
     } else if (decodeStatus[tid] == Unblocking) {
         DPRINTF(Decode, "[tid:%i] Unblocking, removing insts from skid "
                 "buffer.\n",tid);

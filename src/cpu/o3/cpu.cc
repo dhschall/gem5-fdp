@@ -394,32 +394,43 @@ CPU::CPUStats::TopDownStats::TopDownL1::TopDownL1(CPU *cpu)
           statistics::units::Rate<statistics::units::Count,
                                   statistics::units::Count>::get(),
           "Retiring, fraction of slots successfully retired by the backend") {
-    // L1
-    frontendBound = cpu->decode.getStats().fetchBubbles /
-                    (cpu->rename.getWidth() * cpu->baseStats.numCycles);
 
-    int recoveryCycleToDecode = cpu->decode.getFetchToDecodeDelay();
+  // Total Slots
+  statistics::Temp totalSlots =
+      cpu->rename.getWidth() * cpu->baseStats.numCycles;
 
-    int recoveryCycleToIEW = cpu->decode.getFetchToDecodeDelay() + 
-    cpu->rename.getDecodeToRenameDelay() + cpu->iew.getRenameToIEWDelay();
+  // L1 Frontend Bound
+  frontendBound = cpu->fetch.getStats().fetchBubbles / (totalSlots);
 
-    auto wastedSlots = cpu->rename.getStats().renamedInsts -
-                cpu->commit.getStats().committedInst;
-    
-    auto decodeBranchMispred = (int)recoveryCycleToDecode 
-                * cpu->decode.getStats().branchMispred;
+  // L1 Bad Speculation
+  // Recovery cycles for mispredictions detected at Decode
+  int recoveryCycleToDecode = cpu->decode.getFetchToDecodeDelay();
 
-    auto iewBranchMispred = (int)recoveryCycleToIEW 
-                * cpu->iew.getStats().branchMispredicts;
+  auto decodeBranchMispred =
+      (int)recoveryCycleToDecode * cpu->decode.getStats().branchMispred;
 
-    badSpeculation = (wastedSlots + (decodeBranchMispred + iewBranchMispred) 
-                * cpu->rename.getWidth()) /
-                (cpu->rename.getWidth() * cpu->baseStats.numCycles);
+  // Recovery cycles for mispredictions detected at IEW
+  int recoveryCycleToIEW = cpu->decode.getFetchToDecodeDelay() +
+                           cpu->rename.getDecodeToRenameDelay() +
+                           cpu->iew.getRenameToIEWDelay();
 
-    retiring = cpu->commit.getStats().committedInst /
-                (cpu->rename.getWidth() * cpu->baseStats.numCycles);
-                
-    backendBound = 1 - (frontendBound + badSpeculation + retiring);
+  auto iewBadSpec =
+      (int)recoveryCycleToIEW * (cpu->iew.getStats().branchMispredicts +
+                                 cpu->iew.getStats().memOrderViolationEvents);
+
+  // Number of wasted slots due to bad speculation
+  auto wastedSlots = cpu->rename.getStats().renamedInsts -
+                     cpu->commit.getStats().committedInst;
+
+  badSpeculation = (wastedSlots + (decodeBranchMispred + iewBadSpec) *
+                                      cpu->rename.getWidth()) /
+                   (totalSlots);
+
+  // L1 Retiring
+  retiring = cpu->commit.getStats().committedInst / (totalSlots);
+
+  // L1 Backend Bound
+  backendBound = 1 - (frontendBound + badSpeculation + retiring);
 }
 
 CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(
@@ -437,36 +448,36 @@ CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(
                "inefficiency") {
   // Frontend L2
   fetchLatency =
-      cpu->decode.getStats().fetchBubblesMax / (cpu->baseStats.numCycles);
+      cpu->fetch.getStats().fetchBubblesMax / (cpu->baseStats.numCycles);
   fetchBandwidth =
       cpu->cpuStats.topDownStats.topDownL1.frontendBound - fetchLatency;
 }
 
-CPU::CPUStats::TopDownStats::TopDownBadSpeculationL2
-::TopDownBadSpeculationL2(CPU *cpu)
+CPU::CPUStats::TopDownStats::TopDownBadSpeculationL2 ::TopDownBadSpeculationL2(
+    CPU *cpu)
     : statistics::Group(cpu, "TopDownL2_BadSpeculation"),
       ADD_STAT(branchMissPredicts,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
+               statistics::units::Rate<statistics::units::Count,
+                                       statistics::units::Count>::get(),
                "Branch Miss Predicts"),
       ADD_STAT(machineClears,
-      statistics::units::Rate<statistics::units::Count,
-      statistics::units::Count>::get(),
-               "Memory Order Violations")
-{
-    auto &iewMissPred = cpu->iew.getStats().branchMispredicts;
-    auto &decodeMissPred = cpu->decode.getStats().branchMispred;
+               statistics::units::Rate<statistics::units::Count,
+                                       statistics::units::Count>::get(),
+               "Memory Order Violations") {
+  auto &iewMissPred = cpu->iew.getStats().branchMispredicts;
+  auto &decodeMissPred = cpu->decode.getStats().branchMispred;
+  auto &memOrderViolations = cpu->iew.getStats().memOrderViolationEvents;
 
-    auto brMispredictFraction = (iewMissPred + decodeMissPred) / (iewMissPred 
-    + decodeMissPred + cpu->iew.getStats().memOrderViolationEvents);
+  auto brMispredictFraction =
+      (iewMissPred + decodeMissPred) /
+      (iewMissPred + decodeMissPred + memOrderViolations);
 
-    branchMissPredicts = brMispredictFraction 
-        * cpu->cpuStats.topDownStats.topDownL1.badSpeculation;
+  branchMissPredicts = brMispredictFraction *
+                       cpu->cpuStats.topDownStats.topDownL1.badSpeculation;
 
-    machineClears = cpu->cpuStats.topDownStats.topDownL1.badSpeculation
-        - branchMissPredicts;
+  machineClears =
+      cpu->cpuStats.topDownStats.topDownL1.badSpeculation - branchMissPredicts;
 }
-
 
 CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
     CPU *cpu)
@@ -486,10 +497,17 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
                      cpu->iew.instQueue.getStats().numInstsExec1 +
                      cpu->iew.instQueue.getStats().numInstsExec2) /
                     (cpu->baseStats.numCycles);
-  memoryBound = (cpu->iew.instQueue.getStats().loadStallCycles +
-                 cpu->rename.getStats().storeStalls) /
-                (cpu->baseStats.numCycles);
-  coreBound = executionStalls - memoryBound;
+  auto memoryBoundRaw = (cpu->iew.instQueue.getStats().loadStallCycles +
+                         cpu->rename.getStats().storeStalls) /
+                        (cpu->baseStats.numCycles);
+  auto coreBoundRaw = executionStalls - memoryBoundRaw;
+
+  auto &totalBackendBound = cpu->cpuStats.topDownStats.topDownL1.backendBound;
+
+  memoryBound =
+      memoryBoundRaw / (memoryBoundRaw + coreBoundRaw) * (totalBackendBound);
+  coreBound =
+      coreBoundRaw / (memoryBoundRaw + coreBoundRaw) * (totalBackendBound);
 }
 
 CPU::CPUStats::TopDownStats::TopDownBackendBoundL3::TopDownBackendBoundL3(
@@ -515,20 +533,32 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL3::TopDownBackendBoundL3(
                statistics::units::Rate<statistics::units::Count,
                                        statistics::units::Count>::get(),
                "Store Bound") {
+
+  auto &totalBackendBound = cpu->cpuStats.topDownStats.topDownBbL2.memoryBound;
+
   // Backend Bound / Memory Bound L3
-  l1Bound = (cpu->iew.instQueue.getStats().loadStallCycles -
-             cpu->iew.instQueue.getStats().L1miss) /
-            (cpu->baseStats.numCycles);
-  l2Bound = (cpu->iew.instQueue.getStats().L1miss -
-             cpu->iew.instQueue.getStats().L2miss) /
-            (cpu->baseStats.numCycles);
-  l3Bound = (cpu->iew.instQueue.getStats().L2miss -
-             cpu->iew.instQueue.getStats().L3miss) /
-            (cpu->baseStats.numCycles);
-  extMemBound =
+  auto l1BoundRaw = (cpu->iew.instQueue.getStats().loadStallCycles -
+                     cpu->iew.instQueue.getStats().L1miss) /
+                    (cpu->baseStats.numCycles);
+  auto l2BoundRaw = (cpu->iew.instQueue.getStats().L1miss -
+                     cpu->iew.instQueue.getStats().L2miss) /
+                    (cpu->baseStats.numCycles);
+  auto l3BoundRaw = (cpu->iew.instQueue.getStats().L2miss -
+                  cpu->iew.instQueue.getStats().L3miss) /
+                 (cpu->baseStats.numCycles);
+  auto extMemBoundRaw =
       (cpu->iew.instQueue.getStats().L3miss) / (cpu->baseStats.numCycles);
-  storeBound =
+  auto storeBoundRaw =
       (cpu->rename.getStats().storeStalls) / (cpu->baseStats.numCycles);
+
+  auto totalMemoryBound =
+      l1BoundRaw + l2BoundRaw + l3BoundRaw + extMemBoundRaw + storeBoundRaw;
+
+  l1Bound = l1BoundRaw / totalMemoryBound * totalBackendBound;
+  l2Bound = l2BoundRaw / totalMemoryBound * totalBackendBound;
+  l3Bound = l3BoundRaw / totalMemoryBound * totalBackendBound;
+  extMemBound = extMemBoundRaw / totalMemoryBound * totalBackendBound;
+  storeBound = storeBoundRaw / totalMemoryBound * totalBackendBound;
 }
 
 void
