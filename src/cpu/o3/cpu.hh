@@ -601,6 +601,56 @@ class CPU : public BaseCPU
         /** Stat for total number of cycles the CPU spends descheduled due to a
          * quiesce operation or waiting for an interrupt. */
         statistics::Scalar quiesceCycles;
+
+        struct TopDownStats : statistics::Group {
+          TopDownStats(CPU *cpu);
+
+          struct TopDownL1 : statistics::Group {
+            TopDownL1(CPU *cpu);
+            statistics::Formula frontendBound;
+            statistics::Formula badSpeculation;
+            statistics::Formula backendBound;
+            statistics::Formula retiring;
+          } topDownL1;
+
+          struct TopDownFrontendBoundL2 : statistics::Group {
+            TopDownFrontendBoundL2(CPU *cpu);
+            statistics::Formula fetchLatency;
+            statistics::Formula fetchBandwidth;
+          } topDownFbL2;
+
+          struct TopDownBadSpeculationL2 : statistics::Group{
+            TopDownBadSpeculationL2(CPU *cpu);
+            statistics::Formula branchMissPredicts;
+            statistics::Formula machineClears;
+          } topDownBsL2;
+
+          struct TopDownBackendBoundL2 : statistics::Group {
+            TopDownBackendBoundL2(CPU *cpu);
+            statistics::Formula executionStalls;
+            statistics::Formula memoryBound;
+            statistics::Formula coreBound;
+          } topDownBbL2;
+
+          struct TopDownBackendBoundL3 : statistics::Group {
+            TopDownBackendBoundL3(CPU *cpu);
+            statistics::Formula l1Bound;
+            statistics::Formula l2Bound;
+            statistics::Formula l3Bound;
+            statistics::Formula extMemBound;
+            statistics::Formula storeBound;
+          } topDownBbMem;
+
+          // struct TopDownFrontendBoundL3 : statistics::Group {
+          //   TopDownFrontendBoundL3(CPU *cpu);
+          //   statistics::Formula iTlbMiss;
+          //   statistics::Formula iCacheMiss;
+          //   statistics::Formula branchResteer;
+          //   statistics::Formula others;
+          // } topDownFlL3;
+
+        } topDownStats;
+
     } cpuStats;
 
   public:

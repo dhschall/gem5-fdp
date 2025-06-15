@@ -45,6 +45,7 @@
 
 #include "cpu/o3/cpu.hh"
 #include "cpu/o3/dyn_inst.hh"
+#include "cpu/o3/fu_pool.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
 #include "debug/Activity.hh"
@@ -147,10 +148,12 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
       ADD_STAT(skidInsts, statistics::units::Count::get(),
                "count of insts added to the skid buffer"),
       ADD_STAT(intReturned, statistics::units::Count::get(),
-               "count of registers freed and written back to integer free list"),
+          "count of registers freed and written back to integer free list"),
       ADD_STAT(fpReturned, statistics::units::Count::get(),
-               "count of registers freed and written back to floating point free list")
-
+               "count of registers freed and written back to floating point free list"),
+      ADD_STAT(storeStalls, statistics::units::Cycle::get(),
+               "Number of cycles with few uops executed and no more stores"
+               "can be issued") 
 {
     squashCycles.prereq(squashCycles);
     idleCycles.prereq(idleCycles);
@@ -184,6 +187,7 @@ Rename::RenameStats::RenameStats(statistics::Group *parent)
 
     intReturned.prereq(intReturned);
     fpReturned.prereq(fpReturned);
+    storeStalls.prereq(storeStalls);
 }
 
 void
@@ -649,6 +653,9 @@ Rename::renameInsts(ThreadID tid)
                         tid);
                 source = SQ;
                 incrFullStat(source);
+                if (iew_ptr->fuPool->isDrained()) {
+                  stats.storeStalls++;
+                }
                 break;
             }
         }

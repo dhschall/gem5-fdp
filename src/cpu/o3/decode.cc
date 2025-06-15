@@ -158,7 +158,13 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
       ADD_STAT(decodedInsts, statistics::units::Count::get(),
                "Number of instructions handled by decode"),
       ADD_STAT(squashedInsts, statistics::units::Count::get(),
-               "Number of squashed instructions handled by decode")
+               "Number of squashed instructions handled by decode"),
+      ADD_STAT(fetchBubbles, statistics::units::Count::get(),
+               "Stat for Top-Down Methodology, number of instructions not "
+               "delivered to backend"),
+      ADD_STAT(fetchBubblesMax, statistics::units::Count::get(),
+               "Stat for Top-Down Methodology, number of cycles in which no "
+               "instructions are delivered to backend") 
 {
     idleCycles.prereq(idleCycles);
     blockedCycles.prereq(blockedCycles);
@@ -170,6 +176,8 @@ Decode::DecodeStats::DecodeStats(CPU *cpu)
     controlMispred.prereq(controlMispred);
     decodedInsts.prereq(decodedInsts);
     squashedInsts.prereq(squashedInsts);
+    fetchBubbles.prereq(fetchBubbles);
+    fetchBubblesMax.prereq(fetchBubblesMax);
 }
 
 void
@@ -565,6 +573,8 @@ Decode::tick()
 
     toRenameIndex = 0;
 
+    fetchBubbles = decodeWidth;
+
     list<ThreadID>::iterator threads = activeThreads->begin();
     list<ThreadID>::iterator end = activeThreads->end();
 
@@ -578,6 +588,13 @@ Decode::tick()
         status_change =  checkSignalsAndUpdate(tid) || status_change;
 
         decode(status_change, tid);
+
+        // Check if branch missprediction is detected while decoding
+        if (!(decodeStatus[tid] == Squashing)) {
+          stats.fetchBubbles += fetchBubbles;
+          if (fetchBubbles == decodeWidth)
+            stats.fetchBubblesMax++;
+        }
     }
 
     if (status_change) {
@@ -602,9 +619,11 @@ Decode::decode(bool &status_change, ThreadID tid)
     //     check if stall conditions have passed
 
     if (decodeStatus[tid] == Blocked) {
-        ++stats.blockedCycles;
+      fetchBubbles -= decodeWidth;
+      ++stats.blockedCycles;
     } else if (decodeStatus[tid] == Squashing) {
-        ++stats.squashCycles;
+      fetchBubbles -= decodeWidth;
+      ++stats.squashCycles;
     }
 
     // Decode should try to decode as many instructions as its bandwidth
@@ -702,6 +721,7 @@ Decode::decodeInsts(ThreadID tid)
         ++toRenameIndex;
         ++stats.decodedInsts;
         --insts_available;
+        --fetchBubbles;
 
 #if TRACING_ON
         if (debug::O3PipeView) {

@@ -452,6 +452,20 @@ LSQ::sendRetryResp()
     dcachePort.sendRetryResp();
 }
 
+bool 
+LSQ::anyCacheLevelMisses(int level) {
+  for (LSQUnit &unit : thread) {
+    for (auto &entry : unit.loadQueue) {
+      if (entry.valid() && entry.hasRequest()) {
+        auto req = entry.request()->mainReq();
+        if (req->getAccessDepth() == level)
+          return true;
+      }
+    }
+  }
+  return false;
+}
+
 bool
 LSQ::recvTimingResp(PacketPtr pkt)
 {

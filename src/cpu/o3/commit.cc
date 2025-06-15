@@ -165,35 +165,27 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(committedInstType, statistics::units::Count::get(),
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
-               "number cycles where commit BW limit reached")
-{
-    using namespace statistics;
+               "number cycles where commit BW limit reached"),
+      ADD_STAT(committedInst, statistics::units::Count::get(),
+               "Required for Top-Down, number of committed instructions") {
+  using namespace statistics;
 
-    commitSquashedInsts.prereq(commitSquashedInsts);
-    commitNonSpecStalls.prereq(commitNonSpecStalls);
-    branchMispredicts.prereq(branchMispredicts);
+  commitSquashedInsts.prereq(commitSquashedInsts);
+  commitNonSpecStalls.prereq(commitNonSpecStalls);
+  branchMispredicts.prereq(branchMispredicts);
 
-    numCommittedDist
-        .init(0,commit->commitWidth,1)
-        .flags(statistics::pdf);
+  numCommittedDist.init(0, commit->commitWidth, 1).flags(statistics::pdf);
 
-    amos
-        .init(cpu->numThreads)
-        .flags(total);
+  amos.init(cpu->numThreads).flags(total);
 
-    membars
-        .init(cpu->numThreads)
-        .flags(total);
+  membars.init(cpu->numThreads).flags(total);
 
-    functionCalls
-        .init(commit->numThreads)
-        .flags(total);
+  functionCalls.init(commit->numThreads).flags(total);
 
-    committedInstType
-        .init(commit->numThreads,enums::Num_OpClass)
-        .flags(total | pdf | dist);
+  committedInstType.init(commit->numThreads, enums::Num_OpClass)
+      .flags(total | pdf | dist);
 
-    committedInstType.ysubnames(enums::OpClassStrings);
+  committedInstType.ysubnames(enums::OpClassStrings);
 }
 
 void
@@ -1104,6 +1096,7 @@ Commit::commitInsts()
 
     DPRINTF(CommitRate, "%i\n", num_committed);
     stats.numCommittedDist.sample(num_committed);
+    stats.committedInst += num_committed;
 
     if (num_committed == commitWidth) {
         stats.commitEligibleSamples++;
