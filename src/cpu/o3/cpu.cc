@@ -356,7 +356,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
                "Total number of cycles that CPU has spent quiesced or waiting "
                "for an interrupt"),
-      topDownStats(cpu) 
+      topDownStats(cpu)
 {
     // Register any of the O3CPU's stats here.
     timesIdled
@@ -515,7 +515,7 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
       memoryBoundRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
   coreBound =
       coreBoundRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
-  serializeStalls = 
+  serializeStalls =
      serializeStallsRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
 }
 
