@@ -490,7 +490,11 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
           coreBound,
           statistics::units::Rate<statistics::units::Count,
                                   statistics::units::Count>::get(),
-          "Core Bound, backend stalls due to functional unit constraints") {
+          "Core Bound, backend stalls due to functional unit constraints"),
+      ADD_STAT(serializeStalls,
+               statistics::units::Rate<statistics::units::Count,
+                                       statistics::units::Count>::get(),
+               "Stalls due to serialing of instructions in the rename stage") {
   // Backend L2
   executionStalls = (cpu->iew.instQueue.getStats().numInstsExec0 -
                      cpu->rename.getStats().idleCycles +
@@ -500,14 +504,19 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
   auto memoryBoundRaw = (cpu->iew.instQueue.getStats().loadStallCycles +
                          cpu->rename.getStats().storeStalls) /
                         (cpu->baseStats.numCycles);
-  auto coreBoundRaw = executionStalls - memoryBoundRaw;
+
+ auto serializeStallsRaw = (cpu->rename.getStats().serializeStallCycles)/(cpu->baseStats.numCycles);
+
+  auto coreBoundRaw = executionStalls - memoryBoundRaw - serializeStallsRaw;
 
   auto &totalBackendBound = cpu->cpuStats.topDownStats.topDownL1.backendBound;
 
   memoryBound =
-      memoryBoundRaw / (memoryBoundRaw + coreBoundRaw) * (totalBackendBound);
+      memoryBoundRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
   coreBound =
-      coreBoundRaw / (memoryBoundRaw + coreBoundRaw) * (totalBackendBound);
+      coreBoundRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
+  serializeStalls = 
+     serializeStallsRaw / (memoryBoundRaw + coreBoundRaw + serializeStallsRaw) * (totalBackendBound);
 }
 
 CPU::CPUStats::TopDownStats::TopDownBackendBoundL3::TopDownBackendBoundL3(

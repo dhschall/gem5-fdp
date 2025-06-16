@@ -630,6 +630,7 @@ class CPU : public BaseCPU
             statistics::Formula executionStalls;
             statistics::Formula memoryBound;
             statistics::Formula coreBound;
+            statistics::Formula serializeStalls;
           } topDownBbL2;
 
           struct TopDownBackendBoundL3 : statistics::Group {
