@@ -260,7 +260,13 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     ADD_STAT(pfAccuracy, statistics::units::Count::get(),
             "The prefetch accuracy"),
     ADD_STAT(pfCoverage, statistics::units::Count::get(),
-            "The prefetch coverage")
+            "The prefetch coverage"),
+    ADD_STAT(fetchBubbles, statistics::units::Count::get(),
+               "Stat for Top-Down Methodology, number of instructions not "
+               "delivered to backend"),
+      ADD_STAT(fetchBubblesMax, statistics::units::Count::get(),
+               "Stat for Top-Down Methodology, number of cycles in which no "
+               "instructions are delivered to backend")
 {
         predictedBranches
             .prereq(predictedBranches);
@@ -1498,6 +1504,20 @@ Fetch::tick()
         // Wrap around if at end of active threads list
         if (tid_itr == activeThreads->end())
             tid_itr = activeThreads->begin();
+    }
+
+    bool backendStall = false;
+
+    for (ThreadID i = 0; i < numThreads; ++i) {
+      if ((fetchStatus[i] == Squashing) || (stalls[i].decode) ||
+          (fetchStatus[i] == Blocked))
+        backendStall = true;
+    }
+
+    if (!backendStall) {
+      fetchStats.fetchBubbles += (fetchWidth - insts_to_decode);
+      if (insts_to_decode == 0)
+        fetchStats.fetchBubblesMax++;
     }
 
     // If there was activity this cycle, inform the CPU of it.
