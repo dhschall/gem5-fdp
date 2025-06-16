@@ -2012,7 +2012,7 @@ Fetch::fetch(bool &status_change)
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
                 "instruction encountered.\n", tid);
         fetchStats.stopFetchReasonReachBranchBW++;
-    } 
+    }
     if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth "
                 "for this cycle.\n", tid);
