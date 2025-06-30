@@ -248,7 +248,7 @@ LLBP::calculateKeys(Addr pc)
 uint64_t
 LLBP::calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, Addr pc)
 {
-    uint64_t key = pc >> instShiftAmt;
+    uint64_t key = 0;
     uint64_t tag = tageBi->tableTags[tageBank];
     uint64_t index = tageBi->tableIndices[tageBank];
     // Align the index to the upper bits of the key
@@ -257,7 +257,7 @@ LLBP::calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, Addr pc)
     index <<= uint64_t(TTWidth - 10);
     key ^= tag ^ index;
     key &= ((1ULL << uint64_t(TTWidth)) - 1ULL);
-    return uint64_t(key) << patternSetBankBits | uint64_t(fltTables[tageBank]);
+    return uint64_t(key) << 10 | uint64_t(fltTables[tageBank]);
 }
 
 Prediction
@@ -299,16 +299,17 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
            ++stats.baseHitsTotal;
 
         auto ccid = rcr.getCCID();
-        bi->index = tage_bank;
+        bi->index = 0;
         bi->cid = ccid;
         if (backingStorage.count(ccid)) {
             auto& context = backingStorage.at(ccid);
             PatternBufferEntry* pbe = patternBuffer.get(ccid);
             if (pbe) {
                 auto& entry = *pbe;
+                int bestPattern = findBestPattern(context, tage_bi, branch_pc);
+                bi->index = bestPattern >= 0 ? bestPattern : 0; 
                 Cycles additionalLatency = calculateRemainingLatency(entry.insertTime);
                 if (additionalLatency == 0) {
-                    bi->index = findBestPattern(context, tage_bi, branch_pc);
                     if (bi->index > 0)
                     {
                         uint64_t key = calculateKey(tage_bi, bi->index, branch_pc);
@@ -891,7 +892,7 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
                 patternHits.init(16).flags(statistics::pdf);
                 patternUseful.init(16).flags(statistics::pdf);
                 if (parent)
-                    patternSetOccupancy.init(parent->patternSetCapacity + 1).flags(statistics::pdf);
+                    patternSetOccupancy.init(parent->patternSetCapacity ? parent->patternSetCapacity + 1 : 16).flags(statistics::pdf);
                 else
                     patternSetOccupancy.init(17).flags(statistics::pdf);
 
