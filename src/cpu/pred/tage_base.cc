@@ -323,6 +323,11 @@ TAGEBase::updateGHist(ThreadID tid, uint64_t bv, uint8_t n)
         // Shift the next bit of the bit vector into the history
         // Use `at` to check for out-of-bounds access.
         tHist.ptGhist--;
+        if (tHist.ptGhist >= tHist.globalHist.size()) {
+            DPRINTF(Tage, "BUG: PTGhist out of bounds, resetting");
+            tHist.ptGhist = tHist.globalHist.size() - 1;
+        }
+
         tHist.globalHist.at(tHist.ptGhist) = (bv & 1) ? 1 : 0;
         bv >>= 1;
 
