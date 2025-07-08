@@ -406,7 +406,7 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
         --branchPredictRemaining[tid];
         DPRINTF(BAC,
             "[global] Stalling for Branch Predictor for %i more cycles.\n",
-            branchPredictRemaining
+            branchPredictRemaining[tid]
         );
         stalls[tid].bpu = true;
     } else {
@@ -459,6 +459,15 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
         return true;
     }
 
+    if (ftq->isFull(tid)) {
+        // If the FTQ is full, we need to block the BAC.
+        if (bacStatus[tid] != FTQFull) {
+            DPRINTF(BAC, "[tid:%i] FTQ is full. Blocking BAC.\n", tid);
+            bacStatus[tid] = FTQFull;
+        }
+        return true;
+    }
+
     // Now all stall/squash conditions are checked.
     // Attempt to run the BAC if not already running.
     if (ftq->isValid(tid) &&
@@ -482,7 +491,7 @@ BAC::squashBpuHistories(ThreadID tid)
 {
     if (!decoupledFrontEnd) return;
 
-    DPRINTF(BAC, "%s(tid:%i): FTQ sz: %i\n", tid, __func__, ftq->size(tid));
+    DPRINTF(BAC, "%s(tid:%i): FTQ sz: %i\n", __func__, tid, ftq->size(tid));
 
     unsigned n_fts = ftq->size(tid);
     if (n_fts == 0) return;

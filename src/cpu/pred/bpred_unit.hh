@@ -280,6 +280,7 @@ class BPredUnit : public SimObject
               inst(inst), type(getBranchType(inst)),
               call(inst->isCall()), uncond(inst->isUncondCtrl()),
               predTaken(false), actuallyTaken(false), condPred(false),
+              overridden(false),
               btbHit(false), targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
@@ -331,6 +332,9 @@ class BPredUnit : public SimObject
 
         /** The prediction of the conditional predictor */
         bool condPred;
+
+        /** Whether the overriding predictor was the provider */
+        bool overridden;
 
         /** Was BTB hit at prediction time */
         bool btbHit;
@@ -406,6 +410,12 @@ class BPredUnit : public SimObject
     void branchPlaceholder(ThreadID tid, Addr pc,
                             bool uncond, PredictorHistory* &hist);
 
+
+    /**
+     * Stat collection for overriding
+     */
+    void updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden);
+
   protected:
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
@@ -448,6 +458,10 @@ class BPredUnit : public SimObject
     {
         BPredUnitStats(BPredUnit *bp);
 
+        std::unordered_set<Addr> uniqueBranches; 
+
+        void preDumpStats() override;
+
         /** Stats per branch type */
         statistics::Vector2d lookups;
         statistics::Vector2d squashes;
@@ -468,7 +482,14 @@ class BPredUnit : public SimObject
         statistics::Scalar condIncorrect;
         statistics::Scalar predTakenBTBMiss;
 
+        statistics::Scalar condWrongBasePred;
+        statistics::Scalar condWrongOverridden;
+        statistics::Scalar condCorrectBasePred;
+        statistics::Scalar condCorrectOverridden;
+
+
         /** BTB stats. */
+        statistics::Scalar BTBUniqueBranches;
         statistics::Scalar BTBLookups;
         statistics::Scalar BTBUpdates;
         statistics::Scalar BTBHits;
@@ -482,6 +503,7 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectMispredicted;
 
     } stats;
+
 
   protected:
 

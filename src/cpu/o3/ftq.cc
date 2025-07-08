@@ -205,6 +205,7 @@ FTQ::forAllBackward(ThreadID tid, std::function<void(FetchTargetPtr&)> f)
 void
 FTQ::insert(ThreadID tid, FetchTargetPtr fetchTarget)
 {
+    assert(ftq[tid].size() < numEntries);
     ftq[tid].push_back(fetchTarget);
     ppFTQInsert->notify(fetchTarget);
     stats.inserts++;

@@ -163,13 +163,13 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             Prediction secondaryPred = overridingCPred->lookup(
                 tid, pc.instAddr(), hist->overridingBpHistory
             );
-            assert(hist->overridingBpHistory);
             if (secondaryPred.taken != hist->condPred) {
                 // If the predictors disagree,
                 // use the result of the overriding predictor
                 // and incur its latency
                 totalLatency += secondaryPred.latency;
                 hist->condPred = secondaryPred.taken;
+                hist->overridden = true;
             } else {
                 // If the predictors agree,
                 // use the result of the primary predictor
@@ -421,12 +421,14 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                 hist->bpHistory, false,
                 hist->inst,
                 hist->target->instAddr());
+    
+    if (hist->inst->isCondCtrl())
+        updateStatsOverriding(hist->condPred, hist->actuallyTaken, hist->overridden);
 
     // If the overriding predictor was used,
     // also update it with the correct result
     if (overridingCPred) {
 
-        assert(hist->overridingBpHistory);
         overridingCPred->update(
             tid, hist->pc, hist->actuallyTaken,
             hist->overridingBpHistory, false,
@@ -455,6 +457,9 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                     hist->seqNum, hist->pc, hist->target->instAddr());
 
         stats.BTBUpdates++;
+
+        stats.uniqueBranches.insert(hist->pc);
+
         btb->update(tid, hist->pc,
                         *hist->target,
                          hist->type,
@@ -519,7 +524,6 @@ BPredUnit::squashHistory(ThreadID tid, PredictorHistory* &history)
     // If the overriding predictor was used, also squash it
     // This call will delete the overridingBpHistory.
     if (overridingCPred) {
-        assert(history->overridingBpHistory);
         overridingCPred->squash(tid, history->overridingBpHistory);
         assert(history->overridingBpHistory == nullptr);
     }
@@ -680,6 +684,7 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
                         "PC %#x -> T: %#x\n", tid,
                         hist->seqNum, hist->pc, hist->target->instAddr());
 
+            stats.uniqueBranches.insert(hist->pc);
             // stats.BTBUpdates++;
             // btb->update(tid, hist->pc,
             //                 *hist->target,
@@ -731,9 +736,27 @@ BPredUnit::dump()
     }
 }
 
+void
+BPredUnit::updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden) {
+    if (prediction != actuallyTaken) {
+        if (overridden) {
+            ++stats.condWrongOverridden;
+        } else {
+            ++stats.condWrongBasePred;
+        }
+    } else {
+        if (overridden) {
+            ++stats.condCorrectOverridden;
+        } else {
+            ++stats.condCorrectBasePred;
+        }
+    }
+}
+
 
 BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
     : statistics::Group(bp),
+        uniqueBranches(),
       ADD_STAT(lookups, statistics::units::Count::get(),
               "Number of BP lookups"),
       ADD_STAT(squashes, statistics::units::Count::get(),
@@ -770,6 +793,16 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "Number of conditional branches incorrect"),
       ADD_STAT(predTakenBTBMiss, statistics::units::Count::get(),
                "Number of branches predicted taken but missed in BTB"),
+      ADD_STAT(condWrongBasePred, statistics::units::Count::get(),
+               "Number of branches predicted wrong with the base predictor (not overridden)"),
+      ADD_STAT(condWrongOverridden, statistics::units::Count::get(),
+               "Number of branches predicted wrong after being overridden"),
+      ADD_STAT(condCorrectBasePred, statistics::units::Count::get(),
+               "Number of branches predicted correctly only by the base predictor (not overridden)"),
+      ADD_STAT(condCorrectOverridden, statistics::units::Count::get(),
+               "Number of branches predicted correctly after being overridden"),
+      ADD_STAT(BTBUniqueBranches, statistics::units::Count::get(),
+               "Number of unique branches encountered by the BTB"),
       ADD_STAT(BTBLookups, statistics::units::Count::get(),
                "Number of BTB lookups"),
       ADD_STAT(BTBUpdates, statistics::units::Count::get(),
@@ -843,6 +876,10 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
         .flags(total | pdf);
     targetWrong.ysubnames(enums::BranchTypeStrings);
 
+}
+
+void BPredUnit::BPredUnitStats::preDumpStats() {
+    BTBUniqueBranches = uniqueBranches.size();
 }
 
 } // namespace branch_prediction
