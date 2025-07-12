@@ -356,6 +356,9 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
                "Total number of cycles that CPU has spent quiesced or waiting "
                "for an interrupt"),
+      ADD_STAT(robOccupancy,
+               statistics::units::Count::get(),
+               "Occupancy of the Reorder Buffer (ROB) in cycles"),
       topDownStats(cpu)
 {
     // Register any of the O3CPU's stats here.
@@ -367,6 +370,7 @@ CPU::CPUStats::CPUStats(CPU *cpu)
 
     quiesceCycles
         .prereq(quiesceCycles);
+    robOccupancy.init(0, cpu->rob.numROBEntries(), cpu->rob.numROBEntries()/10);
 }
 
 CPU::CPUStats::TopDownStats::TopDownStats(CPU *cpu)
@@ -590,6 +594,8 @@ CPU::tick()
     decode.tick();
 
     rename.tick();
+
+    cpuStats.robOccupancy.sample(rob.numInstsInROB);
 
     iew.tick();
 

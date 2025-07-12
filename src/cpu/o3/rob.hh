@@ -316,6 +316,9 @@ class ROB
     /** Number of instructions in the ROB. */
     int numInstsInROB;
 
+    unsigned numROBEntries() const
+    { return numEntries; }
+
     /** Dummy instruction returned if there are no insts left. */
     DynInstPtr dummyInst;
 

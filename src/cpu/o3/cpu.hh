@@ -602,6 +602,9 @@ class CPU : public BaseCPU
          * quiesce operation or waiting for an interrupt. */
         statistics::Scalar quiesceCycles;
 
+        /*ROB Occupancy*/
+        statistics::Distribution robOccupancy;
+
         struct TopDownStats : statistics::Group {
           TopDownStats(CPU *cpu);
 
