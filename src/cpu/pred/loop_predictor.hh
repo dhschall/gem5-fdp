@@ -157,8 +157,8 @@ class LoopPredictor : public SimObject
             : loopTag(0), currentIter(0),
               loopPred(false),
               loopPredValid(false),
-              loopPredUsed(false), 
-              loopIndex(0), loopIndexB(0), loopHit(0),
+              loopPredUsed(false),
+              loopIndex(0), loopIndexB(0), loopHit(-1),
               predTaken(false)
         {}
     };

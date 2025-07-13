@@ -682,6 +682,9 @@ class TAGE_SC_L(LTAGE):
     sc_enabled = Param.Bool(
         True, "Use the statistical corrector in the branch predictor"
     )
+    loop_enabled = Param.Bool(
+        True, "Use the loop predictor in the branch predictor"
+    )
 
     statistical_corrector = Param.StatisticalCorrector("Statistical Corrector")
 

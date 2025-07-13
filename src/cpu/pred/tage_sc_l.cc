@@ -78,7 +78,7 @@ TAGE_SC_L_LoopPredictor::optionalAgeInc() const
 
 TAGE_SC_L::TAGE_SC_L(const TAGE_SC_LParams &p)
   : LTAGE(p), statisticalCorrector(p.statistical_corrector),
-    useSC(p.sc_enabled)
+    useSC(p.sc_enabled), useLoop(p.loop_enabled)
 {
 }
 
@@ -417,9 +417,11 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
 
     bool pred_taken = tage->tagePredict(tid, pc, cond_branch,
                                         bi->tageBranchInfo);
-    pred_taken = loopPredictor->loopPredict(tid, pc, cond_branch,
-                                            bi->lpBranchInfo, pred_taken,
-                                            instShiftAmt);
+    if (useLoop) {
+        pred_taken = loopPredictor->loopPredict(tid, pc, cond_branch,
+                                                bi->lpBranchInfo, pred_taken,
+                                                instShiftAmt);
+    }
 
     if (bi->lpBranchInfo->loopPredUsed) {
         bi->tageBranchInfo->provider = LOOP;
@@ -487,7 +489,7 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo *&bi,
             // This restores the global history, then update it
             // and recomputes the folded histories.
             tage->squash(tid, taken, target, inst, tage_bi);
-            if (bi->tageBranchInfo->condBranch) {
+            if (useLoop && bi->tageBranchInfo->condBranch) {
                 loopPredictor->squashLoop(bi->lpBranchInfo);
             }
             if (useSC) {
@@ -505,7 +507,8 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo *&bi,
                 pc, taken);
         tage->updateStats(taken, bi->tageBranchInfo);
 
-        loopPredictor->updateStats(taken, bi->lpBranchInfo);
+        if (useLoop)
+            loopPredictor->updateStats(taken, bi->lpBranchInfo);
 
         if (useSC) {
             statisticalCorrector->updateStats(taken, bi->scBranchInfo);
@@ -517,7 +520,8 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo *&bi,
                 bi->tageBranchInfo->altBank);
         }
 
-        loopPredictor->condBranchUpdate(tid, pc, taken,
+        if (useLoop)
+            loopPredictor->condBranchUpdate(tid, pc, taken,
                 bi->tageBranchInfo->tagePred, bi->lpBranchInfo, instShiftAmt);
 
         tage->condBranchUpdate(tid, pc, taken, bi->tageBranchInfo,
@@ -539,10 +543,13 @@ void
 TAGE_SC_L::squash(ThreadID tid, void * &bp_history)
 {
     TageSCLBranchInfo* bi = static_cast<TageSCLBranchInfo*>(bp_history);
+    if (useLoop && bi->tageBranchInfo->condBranch) {
+        loopPredictor->squash(tid, bi->lpBranchInfo);
+    }
     if (useSC) {
         statisticalCorrector->scRestoreHistState(bi->scBranchInfo);
     }
-    LTAGE::squash(tid, bp_history);
+    TAGE::squash(tid, bp_history);
 }
 
 

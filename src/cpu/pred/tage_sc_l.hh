@@ -212,6 +212,7 @@ class TAGE_SC_L: public LTAGE
 
   protected:
     const bool useSC;
+    const bool useLoop;
 
 };
 
