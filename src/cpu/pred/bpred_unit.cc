@@ -41,6 +41,7 @@
  */
 
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/pred/llbp.hh"
 
 #include <algorithm>
 
@@ -159,21 +160,43 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
         hist->condPred = condPred.taken;
 
         if (overridingCPred) {
-
-            Prediction secondaryPred = overridingCPred->lookup(
-                tid, pc.instAddr(), hist->overridingBpHistory
-            );
-            if (secondaryPred.taken != hist->condPred) {
-                // If the predictors disagree,
-                // use the result of the overriding predictor
-                // and incur its latency
-                totalLatency += secondaryPred.latency;
-                hist->condPred = secondaryPred.taken;
-                hist->overridden = true;
+            LLBP* llbp = dynamic_cast<LLBP*>(overridingCPred);
+            if (llbp != nullptr) {
+                // LLBP IS the secondary predictor
+                LLBP::LLBPPrediction llbpPred = llbp->predict(tid, pc.instAddr(), true, hist->overridingBpHistory);
+                if (llbpPred.lightningPredUsed) {
+                    // LLBP was confident, used LP and internally calculated the resulting latency
+                    totalLatency += llbpPred.latency;
+                    hist->condPred = llbpPred.taken;
+                    hist->overridden = llbpPred.tageCorrectedLightning;
+                    hist->wasLightning = true;
+                } else {
+                    // LLBP was not confident enough (if it hit at all), overriding with TAGE+LLBP->2Bit,
+                    if (llbpPred.taken != hist->condPred) {
+                        totalLatency += llbpPred.latency;
+                        hist->condPred = llbpPred.taken;
+                        hist->overridden = true;
+                    } else {
+                        totalLatency += condPred.latency;
+                    }
+                }
             } else {
-                // If the predictors agree,
-                // use the result of the primary predictor
-                totalLatency += condPred.latency;
+                // LLBP is NOT the secondary predictor
+                Prediction secondaryPred = overridingCPred->lookup(
+                    tid, pc.instAddr(), hist->overridingBpHistory
+                );
+                if (secondaryPred.taken != hist->condPred) {
+                    // If the predictors disagree,
+                    // use the result of the overriding predictor
+                    // and incur its latency
+                    totalLatency += secondaryPred.latency;
+                    hist->condPred = secondaryPred.taken;
+                    hist->overridden = true;
+                } else {
+                    // If the predictors agree,
+                    // use the result of the primary predictor
+                    totalLatency += condPred.latency;
+                }
             }
         } else {
             totalLatency += condPred.latency;
@@ -423,7 +446,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                 hist->target->instAddr());
     
     if (hist->inst->isCondCtrl())
-        updateStatsOverriding(hist->condPred, hist->actuallyTaken, hist->overridden);
+        updateStatsOverriding(hist->condPred, hist->actuallyTaken, hist->overridden, hist->wasLightning);
 
     // If the overriding predictor was used,
     // also update it with the correct result
@@ -737,16 +760,20 @@ BPredUnit::dump()
 }
 
 void
-BPredUnit::updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden) {
+BPredUnit::updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden, bool lightning) {
     if (prediction != actuallyTaken) {
         if (overridden) {
             ++stats.condWrongOverridden;
+        } else if (lightning) {
+            ++stats.condWrongLightningPred;
         } else {
             ++stats.condWrongBasePred;
         }
     } else {
         if (overridden) {
             ++stats.condCorrectOverridden;
+        } else if (lightning){
+            ++stats.condCorrectLightningPred;
         } else {
             ++stats.condCorrectBasePred;
         }
@@ -797,10 +824,14 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "Number of branches predicted wrong with the base predictor (not overridden)"),
       ADD_STAT(condWrongOverridden, statistics::units::Count::get(),
                "Number of branches predicted wrong after being overridden"),
+      ADD_STAT(condWrongLightningPred, statistics::units::Count::get(),
+               "Number of branches predicted wrong by the lightning predictor"),
       ADD_STAT(condCorrectBasePred, statistics::units::Count::get(),
                "Number of branches predicted correctly only by the base predictor (not overridden)"),
       ADD_STAT(condCorrectOverridden, statistics::units::Count::get(),
                "Number of branches predicted correctly after being overridden"),
+      ADD_STAT(condCorrectLightningPred, statistics::units::Count::get(),
+               "Number of branches predicted correctly by the lightning predictor"),
       ADD_STAT(BTBUniqueBranches, statistics::units::Count::get(),
                "Number of unique branches encountered by the BTB"),
       ADD_STAT(BTBLookups, statistics::units::Count::get(),

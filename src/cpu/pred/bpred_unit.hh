@@ -280,7 +280,7 @@ class BPredUnit : public SimObject
               inst(inst), type(getBranchType(inst)),
               call(inst->isCall()), uncond(inst->isUncondCtrl()),
               predTaken(false), actuallyTaken(false), condPred(false),
-              overridden(false),
+              overridden(false), wasLightning(false),
               btbHit(false), targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
@@ -335,6 +335,9 @@ class BPredUnit : public SimObject
 
         /** Whether the overriding predictor was the provider */
         bool overridden;
+        
+        /** Base predictor: Lightning or regular? */
+        bool wasLightning;
 
         /** Was BTB hit at prediction time */
         bool btbHit;
@@ -414,7 +417,7 @@ class BPredUnit : public SimObject
     /**
      * Stat collection for overriding
      */
-    void updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden);
+    void updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden, bool lightning);
 
   protected:
     /** Number of the threads for which the branch history is maintained. */
@@ -484,8 +487,10 @@ class BPredUnit : public SimObject
 
         statistics::Scalar condWrongBasePred;
         statistics::Scalar condWrongOverridden;
+        statistics::Scalar condWrongLightningPred;
         statistics::Scalar condCorrectBasePred;
         statistics::Scalar condCorrectOverridden;
+        statistics::Scalar condCorrectLightningPred;
 
 
         /** BTB stats. */

@@ -260,7 +260,7 @@ LLBP::calculateKey(TAGEBase::BranchInfo* tageBi, int tageBank, Addr pc)
     return uint64_t(key) << 10 | uint64_t(fltTables[tageBank]);
 }
 
-Prediction
+LLBP::LLBPPrediction
 LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
 {
     Addr pc = branch_pc;
@@ -279,7 +279,8 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
     bi->overridden = false;
     bi->base_pred = ltage_prediction.taken;
 
-    bool lightningOverride = false;
+    bool lightningPrediction = false;
+    bool lightningCorrected = false;
 
     Cycles latency = ltage_prediction.latency;
 
@@ -322,24 +323,41 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
                         llbp_confidence = pattern.counter;
                         bool llbp_prediction = llbp_confidence >= 0;
 
-                        // Override early if lightning is enabled
-                        if (PatternSet::absConfidence(llbp_confidence) > lightningPredCutoff) {
-                            bi->lightningTarget = true;
-                            bi->llbp_pred = llbp_prediction;
-                            if (lightningPredEnabled) {
-                                lightningOverride = true;
-                                bi->overridden = true;
-                                latency = Cycles(0);
-                                ++stats.lightningHitsTotal;
-                            }
-                        }
+                        bi->lightningTarget = PatternSet::absConfidence(llbp_confidence) > lightningPredCutoff;
 
-                        if (bi->index >= tage_bank && !lightningOverride) {
-                            ++stats.demandHitsOverride;
+                        if (bi->index >= tage_bank) {
+                            // This would have been a "justified" lightning prediction (not overridden by TAGE)
+                            // Saves latency: LLBP LP -> TAGE no effect = PB lat (1 cycle)
+                            // 2-bit is no longer used here (already both predictions)
+                            if (bi->lightningTarget && lightningPredEnabled) {
+                                latency = Cycles(1);
+                                lightningPrediction = true;
+                                bi->fastPrediction = true;
+                                ++stats.lightningPredsJustified;
+                            } else {
+                                ++stats.demandHitsOverride;
+                            }
                             bi->overridden = true;
                             bi->llbp_pred = llbp_prediction;
-                        } else if (!lightningOverride) {
-                            ++stats.demandHitsNoOverride;
+                        } else {
+                            // This would have been a "unjustified" lightning prediction
+                            // 2-bit is not used here 
+                            if (bi->lightningTarget && lightningPredEnabled) {
+                                lightningPrediction = true;
+                                // We made a fast prediction which is unjustified, but the outcome was identical,
+                                // so no correction from TAGE
+                                if (bi->llbp_pred == bi->base_pred) {
+                                    latency = Cycles(1);
+                                    bi->fastPrediction = true;
+                                    ++stats.lightningPredsUnjustifiedLucky;
+                                } else { 
+                                    lightningCorrected = true;
+                                    ++stats.lightningPredsUnjustifiedUnlucky;
+                                }
+
+                            } else {
+                                ++stats.demandHitsNoOverride;
+                            }
                         }
                     } else {
                         ++stats.demandMissesPatternMiss;
@@ -378,7 +396,7 @@ LLBP::predict(ThreadID tid, Addr branch_pc, bool cond_branch, void *&b)
         scltage_bi->scBranchInfo->usedScPred = false;
     }
 
-    return Prediction {.taken = bi->getPrediction(), .latency = latency};
+    return LLBPPrediction(bi->getPrediction(), latency, lightningPrediction, lightningCorrected);
 }
 
 void
@@ -839,6 +857,12 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "On-demand hits to the pattern buffer with LLBP overriding the base predictor"),
       ADD_STAT(demandHitsNoOverride, statistics::units::Count::get(),
               "On-demand hits to the pattern buffer, using the base predictor (LLBP dropped)"),
+      ADD_STAT(lightningPredsJustified, statistics::units::Count::get(),
+              "Lightning hits to the pattern buffer, longer than TAGE (reducing latency)"),
+      ADD_STAT(lightningPredsUnjustifiedUnlucky, statistics::units::Count::get(),
+              "Lightning hits to the pattern buffer, shorter than TAGE and different from TAGE (same latency)"),
+      ADD_STAT(lightningPredsUnjustifiedLucky, statistics::units::Count::get(),
+              "Lightning hits to the pattern buffer, shorter than TAGE but equal to TAGE (reducing latency)"),
       ADD_STAT(demandMissesTotal, statistics::units::Count::get(),
               "Total on-demand misses to the pattern buffer"),
       ADD_STAT(demandMissesPatternMiss, statistics::units::Count::get(),
@@ -874,12 +898,16 @@ LLBP::LLBPStats::LLBPStats(LLBP *llbp)
               "Number of branches predicted correctly by LLBP, but the base predictor would also be correct (neutral)"),
       ADD_STAT(correctOverridesUnique, statistics::units::Count::get(),
               "Number of branches predicted correctly by LLBP, where the base predictor would be incorrect (good)"),
+      ADD_STAT(correctOverridesFast, statistics::units::Count::get(),
+              "Number of branches predicted correctly by LLBP, where the prediction was made with reduced latency"),
       ADD_STAT(wrongOverridesTotal, statistics::units::Count::get(),
               "Number of branches predicted wrong by LLBP (LLBP was provider)"),
       ADD_STAT(wrongOverridesIdentical, statistics::units::Count::get(),
               "Number of branches predicted wrong by LLBP, but the base predictor would also be wrong (neutral)"),
       ADD_STAT(wrongOverridesUnique, statistics::units::Count::get(),
               "Number of branches predicted correctly by LLBP, where the base predictor would be correct (bad)"),
+      ADD_STAT(wrongOverridesFast, statistics::units::Count::get(),
+              "Number of branches predicted incorrectly by LLBP, where the prediction was made with reduced latency"),
       ADD_STAT(squashedOverrides, statistics::units::Count::get(),
               "Number of branches predicted by LLBP, but squashed before the outcome was known"),
       ADD_STAT(profitOrLoss, statistics::units::Count::get(),

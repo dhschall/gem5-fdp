@@ -69,6 +69,18 @@ class LLBP : public ConditionalPredictor
                          bool taken, Addr target,
                          const StaticInstPtr &inst,
                          void * &bp_history) override;
+    
+    struct LLBPPrediction : public Prediction {
+        bool lightningPredUsed = false;
+        bool tageCorrectedLightning = false;
+
+        LLBPPrediction(bool taken, Cycles latency, bool lightningPredUsed, bool tageCorrectedLightning): 
+            Prediction { .taken = taken, .latency = latency }, 
+            lightningPredUsed(lightningPredUsed), tageCorrectedLightning(tageCorrectedLightning) {};
+    };
+
+    LLBPPrediction predict(ThreadID tid, Addr pc,
+        bool cond_branch, void * &bp_history);
   protected:
 
     TAGE_SC_L* base;
@@ -85,6 +97,7 @@ class LLBP : public ConditionalPredictor
 
     bool lightningPredEnabled;
     int lightningPredCutoff;
+    
     struct LLBPStats : public statistics::Group
     {
         LLBPStats(LLBP *llbp);
@@ -104,6 +117,9 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar demandHitsTotal;
         statistics::Scalar demandHitsOverride;
         statistics::Scalar demandHitsNoOverride;
+        statistics::Scalar lightningPredsJustified;
+        statistics::Scalar lightningPredsUnjustifiedUnlucky;
+        statistics::Scalar lightningPredsUnjustifiedLucky;
         statistics::Scalar demandMissesTotal;
         statistics::Scalar demandMissesPatternMiss;
         statistics::Scalar demandMissesContextTooLate;
@@ -122,9 +138,11 @@ class LLBP : public ConditionalPredictor
         statistics::Scalar correctOverridesTotal;
         statistics::Scalar correctOverridesIdentical;
         statistics::Formula correctOverridesUnique;
+        statistics::Scalar correctOverridesFast;
         statistics::Scalar wrongOverridesTotal;
         statistics::Scalar wrongOverridesIdentical;
         statistics::Formula wrongOverridesUnique;
+        statistics::Scalar wrongOverridesFast;
         statistics::Scalar squashedOverrides;
         statistics::Formula profitOrLoss;
         statistics::Scalar lightningHitsTotal;
@@ -133,15 +151,13 @@ class LLBP : public ConditionalPredictor
 
     Cycles calculateRemainingLatency(Cycles insertTime);
 
-    Prediction predict(ThreadID tid, Addr pc,
-        bool cond_branch, void * &bp_history);
-
     struct LLBPBranchInfo
     {
         bool overridden;
         bool llbp_pred;
         bool base_pred;
         bool lightningTarget;
+        bool fastPrediction;
         Addr pc;
         int index; // TODO: rename this to hitIndex of llbpHit
         uint64_t key;
@@ -153,6 +169,7 @@ class LLBP : public ConditionalPredictor
         LLBPBranchInfo(Addr pc, bool conditional)
           : overridden(false),
             lightningTarget(false),
+            fastPrediction(false),
             pc(pc),
             index(-1),
             conditional(conditional),
