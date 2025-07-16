@@ -1043,7 +1043,7 @@ Fetch::processFTQ(const ThreadID tid)
         ft = ftq->findAfterHead(tid,
             [this](FetchTargetPtr &ft) -> bool
             {
-                return ft->translationReady();
+                return ft->translationReady() && !ft->hasFetchBuffer();
             });
 
         if (ft != nullptr) {
