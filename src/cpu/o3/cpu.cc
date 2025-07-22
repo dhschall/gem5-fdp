@@ -401,7 +401,7 @@ CPU::CPUStats::TopDownStats::TopDownL1::TopDownL1(CPU *cpu)
 
   // Total Slots
   statistics::Temp totalSlots =
-      cpu->rename.getWidth() * cpu->baseStats.numCycles;
+      cpu->rename.getWidth() * (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
 
   // L1 Frontend Bound
   frontendBound = cpu->fetch.getStats().fetchBubbles / (totalSlots);
@@ -452,7 +452,7 @@ CPU::CPUStats::TopDownStats::TopDownFrontendBoundL2::TopDownFrontendBoundL2(
                "inefficiency") {
   // Frontend L2
   fetchLatency =
-      cpu->fetch.getStats().fetchBubblesMax / (cpu->baseStats.numCycles);
+      cpu->fetch.getStats().fetchBubblesMax / (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
   fetchBandwidth =
       cpu->cpuStats.topDownStats.topDownL1.frontendBound - fetchLatency;
 }
@@ -504,12 +504,12 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL2::TopDownBackendBoundL2(
                      cpu->rename.getStats().idleCycles +
                      cpu->iew.instQueue.getStats().numInstsExec1 +
                      cpu->iew.instQueue.getStats().numInstsExec2) /
-                    (cpu->baseStats.numCycles);
+                    (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
   auto memoryBoundRaw = (cpu->iew.instQueue.getStats().loadStallCycles +
                          cpu->rename.getStats().storeStalls) /
-                        (cpu->baseStats.numCycles);
+                        (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
 
- auto serializeStallsRaw = (cpu->rename.getStats().serializeStallCycles)/(cpu->baseStats.numCycles);
+ auto serializeStallsRaw = (cpu->rename.getStats().serializeStallCycles)/(cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
 
   auto coreBoundRaw = executionStalls - memoryBoundRaw - serializeStallsRaw;
 
@@ -552,17 +552,17 @@ CPU::CPUStats::TopDownStats::TopDownBackendBoundL3::TopDownBackendBoundL3(
   // Backend Bound / Memory Bound L3
   auto l1BoundRaw = (cpu->iew.instQueue.getStats().loadStallCycles -
                      cpu->iew.instQueue.getStats().L1miss) /
-                    (cpu->baseStats.numCycles);
+                    (cpu->baseStats.numCycles- cpu->cpuStats.idleCycles);
   auto l2BoundRaw = (cpu->iew.instQueue.getStats().L1miss -
                      cpu->iew.instQueue.getStats().L2miss) /
-                    (cpu->baseStats.numCycles);
+                    (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
   auto l3BoundRaw = (cpu->iew.instQueue.getStats().L2miss -
                   cpu->iew.instQueue.getStats().L3miss) /
-                 (cpu->baseStats.numCycles);
+                 (cpu->baseStats.numCycles - cpu->cpuStats.idleCycles);
   auto extMemBoundRaw =
-      (cpu->iew.instQueue.getStats().L3miss) / (cpu->baseStats.numCycles);
+      (cpu->iew.instQueue.getStats().L3miss) / (cpu->baseStats.numCycles- cpu->cpuStats.idleCycles);
   auto storeBoundRaw =
-      (cpu->rename.getStats().storeStalls) / (cpu->baseStats.numCycles);
+      (cpu->rename.getStats().storeStalls) / (cpu->baseStats.numCycles- cpu->cpuStats.idleCycles);
 
   auto totalMemoryBound =
       l1BoundRaw + l2BoundRaw + l3BoundRaw + extMemBoundRaw + storeBoundRaw;
