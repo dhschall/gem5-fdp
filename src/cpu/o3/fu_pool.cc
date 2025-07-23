@@ -91,6 +91,7 @@ FUPool::FUPool(const Params &p)
 
     maxOpLatencies.fill(Cycles(0));
     pipelined.fill(true);
+    issueLatencies.fill(Cycles(0));
 
     //
     //  Iterate through the list of FUDescData structures
@@ -119,13 +120,17 @@ FUPool::FUPool(const Params &p)
                     fuPerCapList[j->opClass].addFU(numFU + k);
 
                 // indicate that this FU has the capability
-                fu->addCapability(j->opClass, j->opLat, j->pipelined);
+                fu->addCapability(j->opClass, j->opLat, j->pipelined,
+                                 j->issue_latency);
 
                 if (j->opLat > maxOpLatencies[j->opClass])
                     maxOpLatencies[j->opClass] = j->opLat;
 
                 if (!j->pipelined)
                     pipelined[j->opClass] = false;
+
+                if (j->opLat > issueLatencies[j->opClass])
+                    issueLatencies[j->opClass] = j->issue_latency;
             }
 
             numFU++;
@@ -159,6 +164,18 @@ FUPool::isCapable(OpClass capability)
     //  If this pool doesn't have the specified capability,
     //  return this information to the caller
     return capabilityList[capability];
+}
+
+void
+FUPool::freeUnitXCycles(int fu_idx, int cycles)
+{
+  assert(unitBusy[fu_idx]);
+
+  unit_cycles newUnit;
+  newUnit.idx = fu_idx;
+  newUnit.cycles = cycles;
+
+  unitsToBeFreedFuture.push_back(newUnit);
 }
 
 int

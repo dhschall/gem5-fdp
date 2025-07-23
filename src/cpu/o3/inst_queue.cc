@@ -63,6 +63,7 @@
 #include "cpu/reg_class.hh"
 #include "cpu/timebuf.hh"
 #include "debug/IQ.hh"
+#include "dyn_inst_ptr.hh"
 #include "enums/OpClass.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "params/BaseO3CPU.hh"
@@ -713,7 +714,7 @@ InstructionQueue::insert(const DynInstPtr &new_inst)
     addToProducers(new_inst);
 
     if (new_inst->isMemRef()) {
-        memDepUnit[new_inst->threadNumber].insert(new_inst);
+        memDepUnit[new_inst->threadNumber].insert(new_inst, iewStage->getCPU()->getDecode()->getBranchHistory());
     } else {
         addIfReady(new_inst);
     }
@@ -724,6 +725,11 @@ InstructionQueue::insert(const DynInstPtr &new_inst)
 void
 InstructionQueue::insertNonSpec(const DynInstPtr &new_inst)
 {
+
+    if (new_inst->pcState().instAddr() == 0x00408d6c) {
+        std::cout << "Found barrier :)\n";
+        //memDepUnit[new_inst->threadNumber].clear_dep_pred();
+    }
     // @todo: Clean up this code; can do it by setting inst as unable
     // to issue, then calling normal insert on the inst.
     if (new_inst->isFloating()) {
@@ -1290,11 +1296,11 @@ InstructionQueue::getBlockedMemInstToExecute()
 }
 
 void
-InstructionQueue::violation(const DynInstPtr &store,
-        const DynInstPtr &faulting_load)
+InstructionQueue::violation(InstSeqNum store_seq_num, Addr store_pc, const DynInstPtr &faulting_load,
+                            BranchHistory branchHistory)
 {
     iqIOStats.intInstQueueWrites++;
-    memDepUnit[store->threadNumber].violation(store, faulting_load);
+    memDepUnit[faulting_load->threadNumber].violation(store_seq_num, store_pc, faulting_load, branchHistory);
 }
 
 unsigned
@@ -1329,6 +1335,11 @@ InstructionQueue::doSquash(ThreadID tid)
     // Start at the tail.
     ListIt squash_it = instList[tid].end();
     --squash_it;
+
+    //revert branch history
+    BranchHistory &decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum > squashedSeqNum[tid])
+        decodedBranchHistory.pop_front();
 
     DPRINTF(IQ, "[tid:%i] Squashing until sequence number %i!\n",
             tid, squashedSeqNum[tid]);

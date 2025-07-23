@@ -371,6 +371,11 @@ Decode::squash(const DynInstPtr &inst, bool control_miss, ThreadID tid)
         skidBuffer[tid].pop();
     }
 
+    //revert branch history
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum > squash_seq_num) {
+        decodedBranchHistory.pop_front();
+    }
+
     // Squash instructions up until this one
     cpu->removeInstsUntil(squash_seq_num, tid);
 }
@@ -751,6 +756,20 @@ Decode::decodeInsts(ThreadID tid)
                 inst->setPredTarg(*target);
                 break;
             }
+        }
+
+        //Record decoded branches for memdep predictions
+        if (inst->isControl() && !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
+            branchInfo branch_info = {
+                inst->isIndirectCtrl(),
+                inst->readPredTaken(),
+                inst->predPC->instAddr(),
+                inst->seqNum,
+                inst->pcState().instAddr(),
+            };
+            decodedBranchHistory.push_front(branch_info);
+            if (decodedBranchHistory.size() > MAX_BRANCH_HISTORY)
+                decodedBranchHistory.pop_back();
         }
     }
 

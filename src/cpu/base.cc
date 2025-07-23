@@ -1053,8 +1053,16 @@ BaseCPU::CommitCPUStats::CommitCPUStats(statistics::Group *parent,
                "Number of integer instructions"),
       ADD_STAT(numLoadInsts, statistics::units::Count::get(),
                "Number of load instructions"),
+      ADD_STAT(numRMWLoadInsts, statistics::units::Count::get(),
+               "Number of read-modify-write load instructions executed"),
+      ADD_STAT(numRMWALoadInsts, statistics::units::Count::get(),
+              "Number of atomic read-modify-write load instructions executed"),
       ADD_STAT(numStoreInsts, statistics::units::Count::get(),
-               "Number of store instructions"),
+              "Number of store instructions"),
+      ADD_STAT(numRMWStoreInsts, statistics::units::Count::get(),
+               "Number of read-modify-write store instructions executed"),
+      ADD_STAT(numRMWAStoreInsts, statistics::units::Count::get(),
+               "Number of atomic read-modify-write store instructions executed"),
       ADD_STAT(numVecInsts, statistics::units::Count::get(),
                "Number of vector instructions"),
       ADD_STAT(committedInstType, statistics::units::Count::get(),
@@ -1065,7 +1073,6 @@ BaseCPU::CommitCPUStats::CommitCPUStats(statistics::Group *parent,
                "Number of function calls committed"),
       ADD_STAT(numCallsReturns, statistics::units::Count::get(),
                "Number of function calls and returns committed")
-
 {
     numInsts
         .prereq(numInsts);

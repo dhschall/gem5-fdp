@@ -66,6 +66,8 @@ namespace o3
 
 class ThreadState;
 
+class InstructionQueue;
+
 /**
  * Commit handles single threaded and SMT commit. Its width is
  * specified by the parameters; each cycle it tries to commit that
@@ -106,6 +108,7 @@ class Commit
         Running,
         Idle,
         ROBSquashing,
+        ROBSquashingDueToMemOrder,
         TrapPending,
         FetchTrapPending,
         SquashAfterPending, //< Committing instructions before a squash.
@@ -127,6 +130,8 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
+
+    BranchHistory committedBranchHistory;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
@@ -495,6 +500,10 @@ class Commit
 
         /** Number of cycles where the commit bandwidth limit is reached. */
         statistics::Scalar commitEligibleSamples;
+        /** Number of memory order violations. */
+        statistics::Scalar memOrderViolationEvents;
+        /** Top Down Methodology, Number of commited instructions*/
+        statistics::Scalar committedInst;
     } stats;
 };
 

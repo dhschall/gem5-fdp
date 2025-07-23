@@ -105,6 +105,8 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
         maxEntries[tid] = 0;
     }
 
+    depCheckShift = params.LSQDepCheckShift;
+
     resetState();
 }
 
@@ -303,8 +305,16 @@ ROB::numFreeEntries(ThreadID tid)
     return maxEntries[tid] - threadEntries[tid];
 }
 
+void ROB::updateViolationMarker(ThreadID tid, InstSeqNum squash_seq_num) {
+    for (auto inst: instList[tid]) {
+        if (inst->seqNum > squash_seq_num) {
+            inst->squashedDueToMemOrder = false;
+        }
+    }
+}
+
 void
-ROB::doSquash(ThreadID tid)
+ROB::doSquash(ThreadID tid, bool squashedDueToMemOrder)
 {
     stats.writes++;
     DPRINTF(ROB, "[tid:%i] Squashing instructions until [sn:%llu].\n",
@@ -334,6 +344,9 @@ ROB::doSquash(ThreadID tid)
         numInstsToSquash = numEntries;
     }
 
+    if (!squashedDueToMemOrder)
+        updateViolationMarker(tid, squashedSeqNum[tid]);
+
     for (int numSquashed = 0;
          numSquashed < numInstsToSquash &&
          squashIt[tid] != instList[tid].end() &&
@@ -350,6 +363,29 @@ ROB::doSquash(ThreadID tid)
         (*squashIt[tid])->setSquashed();
 
         (*squashIt[tid])->setCanCommit();
+
+        if ((*squashIt[tid])->isLoad()) {
+            stats.squashedLoads++;
+            if ((*squashIt[tid])->isRMW()) {
+                stats.squashedRMWLoads++;
+            }
+            if ((*squashIt[tid])->isRMWA()) {
+                stats.squashedRMWALoads++;
+            }
+            if (squashedDueToMemOrder) {
+                (*squashIt[tid])->squashedDueToMemOrder = true;
+            }
+        }
+        
+        if ((*squashIt[tid])->isStore()) {
+            stats.squashedStores++;
+            if ((*squashIt[tid])->isRMW()) {
+                stats.squashedRMWStores++;
+            }
+            if ((*squashIt[tid])->isRMWA()) {
+                stats.squashedRMWAStores++;
+            }
+        }
 
 
         if (squashIt[tid] == instList[tid].begin()) {
@@ -458,7 +494,7 @@ ROB::updateTail()
 
 
 void
-ROB::squash(InstSeqNum squash_num, ThreadID tid)
+ROB::squash(InstSeqNum squash_num, ThreadID tid, bool squashedDueToMemOrder)
 {
     if (isEmpty(tid)) {
         DPRINTF(ROB, "Does not need to squash due to being empty "
@@ -482,7 +518,7 @@ ROB::squash(InstSeqNum squash_num, ThreadID tid)
 
         squashIt[tid] = tail_thread;
 
-        doSquash(tid);
+        doSquash(tid, squashedDueToMemOrder);
     }
 }
 
@@ -514,7 +550,20 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(reads, statistics::units::Count::get(),
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
-        "The number of ROB writes")
+        "The number of ROB writes"),
+    ADD_STAT(squashedLoads, statistics::units::Count::get(),
+        "The number of load instructions squashed"),
+    ADD_STAT(squashedRMWLoads, statistics::units::Count::get(),
+        "The number of read-modify-write load instructions squashed"),
+    ADD_STAT(squashedRMWALoads, statistics::units::Count::get(),
+        "The number of atomic read-modify-write load instructions squashed"),
+    ADD_STAT(squashedStores, statistics::units::Count::get(),
+        "The number of store instructions squashed"),
+    ADD_STAT(squashedRMWStores, statistics::units::Count::get(),
+        "The number of read-modify-write store instructions squashed"),
+    ADD_STAT(squashedRMWAStores, statistics::units::Count::get(),
+        "The number of atomic read-modify-write store instructions squashed")
+    
 {
 }
 

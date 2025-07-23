@@ -63,9 +63,7 @@ MemDepUnit::MemDepUnit() : iqPtr(NULL), stats(nullptr) {}
 
 MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
     : _name(params.name + ".memdepunit"),
-      depPred(_name + ".storesets", params.store_set_clear_period,
-              params.SSITSize, params.SSITAssoc, params.SSITReplPolicy,
-              params.SSITIndexingPolicy, params.LFSTSize),
+      depPred(params, this),
       iqPtr(NULL),
       stats(nullptr)
 {
@@ -97,17 +95,15 @@ MemDepUnit::~MemDepUnit()
 }
 
 void
-MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *cpu)
+MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *_cpu)
 {
-    _name = csprintf("%s.memDep%d", params.name, tid);
-
     DPRINTF(MemDepUnit, "Creating MemDepUnit %i object.\n",tid);
 
+    _name = csprintf("%s.memDep%d", params.name, tid);
     id = tid;
+    cpu = _cpu;
 
-    depPred.init(params.store_set_clear_period,
-                 params.SSITSize, params.SSITAssoc, params.SSITReplPolicy,
-                 params.SSITIndexingPolicy, params.LFSTSize);
+    depPred.init(params, this);
 
     std::string stats_group_name = csprintf("MemDepUnit__%i", tid);
     cpu->addStatGroup(stats_group_name.c_str(), &stats);
@@ -122,7 +118,49 @@ MemDepUnit::MemDepUnitStats::MemDepUnitStats(statistics::Group *parent)
       ADD_STAT(conflictingLoads, statistics::units::Count::get(),
                "Number of conflicting loads."),
       ADD_STAT(conflictingStores, statistics::units::Count::get(),
-               "Number of conflicting stores.")
+               "Number of conflicting stores."),
+      /** ==== Store Set ==== */
+      ADD_STAT(LFSTReads, statistics::units::Count::get(),
+               "Number of LFST reads."),
+      ADD_STAT(LFSTWrites, statistics::units::Count::get(),
+               "Number of LFST writes."),
+      /** ==== PHAST ==== */
+      ADD_STAT(falseDependencies, statistics::units::Count::get(),
+               "Number of times load's address didn't match predicted store's address"),
+      ADD_STAT(correctPredictions, statistics::units::Count::get(),
+               "Number of times load's address did match predicted store's address"),
+      ADD_STAT(readsPath1, statistics::units::Count::get(),
+               "Number of reads to path table 1."),
+      ADD_STAT(readsPath2, statistics::units::Count::get(),
+               "Number of reads to path table 2."),
+      ADD_STAT(readsPath3, statistics::units::Count::get(),
+               "Number of reads to path table 3."),
+      ADD_STAT(readsPath4, statistics::units::Count::get(),
+               "Number of reads to path table 4."),
+      ADD_STAT(readsPath5, statistics::units::Count::get(),
+               "Number of reads to path table 5."),
+      ADD_STAT(readsPath6, statistics::units::Count::get(),
+               "Number of reads to path table 6."),
+      ADD_STAT(readsPath7, statistics::units::Count::get(),
+               "Number of reads to path table 7."),
+      ADD_STAT(readsPath8, statistics::units::Count::get(),
+               "Number of reads to path table 8."),
+      ADD_STAT(writesPath1, statistics::units::Count::get(),
+               "Number of writes to path table 1."),
+      ADD_STAT(writesPath2, statistics::units::Count::get(),
+               "Number of writes to path table 2."),
+      ADD_STAT(writesPath3, statistics::units::Count::get(),
+               "Number of writes to path table 3."),
+      ADD_STAT(writesPath4, statistics::units::Count::get(),
+               "Number of writes to path table 4."),
+      ADD_STAT(writesPath5, statistics::units::Count::get(),
+               "Number of writes to path table 5."),
+      ADD_STAT(writesPath6, statistics::units::Count::get(),
+               "Number of writes to path table 6."),
+      ADD_STAT(writesPath7, statistics::units::Count::get(),
+               "Number of writes to path table 7."),
+      ADD_STAT(writesPath8, statistics::units::Count::get(),
+               "Number of writes to path table 8.")
 {
 }
 
@@ -137,6 +175,8 @@ MemDepUnit::isDrained() const
 
     return drained;
 }
+
+void MemDepUnit::clear_dep_pred() { depPred.clear(); }
 
 void
 MemDepUnit::drainSanityCheck() const
@@ -197,7 +237,7 @@ MemDepUnit::insertBarrierSN(const DynInstPtr &barr_inst)
 }
 
 void
-MemDepUnit::insert(const DynInstPtr &inst)
+MemDepUnit::insert(const DynInstPtr &inst, BranchHistory branchHistory)
 {
     ThreadID tid = inst->threadNumber;
 
@@ -214,73 +254,107 @@ MemDepUnit::insert(const DynInstPtr &inst)
 
     inst_entry->listIt = --(instList[tid].end());
 
-    // Check any barriers and the dependence predictor for any
-    // producing memrefs/stores.
-    std::vector<InstSeqNum>  producing_stores;
-    if ((inst->isLoad() || inst->isAtomic()) && hasLoadBarrier()) {
-        DPRINTF(MemDepUnit, "%d load barriers in flight\n",
-                loadBarrierSNs.size());
-        producing_stores.insert(std::end(producing_stores),
-                                std::begin(loadBarrierSNs),
-                                std::end(loadBarrierSNs));
-    } else if ((inst->isStore() || inst->isAtomic()) && hasStoreBarrier()) {
-        DPRINTF(MemDepUnit, "%d store barriers in flight\n",
-                storeBarrierSNs.size());
-        producing_stores.insert(std::end(producing_stores),
-                                std::begin(storeBarrierSNs),
-                                std::end(storeBarrierSNs));
-    } else {
-        InstSeqNum dep = depPred.checkInst(inst->pcState().instAddr());
-        if (dep != 0)
-            producing_stores.push_back(dep);
-    }
+    std::vector<MemDepEntryPtr> dependencies;
+    PredictionResult prediction;
+    prediction.storeQueueDistance = 0;
+    prediction.seqNum = 0;
+    prediction = depPred.checkInst(inst->pcState().instAddr(), inst->seqNum, branchHistory, inst->isLoad());
 
-    std::vector<MemDepEntryPtr> store_entries;
-
-    // If there is a producing store, try to find the entry.
-    for (auto producing_store : producing_stores) {
-        DPRINTF(MemDepUnit, "Searching for producer [sn:%lli]\n",
-                            producing_store);
-        MemDepHashIt hash_it = memDepHash.find(producing_store);
+    if (prediction.storeQueueDistance && inst->sqIt.idx() >= (cpu->getIEW()->ldstQueue.getStoreHead(id) + prediction.storeQueueDistance)){
+        //make a PHAST prediction, as long as the SQ offset is valid
+        auto sq_it = inst->sqIt - prediction.storeQueueDistance;
+        DynInstPtr store_inst = sq_it->instruction();
+        MemDepHashIt hash_it = memDepHash.find(store_inst->seqNum);
 
         if (hash_it != memDepHash.end()) {
-            store_entries.push_back((*hash_it).second);
-            DPRINTF(MemDepUnit, "Producer found\n");
+            dependencies.push_back((*hash_it).second);
+            inst->memDepInfo.predBranchHistLength = prediction.predBranchHistLength;
+            inst->memDepInfo.predictorHash = prediction.predictorHash;
+            inst->memDepInfo.predicted = true;
+        }
+    } else if (prediction.seqNum) {
+        //make a StoreSet prediction
+        MemDepHashIt hash_it = memDepHash.find(prediction.seqNum);
+
+        if (hash_it != memDepHash.end()) {
+            dependencies.push_back((*hash_it).second);
+            inst->memDepInfo.predicted = true;
         }
     }
 
-    // If no store entry, then instruction can issue as soon as the registers
-    // are ready.
-    if (store_entries.empty()) {
+    /* 2nd Step: Concurrently, check the in-flight Barriers; the Load
+       and Store Instructions are not allowed to overtake the
+       corresponding Barriers. (i.e., Comply with Consistency) */
+    if ((inst->isLoad() || inst->isAtomic()) && hasLoadBarrier()) {
+        DPRINTF(MemDepUnit, "%d load barriers in flight\n",
+                loadBarrierSNs.size());
+        for (InstSeqNum sn: loadBarrierSNs) {
+            MemDepHashIt hash_it = memDepHash.find(sn);
+
+            if (hash_it != memDepHash.end()) {
+                dependencies.push_back((*hash_it).second);
+                DPRINTF(MemDepUnit, "LoadBarrier found in HashMap.\n");
+            }
+        }
+    }
+
+    /** For Atomic Instruction it should be dependent on
+    both LoadBarrier & StoreBarrier. */
+    if ((inst->isStore() || inst->isAtomic()) && hasStoreBarrier()) {
+        DPRINTF(MemDepUnit, "%d store barriers in flight\n",
+                storeBarrierSNs.size());
+        for (InstSeqNum sn: storeBarrierSNs) {
+            MemDepHashIt hash_it = memDepHash.find(sn);
+
+            if (hash_it != memDepHash.end()) {
+                dependencies.push_back((*hash_it).second);
+                DPRINTF(MemDepUnit, "StoreBarrier found in HashMap.\n");
+            }
+        }
+    }
+
+    /* If there are not any dependencies (i.e., the Instruction is not
+       dependent on any Inst), then Instruction can be issued as
+       soon as the registers are ready. */
+    if (dependencies.empty()) {
         DPRINTF(MemDepUnit, "No dependency for inst PC "
                 "%s [sn:%lli].\n", inst->pcState(), inst->seqNum);
 
-        assert(inst_entry->memDeps == 0);
+        /* The Counter "memDependencies" for the inst_entry is by default zero;
+           So there is no need to do sth here, like enabling any flags. */
 
         if (inst->readyToIssue()) {
             inst_entry->regsReady = true;
 
             moveToReady(inst_entry);
+
+            DPRINTF(MemDepUnit, "Also the Inst is ready to issue.\n");
         }
     } else {
-        // Otherwise make the instruction dependent on the store/barrier.
-        DPRINTF(MemDepUnit, "Adding to dependency list\n");
-        for ([[maybe_unused]] auto producing_store : producing_stores)
-            DPRINTF(MemDepUnit, "\tinst PC %s is dependent on [sn:%lli].\n",
-                inst->pcState(), producing_store);
+        /* The current Instruction has some dependencies;
+           either Store or Barriers or Both. */
+        inst_entry->memDeps = dependencies.size();
 
+        /* Append the instruction in the dependent_VectorList of
+           each dependency that has been found.*/
+        for (const auto &dependency: dependencies) {
+            DPRINTF(MemDepUnit, "Adding to dependency list; "
+                    "inst PC %s [sn:%lli] is dependent on [sn:%lli].\n",
+                    inst->pcState(), inst->seqNum,
+                    dependency->inst->seqNum);
+
+            dependency->dependInsts.push_back(inst_entry);
+        }
+
+        /* If the Instruction is ready_to_Issue, we only set the
+           flag; We are not allowed to issue the Instruction until
+           all the dependencies have been resolved. */
         if (inst->readyToIssue()) {
             inst_entry->regsReady = true;
         }
 
         // Clear the bit saying this instruction can issue.
         inst->clearCanIssue();
-
-        // Add this instruction to the list of dependents.
-        for (auto store_entry : store_entries)
-            store_entry->dependInsts.push_back(inst_entry);
-
-        inst_entry->memDeps = store_entries.size();
 
         if (inst->isLoad()) {
             ++stats.conflictingLoads;
@@ -289,7 +363,6 @@ MemDepUnit::insert(const DynInstPtr &inst)
         }
     }
 
-    // for load-acquire store-release that could also be a barrier
     insertBarrierSN(inst);
 
     if (inst->isStore() || inst->isAtomic()) {
@@ -297,7 +370,7 @@ MemDepUnit::insert(const DynInstPtr &inst)
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
-                inst->threadNumber);
+                            inst->threadNumber);
 
         ++stats.insertedStores;
     } else if (inst->isLoad()) {
@@ -368,8 +441,9 @@ MemDepUnit::regsReady(const DynInstPtr &inst)
 
         moveToReady(inst_entry);
     } else {
-        DPRINTF(MemDepUnit, "Instruction still waiting on "
-                "memory dependency.\n");
+        DPRINTF(MemDepUnit, "Instruction PC %#x [sn:%lli] still "
+                "waiting on memory dependency.\n",
+                inst_entry->inst->pcState().instAddr(), inst_entry->inst->seqNum);
     }
 }
 
@@ -476,25 +550,47 @@ MemDepUnit::wakeDependents(const DynInstPtr &inst)
 
     MemDepEntryPtr inst_entry = findInHash(inst);
 
-    for (int i = 0; i < inst_entry->dependInsts.size(); ++i ) {
-        MemDepEntryPtr woken_inst = inst_entry->dependInsts[i];
+    /* By entering to this function, we release one dependency for
+       the dependent_inst
+       (Inst which was stopped from issuing due to one or
+       multiple dependencies.)
 
-        if (!woken_inst->inst) {
+       --> !! The dependent_inst is going to be woken up whenever
+       all the dependencies have been resolved. !!
+    */
+
+    for (int i = 0; i < inst_entry->dependInsts.size(); ++i ) {
+        MemDepEntryPtr dependent_inst = inst_entry->dependInsts[i];
+
+        if (!dependent_inst->inst) {
             // Potentially removed mem dep entries could be on this list
             continue;
         }
 
-        DPRINTF(MemDepUnit, "Waking up a dependent inst, "
-                "[sn:%lli].\n",
-                woken_inst->inst->seqNum);
+        DPRINTF(MemDepUnit, "Inst PC: %#x [sn:%lli] is Releasing one "
+        "dependency for inst PC: %#x [sn:%lli].\n",
+        inst->pcState().instAddr(), inst->seqNum,
+        dependent_inst->inst->pcState().instAddr(),
+        dependent_inst->inst->seqNum);
 
-        assert(woken_inst->memDeps > 0);
-        woken_inst->memDeps -= 1;
+        // release one dependency.
+        dependent_inst->memDeps--;
 
-        if ((woken_inst->memDeps == 0) &&
-            woken_inst->regsReady &&
-            !woken_inst->squashed) {
-            moveToReady(woken_inst);
+        if (dependent_inst->memDeps == 0) {
+            if (dependent_inst->inst->memDepInfo.predicted && inst->isStore()) {
+                dependent_inst->inst->memDepInfo.predStoreAddr = inst->effAddr;
+                dependent_inst->inst->memDepInfo.predStoreSize = inst->effSize;
+            }
+            if (dependent_inst->regsReady && !dependent_inst->squashed) {
+                DPRINTF(MemDepUnit, "Inst PC: %#x [sn:%lli] is just "
+                        "woken up!!\n",
+                        dependent_inst->inst->pcState().instAddr(),
+                        dependent_inst->inst->seqNum);
+
+                /** All the dependencies have been resolved & the
+                    Registers are ready as well. */
+                moveToReady(dependent_inst);
+            }
         }
     }
 
@@ -578,15 +674,17 @@ MemDepUnit::squash(const InstSeqNum &squashed_num, ThreadID tid)
 }
 
 void
-MemDepUnit::violation(const DynInstPtr &store_inst,
-        const DynInstPtr &violating_load)
+MemDepUnit::violation(InstSeqNum store_seq_num, Addr store_pc,
+        const DynInstPtr &violating_load, BranchHistory branchHistory)
 {
     DPRINTF(MemDepUnit, "Passing violating PCs to store sets,"
-            " load: %#x, store: %#x\n", violating_load->pcState().instAddr(),
-            store_inst->pcState().instAddr());
+            " load: %#x, store seq num: %#d\n", violating_load->pcState().instAddr(),
+            store_seq_num);
     // Tell the memory dependence unit of the violation.
-    depPred.violation(store_inst->pcState().instAddr(),
-            violating_load->pcState().instAddr());
+    depPred.violation(violating_load->pcState().instAddr(), violating_load->seqNum, store_seq_num, store_pc,
+                      violating_load->memDepInfo.storeQueueDistance, violating_load->memDepInfo.predicted,
+                      violating_load->memDepInfo.predBranchHistLength,
+                      violating_load->memDepInfo.predictorHash, branchHistory);
 }
 
 void
@@ -596,6 +694,19 @@ MemDepUnit::issue(const DynInstPtr &inst)
             inst->pcState().instAddr(), inst->seqNum);
 
     depPred.issued(inst->pcState().instAddr(), inst->seqNum, inst->isStore());
+}
+
+void
+MemDepUnit::commit(const DynInstPtr &inst)
+{
+    DPRINTF(MemDepUnit, "Committing instruction PC %#x [sn:%lli].\n",
+            inst->pcState().instAddr(), inst->seqNum);
+
+    if (inst->isStore()) return;
+
+    depPred.commit(inst->pcState().instAddr(), inst->effAddr,
+                   inst->effSize, inst->memDepInfo.predStoreAddr, inst->memDepInfo.predStoreSize,
+                   inst->memDepInfo.predBranchHistLength, inst->memDepInfo.predictorHash);
 }
 
 MemDepUnit::MemDepEntryPtr &

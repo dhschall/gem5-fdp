@@ -62,6 +62,8 @@
 #include "debug/Drain.hh"
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
+#include "debug/O3PipeView.hh"
+#include "inst_queue.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
@@ -185,7 +187,11 @@ Commit::CommitStats::CommitStats(CPU *cpu, Commit *commit)
       ADD_STAT(committedInstType, statistics::units::Count::get(),
                "Class of committed instruction"),
       ADD_STAT(commitEligibleSamples, statistics::units::Cycle::get(),
-               "number cycles where commit BW limit reached")
+               "Number cycles where commit BW limit reached"),
+      ADD_STAT(memOrderViolationEvents, statistics::units::Count::get(),
+               "Number of memory order violations"),
+      ADD_STAT(committedInst, statistics::units::Count::get(),
+               "Number of committed instructions (For Top-Down)")
 {
     using namespace statistics;
 
@@ -514,7 +520,7 @@ Commit::squashAll(ThreadID tid)
     // Hopefully nothing breaks.)
     youngestSeqNum[tid] = lastCommitedSeqNum[tid];
 
-    rob->squash(squashed_inst, tid);
+    rob->squash(squashed_inst, tid, false);
     changedROBNumEntries[tid] = true;
 
     // Send back the sequence number of the squashed instruction.
@@ -612,14 +618,15 @@ Commit::tick()
         // this cycle.
         committedStores[tid] = false;
 
-        if (commitStatus[tid] == ROBSquashing) {
+        if (commitStatus[tid] == ROBSquashing || commitStatus[tid] == ROBSquashingDueToMemOrder) {
 
             if (rob->isDoneSquashing(tid)) {
                 commitStatus[tid] = Running;
             } else {
                 DPRINTF(Commit,"[tid:%i] Still Squashing, cannot commit any"
                         " insts this cycle.\n", tid);
-                rob->doSquash(tid);
+                bool squashingDueToMemOrder = commitStatus[tid] == ROBSquashingDueToMemOrder ? true : false;
+                rob->doSquash(tid, squashingDueToMemOrder);
                 toIEW->commitInfo[tid].robSquashing = true;
                 wroteToTimeBuffer = true;
             }
@@ -756,6 +763,8 @@ Commit::commit()
     ////////////////////////////////////
 
     int num_squashing_threads = 0;
+    bool squashedDueToMemOrder = false;
+
     for (ThreadID tid : *activeThreads) {
         stats.status[commitStatus[tid]]++;
         // Not sure which one takes priority.  I think if we have
@@ -798,12 +807,13 @@ Commit::commit()
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
+                squashedDueToMemOrder = true;
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
                     tid, *fromIEW->pc[tid]);
 
-            commitStatus[tid] = ROBSquashing;
+            commitStatus[tid] = squashedDueToMemOrder ? ROBSquashingDueToMemOrder : ROBSquashing;
 
             // If we want to include the squashing instruction in the squash,
             // then use one older sequence number.
@@ -817,7 +827,7 @@ Commit::commit()
             // number as the youngest instruction in the ROB.
             youngestSeqNum[tid] = squashed_inst;
 
-            rob->squash(squashed_inst, tid);
+            rob->squash(squashed_inst, tid, squashedDueToMemOrder);
             changedROBNumEntries[tid] = true;
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -844,7 +854,7 @@ Commit::commit()
             set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
         }
 
-        if (commitStatus[tid] == ROBSquashing) {
+        if (commitStatus[tid] == ROBSquashing || commitStatus[tid] == ROBSquashingDueToMemOrder) {
             num_squashing_threads++;
         }
     }
@@ -913,6 +923,8 @@ Commit::commitInsts()
 
     DynInstPtr head_inst;
 
+    bool updatedMemDep = false;
+
     // Commit as many instructions as possible until the commit bandwidth
     // limit is reached, or it becomes impossible to commit any more.
     while (num_committed < commitWidth) {
@@ -960,6 +972,17 @@ Commit::commitInsts()
 
             rob->retireHead(commit_thread);
 
+            // PHAST training
+            // only want to report a violation when we're not on a misspeculated path
+            if (head_inst->squashedDueToMemOrder && !updatedMemDep
+                && head_inst->isLoad() && head_inst->memDepInfo.violatingStoreSeqNum) {
+                iewStage->instQueue.violation(head_inst->memDepInfo.violatingStoreSeqNum,
+                                              head_inst->memDepInfo.violatingStorePC,
+                                              head_inst, committedBranchHistory);
+                updatedMemDep = true;
+                ++stats.memOrderViolationEvents;
+            }
+
             ++stats.commitSquashedInsts;
             // Notify potential listeners that this instruction is squashed
             ppSquash->notify(head_inst);
@@ -989,6 +1012,25 @@ Commit::commitInsts()
                     ->committedInstType[head_inst->opClass()]++;
                 stats.committedInstType[tid][head_inst->opClass()]++;
                 ppCommit->notify(head_inst);
+
+                //record committed branch history
+                if (head_inst->isControl() && !(head_inst->isDirectCtrl() && head_inst->isUncondCtrl())) {
+                    branchInfo branch_info = {
+                        head_inst->isIndirectCtrl(),
+                        head_inst->readPredTaken(),
+                        head_inst->predPC->instAddr(),
+                        head_inst->seqNum,
+                        head_inst->pcState().instAddr(),
+                    };
+                    committedBranchHistory.push_front(branch_info);
+                    if (committedBranchHistory.size() > MAX_BRANCH_HISTORY)
+                        committedBranchHistory.pop_back();
+                }
+
+                //update memdep predictor if this load was made to wait on a store by the depPred
+                if (head_inst->isLoad() && head_inst->memDepInfo.predicted) {
+                    iewStage->instQueue.memDepUnit[tid].commit(head_inst);
+                }
 
                 // hardware transactional memory
 
@@ -1224,6 +1266,21 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         commitStatus[tid] = TrapPending;
 
+        //record branch history, making sure to catch committing branches that were interrupted.
+        //should only matter on FS emulation
+        if (head_inst->isControl() && !(head_inst->isDirectCtrl() && head_inst->isUncondCtrl())) {
+            branchInfo branch_info = {
+                head_inst->isIndirectCtrl(),
+                head_inst->readPredTaken(),
+                head_inst->predPC->instAddr(),
+                head_inst->seqNum,
+                head_inst->pcState().instAddr(),
+            };
+            committedBranchHistory.push_front(branch_info);
+            if (committedBranchHistory.size() > MAX_BRANCH_HISTORY)
+                committedBranchHistory.pop_back();
+        }
+
         DPRINTF(Commit,
             "[tid:%i] [sn:%llu] Committing instruction with fault\n",
             tid, head_inst->seqNum);
@@ -1384,10 +1441,22 @@ Commit::updateComInstStats(const DynInstPtr &inst)
 
         if (inst->isLoad()) {
             cpu->commitStats[tid]->numLoadInsts++;
+            if (inst->isRMW()) {
+                cpu->commitStats[tid]->numRMWLoadInsts++;
+            }
+            if (inst->isRMWA()) {
+                cpu->commitStats[tid]->numRMWALoadInsts++;
+            }
         }
 
         if (inst->isStore() || inst->isAtomic()) {
             cpu->commitStats[tid]->numStoreInsts++;
+            if (inst->isRMW()) {
+                cpu->commitStats[tid]->numRMWStoreInsts++;
+            }
+            if (inst->isRMWA()) {
+                cpu->commitStats[tid]->numRMWAStoreInsts++;
+            }
         }
     }
 

@@ -184,6 +184,8 @@ class StaticInst : public RefCounted, public StaticInstFlags
     bool isUnverifiable() const { return flags[IsUnverifiable]; }
     bool isPseudo() const { return flags[IsPseudo]; }
     bool isSyscall() const { return flags[IsSyscall]; }
+    bool isRMW() const { return flags[IsRMW]; }
+    bool isRMWA() const { return flags[IsRMWA]; }
     bool isMacroop() const { return flags[IsMacroop]; }
     bool isMicroop() const { return flags[IsMicroop]; }
     bool isDelayedCommit() const { return flags[IsDelayedCommit]; }
