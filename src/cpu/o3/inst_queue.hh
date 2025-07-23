@@ -49,13 +49,14 @@
 
 #include "base/statistics.hh"
 #include "base/types.hh"
+#include "sim/sim_object.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/comm.hh"
 #include "cpu/o3/dep_graph.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_dep_unit.hh"
-#include "cpu/o3/store_set.hh"
+//#include "cpu/o3/phast.hh"
 #include "cpu/op_class.hh"
 #include "cpu/timebuf.hh"
 #include "enums/SMTQueuePolicy.hh"
@@ -182,6 +183,11 @@ class InstructionQueue
   public:
     // Typedef of iterator through the list of instructions.
     typedef typename std::list<DynInstPtr>::iterator ListIt;
+
+    /** The memory dependence unit, which tracks/predicts memory dependences
+     *  between instructions.
+     */
+    MemDepUnit memDepUnit[MaxThreads];
 
     /** FU completion event class. */
     class FUCompletion : public Event
@@ -361,7 +367,8 @@ class InstructionQueue
     void cacheUnblocked();
 
     /** Indicates an ordering violation between a store and a load. */
-    void violation(const DynInstPtr &store, const DynInstPtr &faulting_load);
+    void violation(InstSeqNum store_seq_num, Addr store_pc, const DynInstPtr &faulting_load,
+                   BranchHistory branchHistory);
 
     /**
      * Squashes instructions for a thread. Squashing information is obtained
@@ -395,10 +402,10 @@ class InstructionQueue
     /** List of Instruction Queues */
     std::vector<IQUnit *> iqs;
 
-    /** The memory dependence unit, which tracks/predicts memory dependences
-     *  between instructions.
-     */
-    MemDepUnit memDepUnit[MaxThreads];
+    // /** The memory dependence unit, which tracks/predicts memory dependences
+    //  *  between instructions.
+    //  */
+    // MemDepUnit memDepUnit[MaxThreads];
 
     /** The queue to the execute stage.  Issued instructions will be written
      *  into it.

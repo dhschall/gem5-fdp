@@ -149,6 +149,9 @@ class DynInst : public ExecContext, public RefCounted
     /** InstRecord that tracks this instructions. */
     trace::InstRecord *traceData = nullptr;
 
+    /** Track whether the instruction squashed specifically due to a memory order violation */
+    bool squashedDueToMemOrder = false;
+
   protected:
     enum Status
     {
@@ -364,6 +367,25 @@ class DynInst : public ExecContext, public RefCounted
     /** Store queue index. */
     ssize_t sqIdx = -1;
     SQIterator sqIt;
+
+    /** Info needed for each load for PHAST */
+    struct MemDepInfo {
+        /** Store this load received its data from, if any */
+        InstSeqNum forwardedFrom = 0;
+        /** Youngest store this load violated with */
+        InstSeqNum violatingStoreSeqNum = 0;
+        Addr violatingStorePC = 0;
+        /** Relative offset into the SQ for dependent store*/
+        std::ptrdiff_t storeQueueDistance;
+        /** Memory location of store this load was predicted dependent on */
+        Addr predStoreAddr;
+        int predStoreSize;
+        /** Predicted information validated at commit */
+        unsigned predBranchHistLength = 0;
+        uint64_t predictorHash = 0;
+        /** Was this load predicted to be dependent by the depPred? */
+        bool predicted = false;
+    } memDepInfo;
 
     /////////////////////// TLB Miss //////////////////////
     /**
@@ -584,6 +606,8 @@ class DynInst : public ExecContext, public RefCounted
     bool isQuiesce() const { return staticInst->isQuiesce(); }
     bool isUnverifiable() const { return staticInst->isUnverifiable(); }
     bool isSyscall() const { return staticInst->isSyscall(); }
+    bool isRMW() const { return staticInst->isRMW(); }
+    bool isRMWA() const { return staticInst->isRMWA(); }
     bool isMacroop() const { return staticInst->isMacroop(); }
     bool isMicroop() const { return staticInst->isMicroop(); }
     bool isDelayedCommit() const { return staticInst->isDelayedCommit(); }

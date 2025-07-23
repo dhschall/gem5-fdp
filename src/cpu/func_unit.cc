@@ -43,6 +43,7 @@ FuncUnit::FuncUnit()
 {
     opLatencies.fill(0);
     pipelined.fill(false);
+    issueLatencies.fill(0);
     capabilityList.reset();
 }
 
@@ -61,7 +62,7 @@ FuncUnit::FuncUnit(const FuncUnit &fu)
 
 
 void
-FuncUnit::addCapability(OpClass cap, unsigned oplat, bool pipeline)
+FuncUnit::addCapability(OpClass cap, unsigned oplat, bool pipeline, unsigned issue_latency)
 {
     if (oplat == 0)
         panic("FuncUnit:  you don't really want a zero-cycle latency do you?");
@@ -70,6 +71,7 @@ FuncUnit::addCapability(OpClass cap, unsigned oplat, bool pipeline)
 
     opLatencies[cap] = oplat;
     pipelined[cap] = pipeline;
+    issueLatencies[cap] = issue_latency;
 }
 
 bool
@@ -94,6 +96,12 @@ bool
 FuncUnit::isPipelined(OpClass capability)
 {
     return pipelined[capability];
+}
+
+unsigned &
+FuncUnit::issueLatency(OpClass cap)
+{
+    return issueLatencies[cap];
 }
 
 } // namespace gem5
