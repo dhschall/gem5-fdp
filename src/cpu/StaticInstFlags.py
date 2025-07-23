@@ -88,6 +88,8 @@ class StaticInstFlags(Enum):
         "IsPseudo",  # Is a gem5 pseudo-op
         "IsSyscall",  # Causes a system call to be emulated in syscall
         # emulation mode.
+        'IsRMW',  # Is a Read-Modify-Write instruction
+        'IsRMWA',  # Is an Atomic Read-Modify-Write instruction
         # Flags for microcode
         "IsMacroop",  # Is a macroop containing microops
         "IsMicroop",  # Is a microop
