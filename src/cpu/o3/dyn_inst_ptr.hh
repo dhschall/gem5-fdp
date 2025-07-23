@@ -43,6 +43,12 @@
 #define __CPU_O3_DYN_INST_PTR_HH__
 
 #include "base/refcnt.hh"
+#include <deque>
+#include <cstdint>
+#include <iostream>
+#include <string>
+
+typedef uint64_t InstSeqNum;
 
 namespace gem5
 {
@@ -54,6 +60,28 @@ class DynInst;
 
 using DynInstPtr = RefCountingPtr<DynInst>;
 using DynInstConstPtr = RefCountingPtr<const DynInst>;
+
+//no particular reasoning to put this here other than it's needed across O3
+/**  History of committed branches */
+typedef struct branchInfo {
+    bool indirect;
+    bool taken;
+    uint64_t target;
+    InstSeqNum seqNum;
+    uint64_t pc;
+} branchInfo;
+
+std::ostream& operator<<(std::ostream & os, const branchInfo& b);
+
+/** Rolling branch history. Always pushed at the front, popped at the back.
+ *  So, branchHistory[n] = nth oldest branch, branchHistory[0] = newest branch. */
+typedef std::deque<branchInfo> BranchHistory;
+
+bool operator==(const BranchHistory a, const BranchHistory b);
+
+//unclear on what exactly this should be, choosing a reasonably high number for now
+#define MAX_BRANCH_HISTORY 128
+
 
 } // namespace o3
 } // namespace gem5

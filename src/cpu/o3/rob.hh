@@ -198,13 +198,15 @@ class ROB
     bool isEmpty(ThreadID tid) const
     { return threadEntries[tid] == 0; }
 
+    void updateViolationMarker(ThreadID tid, InstSeqNum squash_seq_num);
+
     /** Executes the squash, marking squashed instructions. */
-    void doSquash(ThreadID tid);
+    void doSquash(ThreadID tid, bool squashedDueToMemOrder);
 
     /** Squashes all instructions younger than the given sequence number for
      *  the specific thread.
      */
-    void squash(InstSeqNum squash_num, ThreadID tid);
+    void squash(InstSeqNum squash_num, ThreadID tid, bool squashedDueToMemOrder);
 
     /** Updates the head instruction with the new oldest instruction. */
     void updateHead();
@@ -273,6 +275,8 @@ class ROB
     /** Pointer to the CPU. */
     CPU *cpu;
 
+    unsigned depCheckShift;
+
     /** Active Threads in CPU */
     std::list<ThreadID> *activeThreads;
 
@@ -338,6 +342,14 @@ class ROB
         statistics::Scalar reads;
         // The number of rob_writes
         statistics::Scalar writes;
+
+        statistics::Scalar squashedLoads;
+        statistics::Scalar squashedRMWLoads;
+        statistics::Scalar squashedRMWALoads;
+
+        statistics::Scalar squashedStores;
+        statistics::Scalar squashedRMWStores;
+        statistics::Scalar squashedRMWAStores;
     } stats;
 };
 

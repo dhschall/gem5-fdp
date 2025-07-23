@@ -949,6 +949,12 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
 {
     auto hb_it = historyBuffer[tid].begin();
 
+    //revert branch history
+    BranchHistory &decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum > squashed_seq_num) {
+        decodedBranchHistory.pop_front();
+    }
+
     // After a syscall squashes everything, the history buffer may be empty
     // but the ROB may still be squashing instructions.
     // Go through the most recent instructions, undoing the mappings
