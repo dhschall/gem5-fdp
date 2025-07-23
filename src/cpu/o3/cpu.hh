@@ -406,6 +406,10 @@ class CPU : public BaseCPU
      */
     bool removeInstsThisCycle;
 
+    Decode *getDecode() { return &decode; }
+
+    IEW *getIEW() { return &iew; }
+
   protected:
 
     /** The branch and PC address calculation stage. */

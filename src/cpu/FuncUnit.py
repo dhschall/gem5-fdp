@@ -131,7 +131,7 @@ class OpDesc(SimObject):
         "set to true when the functional unit for"
         "this op is fully pipelined. False means not pipelined at all.",
     )
-
+    issueLat = Param.Cycles(1, "reciprocal throughput or issue latency")
 
 class FUDesc(SimObject):
     type = "FUDesc"

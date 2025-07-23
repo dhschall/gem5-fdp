@@ -439,6 +439,12 @@ IEW::squash(ThreadID tid)
     }
 
     emptyRenameInsts(tid);
+
+    //revert branch history
+    BranchHistory &decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum > fromCommit->commitInfo[tid].doneSeqNum) {
+        decodedBranchHistory.pop_front();
+    }
 }
 
 void
@@ -461,6 +467,12 @@ IEW::squashDueToBranch(const DynInstPtr& inst, ThreadID tid)
         toCommit->includeSquashInst[tid] = false;
 
         wroteToTimeBuffer = true;
+    }
+
+    //revert branch history
+    BranchHistory decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum >= inst->seqNum) {
+        decodedBranchHistory.pop_front();
     }
 
 }
@@ -488,6 +500,12 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
         toCommit->includeSquashInst[tid] = true;
 
         wroteToTimeBuffer = true;
+    }
+
+    //revert branch history
+    BranchHistory decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum >= inst->seqNum) {
+        decodedBranchHistory.pop_front();
     }
 }
 
@@ -1323,13 +1341,13 @@ IEW::executeInsts()
 
                 fetchRedirect[tid] = true;
 
-                // Tell the instruction queue that a violation has occured.
-                instQueue.violation(inst, violator);
+                // // Tell the instruction queue that a violation has occured.
+                // instQueue.violation(inst, violator);
 
                 // Squash.
                 squashDueToMemOrder(violator, tid);
 
-                ++iewStats.memOrderViolationEvents;
+                // ++iewStats.memOrderViolationEvents;
             }
 
         } else {

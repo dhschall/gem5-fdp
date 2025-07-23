@@ -292,6 +292,8 @@ class IEW
      */
     void tick();
 
+    CPU *getCPU() { return cpu; }
+
   private:
     /** Updates execution stats based on the instruction. */
     void updateExeInstStats(const DynInstPtr &inst);

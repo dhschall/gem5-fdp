@@ -827,9 +827,16 @@ class BaseCPU : public ClockedObject
 
         /* number of load instructions */
         statistics::Scalar numLoadInsts;
-
+        /* Stat for total number of read-modify-write load instructions */
+        statistics::Scalar numRMWLoadInsts;
+        /* Stat for total number of atomic read-modify-write load instructions */
+        statistics::Scalar numRMWALoadInsts;
         /* Number of store instructions */
         statistics::Scalar numStoreInsts;
+        /* Number of read-modify-write store instructions */
+        statistics::Scalar numRMWStoreInsts;
+        /* Number of atomic read-modify-write store instructions */
+        statistics::Scalar numRMWAStoreInsts;
 
         /* Number of vector instructions */
         statistics::Scalar numVecInsts;
