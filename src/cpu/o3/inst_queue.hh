@@ -558,6 +558,8 @@ class InstructionQueue
         statistics::Scalar L1miss;
         statistics::Scalar L2miss;
         statistics::Scalar L3miss;
+        statistics::Scalar noInstReadyCycles;
+        statistics::Distribution instSquashedAtIssueDist;
     } iqStats;
 
    public:

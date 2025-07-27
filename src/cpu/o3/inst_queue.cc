@@ -229,7 +229,12 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
             "Top down, no uops executed and at least 1 in-flight load"),
     ADD_STAT(L1miss, statistics::units::Cycle::get(), "l1miss"),
     ADD_STAT(L2miss, statistics::units::Cycle::get(), "l2miss"),
-    ADD_STAT(L3miss, statistics::units::Cycle::get(), "l1miss") 
+    ADD_STAT(L3miss, statistics::units::Cycle::get(), "l1miss"),
+    ADD_STAT(noInstReadyCycles, statistics::units::Cycle::get(),
+            "Cycles with no instructions ready to issue"),
+    ADD_STAT(instSquashedAtIssueDist,
+             statistics::units::Count::get(),
+             "Distribution of instructions squashed at issue")
 {
     instsAdded.
         prereq(instsAdded);
@@ -341,6 +346,10 @@ InstructionQueue::IQStats::IQStats(CPU *cpu, const unsigned &total_width)
     L1miss.prereq(L1miss);
     L2miss.prereq(L2miss);
     L3miss.prereq(L3miss);
+    noInstReadyCycles.prereq(noInstReadyCycles);
+    instSquashedAtIssueDist
+        .init(0, total_width, 2)
+        .flags(statistics::pdf);
 }
 
 InstructionQueue::IQIOStats::IQIOStats(statistics::Group *parent)
@@ -798,6 +807,7 @@ InstructionQueue::scheduleReadyInsts()
     // This will avoid trying to schedule a certain op class if there are no
     // FUs that handle it.
     int total_issued = 0;
+    int squashed = 0;
     ListOrderIt order_it = listOrder.begin();
     ListOrderIt order_end_it = listOrder.end();
 
@@ -819,6 +829,7 @@ InstructionQueue::scheduleReadyInsts()
         assert(issuing_inst->seqNum == (*order_it).oldestInst);
 
         if (issuing_inst->isSquashed()) {
+            squashed++;
             readyInsts[op_class].pop();
 
             if (!readyInsts[op_class].empty()) {
@@ -941,6 +952,13 @@ InstructionQueue::scheduleReadyInsts()
 
     iqStats.numIssuedDist.sample(total_issued);
     iqStats.instsIssued+= total_issued;
+
+    if (!total_issued){
+        // If we didn't issue any instructions, then we need to
+        // increment the noInstReadyCycles statistic.
+        iqStats.noInstReadyCycles++;
+    } 
+    iqStats.instSquashedAtIssueDist.sample(squashed);
 
     // If we issued any instructions, tell the CPU we had activity.
     // @todo If the way deferred memory instructions are handeled due to
