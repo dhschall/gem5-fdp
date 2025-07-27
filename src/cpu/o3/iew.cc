@@ -188,7 +188,10 @@ IEW::IEWStats::IEWStats(CPU *cpu)
              "Insts written-back per cycle"),
     ADD_STAT(wbFanout, statistics::units::Rate<
                 statistics::units::Count, statistics::units::Count>::get(),
-             "Average fanout of values written-back")
+             "Average fanout of values written-back"),
+    ADD_STAT(dispInstDist, statistics::units::Count::get(),
+             "Distribution of dispatched instructions per cycle")
+
 {
     instsToCommit
         .init(cpu->numThreads)
@@ -213,6 +216,8 @@ IEW::IEWStats::IEWStats(CPU *cpu)
     wbFanout
         .flags(statistics::total);
     wbFanout = producerInst / consumerInst;
+    dispInstDist
+        .init(0, cpu->getIEW()->dispatchWidth , 2).flags(statistics::pdf);
 }
 
 IEW::IEWStats::ExecutedInstStats::ExecutedInstStats(CPU *cpu)
@@ -1103,6 +1108,8 @@ IEW::dispatchInsts(ThreadID tid)
 #endif
         ppDispatch->notify(inst);
     }
+
+    iewStats.dispInstDist.sample(dis_num_inst);
 
     if (!insts_to_dispatch.empty()) {
         DPRINTF(IEW,"[tid:%i] Issue: Bandwidth Full. Blocking.\n", tid);

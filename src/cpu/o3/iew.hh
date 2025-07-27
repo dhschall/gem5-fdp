@@ -475,6 +475,8 @@ class IEW
         statistics::Formula wbRate;
         /** Average number of woken instructions per writeback. */
         statistics::Formula wbFanout;
+        /**Dispatch insts distribution**/
+        statistics::Distribution dispInstDist;
     } iewStats;
 
   public:
