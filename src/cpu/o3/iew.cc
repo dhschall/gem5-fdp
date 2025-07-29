@@ -1354,7 +1354,7 @@ IEW::executeInsts()
                 // Squash.
                 squashDueToMemOrder(violator, tid);
 
-                // ++iewStats.memOrderViolationEvents;
+                 ++iewStats.memOrderViolationEvents;
             }
 
         } else {
