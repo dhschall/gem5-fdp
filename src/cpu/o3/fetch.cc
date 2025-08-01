@@ -1829,7 +1829,14 @@ Fetch::fetch(bool &status_change)
         if (decoupledFrontEnd && (!ftq->isValid(tid) || !curFT)) {
             break;
         }
-        assert(!curFT || curFT->inRange(this_pc.instAddr()));
+
+        if (curFT && !curFT->inRange(this_pc.instAddr())) {
+    warn("curFT invalid: FT=[%#x, %#x), PC=%#x",
+         curFT->startAddress(), curFT->endAddress(), this_pc.instAddr());
+         break;
+}
+
+        // assert(!curFT || curFT->inRange(this_pc.instAddr()));
 
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
