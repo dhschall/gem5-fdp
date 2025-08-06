@@ -39,3 +39,14 @@ git update-index
 
 # Install the pre-commit checks.
 ./util/pre-commit-install.sh
+
+git clone --branch stable https://github.com/rui314/mold.git
+cd mold
+./install-build-deps.sh
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ -B build
+cmake --build build -j$(nproc)
+sudo cmake --build build --target install
+cd ..
+rm -r mold
+
+./gem5-svr-bench/scripts/install.sh

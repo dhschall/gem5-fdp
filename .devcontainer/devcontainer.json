@@ -33,5 +33,8 @@
         "ghcr.io/devcontainers-contrib/features/actionlint:1": {},
         "ghcr.io/devcontainers-contrib/features/vscode-cli:1": {}
     },
+    "mounts": [
+        "source=${localEnv:HOME}/../../share/,target=/share,type=bind,consistency=cached"
+    ],
     "onCreateCommand": "./.devcontainer/on-create.sh"
 }
