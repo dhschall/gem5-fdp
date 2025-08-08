@@ -511,7 +511,7 @@ namespace Aarch64
                               case MISCREG_NZCV:
                                 return new MrsNZCV64(machInst, rt, miscReg);
                               case MISCREG_SP_EL0:
-                              case MISCREG_TPIDR_EL0:
+                              //case MISCREG_TPIDR_EL0:
                               //case MISCREG_TPIDR_EL1:
                               //case MISCREG_DAIF:
                                 return new MrsSp64(machInst, rt, miscReg);
@@ -532,7 +532,7 @@ namespace Aarch64
                               case MISCREG_NZCV:
                                 return new MsrNZCV64(machInst, miscReg, rt);
                               case MISCREG_SP_EL0:
-                              case MISCREG_TPIDR_EL0:
+                              //case MISCREG_TPIDR_EL0:
                               //case MISCREG_TPIDR_EL1:
                               //case MISCREG_DAIF:
                                 return new MsrSp64(machInst, miscReg, rt);
