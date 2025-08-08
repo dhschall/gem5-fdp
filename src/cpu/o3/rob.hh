@@ -336,7 +336,19 @@ class ROB
     /** Number of active threads. */
     ThreadID numThreads;
 
+void squashInst(DynInstPtr inst);
+ 
+    // ILP analysis
+    struct DepInfo {
+      DynInstPtr inst;
+      bool dependent = false;
+      // DepInfo(DynInstPtr i, bool d) : inst(i), dependent(d) {}
+    };
+    std::list<DepInfo> retireBuff;
+    std::unordered_map<RegIndex,int> destReg;
+    std::unordered_map<Addr,int> destAddr;
 
+    void analyzeILP(DynInstPtr inst);
     struct ROBStats : public statistics::Group
     {
         ROBStats(statistics::Group *parent);
@@ -353,6 +365,17 @@ class ROB
         statistics::Scalar squashedStores;
         statistics::Scalar squashedRMWStores;
         statistics::Scalar squashedRMWAStores;
+
+        statistics::Distribution squashHitExecDistance;
+         statistics::Scalar squashHitExecDirMatch;
+ 
+        statistics::Scalar retiredInst;
+        statistics::Formula effectiveInst;
+        statistics::Scalar squashedInst;
+        statistics::Scalar independentInst;
+        statistics::Distribution independentInstDelta;
+        statistics::Distribution independentInstDeltaNoSquashed;
+
     } stats;
 };
 

@@ -257,6 +257,8 @@ ROB::retireHead(ThreadID tid)
     head_inst->clearInROB();
     head_inst->setCommitted();
 
+    analyzeILP(head_inst);
+
     //Update "Global" Head of ROB
     updateHead();
 
@@ -264,6 +266,122 @@ ROB::retireHead(ThreadID tid)
     // retired is the only instruction in the ROB; otherwise the tail
     // iterator will become invalidated.
     cpu->removeFrontInst(head_inst);
+}
+
+void
+ROB::analyzeILP(DynInstPtr inst)
+{
+    // We add squashed instruction to the window but will not
+    // analyze their dependencies.
+    bool squashed = inst->isSquashed();
+
+    // 1. Check if an instruction is dependent on previous instructions.
+    // We do this by checking the load address and the source registers.
+    bool addr_dependency = false;
+
+    if (inst->isLoad()) {
+        // If a loads value is not in the destination address of
+        // previously written addresses its not dependent on each other
+        // @todo: Make it maybe on cacheline granularity
+        auto it = destAddr.find(inst->effAddr);
+        if (it != destAddr.end()) {
+            addr_dependency = true;
+        }
+    }
+
+    // Check if a previous instruction has written something to the
+    // source register.
+    bool reg_dependency = false;
+
+    for (int idx = 0; idx < inst->numSrcRegs(); idx++) {
+        PhysRegIdPtr src_reg = inst->renamedSrcIdx(idx);
+
+        auto it = destReg.find(src_reg->flatIndex());
+        if (it != destReg.end()) {
+            reg_dependency = true;
+        }
+    }
+
+    // 2. Add new instruction to the dependency buffer and update the
+    // the dependencies this instruction creates.
+    // An instruction its only dependent if its not squashed.
+    retireBuff.push_front({inst, !squashed && (addr_dependency || reg_dependency)});
+    // auto& e = retireBuff.front();
+
+    if (!squashed) {
+        // For stores it creates dependencies via the destination address.
+        if (inst->isStore()) {
+            destAddr[inst->effAddr]++;
+        }
+
+        // For all other instructions its the destination register
+        for (int idx = 0; idx < inst->numDestRegs(); idx++) {
+            PhysRegIdPtr dest_reg = inst->renamedDestIdx(idx);
+            destReg[dest_reg->flatIndex()]++;
+        }
+    }
+
+
+    // 3. Finally, we update the statistics and measure when the instructions
+    // leave the monitoring window (retire buffer == size of ROB)
+    if (retireBuff.size() < numEntries)
+        return;
+
+    // Counters to measure the distance between independent instructions.
+    static uint64_t last_independent_inst = 0;
+    static uint64_t inst_cnt = 0;
+    static uint64_t inst_cnt_no_squash = 0;
+
+
+    auto& re = retireBuff.back();
+
+    if (re.inst->isSquashed()) {
+        stats.squashedInst++;
+    } else {
+
+        // Update the stats for independent instructions
+        if (!re.dependent) {
+            stats.independentInst++;
+
+            // Calculate and update the deltas
+            stats.independentInstDelta.sample(inst_cnt - last_independent_inst);
+            stats.independentInstDeltaNoSquashed.sample(inst_cnt_no_squash);
+            last_independent_inst = inst_cnt;
+            inst_cnt_no_squash = 0;
+        }
+
+        // Finally before we remove the instruction from the window
+        // we remove the dependencies it creates.
+
+        // For stores we remove the destination address.
+        if (re.inst->isStore()) {
+            auto it = destAddr.find(re.inst->effAddr);
+            assert(it != destAddr.end());
+            it->second--;
+            if (it->second <= 0) {
+                destAddr.erase(it);
+            }
+        }
+
+        // For all other instructions its the destination register
+        for (int idx = 0; idx < re.inst->numDestRegs(); idx++) {
+            PhysRegIdPtr dest_reg = re.inst->renamedDestIdx(idx);
+
+            auto it = destReg.find(dest_reg->flatIndex());
+            assert(it != destReg.end());
+            it->second--;
+            if (it->second <= 0) {
+                destReg.erase(it);
+            }
+        }
+    }
+
+
+    inst_cnt++;
+    if (re.inst->isSquashed())
+        inst_cnt_no_squash++;
+    stats.retiredInst++;
+    retireBuff.pop_back();
 }
 
 bool
@@ -574,9 +692,33 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(squashedRMWStores, statistics::units::Count::get(),
         "The number of read-modify-write store instructions squashed"),
     ADD_STAT(squashedRMWAStores, statistics::units::Count::get(),
-        "The number of atomic read-modify-write store instructions squashed")
+        "The number of atomic read-modify-write store instructions squashed"),
+    ADD_STAT(squashHitExecDistance, statistics::units::Count::get(),
+         "TODO"),
+     ADD_STAT(squashHitExecDirMatch, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(retiredInst, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(effectiveInst, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(squashedInst, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(independentInst, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(independentInstDelta, statistics::units::Count::get(),
+        "TODO"),
+    ADD_STAT(independentInstDeltaNoSquashed, statistics::units::Count::get(),
+         "TODO")
+    
     
 {
+    // instSquashedPerSquash.init(0, 23, 6);
+     // squashHitDistance.init(0, 15, 4);
+     squashHitExecDistance.init(0, 15, 4);
+
+    independentInstDelta.init(0, 32, 4);
+    independentInstDeltaNoSquashed.init(0, 32, 4);
+    effectiveInst = retiredInst - squashedInst;
 }
 
 DynInstPtr
