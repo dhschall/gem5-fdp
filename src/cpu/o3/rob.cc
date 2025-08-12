@@ -327,10 +327,7 @@ ROB::analyzeILP(DynInstPtr inst)
     if (retireBuff.size() < numEntries)
         return;
 
-    // Counters to measure the distance between independent instructions.
-    static uint64_t last_independent_inst = 0;
-    static uint64_t inst_cnt = 0;
-    static uint64_t inst_cnt_no_squash = 0;
+   
 
 
     auto& re = retireBuff.back();

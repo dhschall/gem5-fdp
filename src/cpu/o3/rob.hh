@@ -377,6 +377,11 @@ void squashInst(DynInstPtr inst);
         statistics::Distribution independentInstDeltaNoSquashed;
 
     } stats;
+
+     // Counters to measure the distance between independent instructions.
+     uint64_t last_independent_inst = 0;
+     uint64_t inst_cnt = 0;
+     uint64_t inst_cnt_no_squash = 0;
 };
 
 } // namespace o3
