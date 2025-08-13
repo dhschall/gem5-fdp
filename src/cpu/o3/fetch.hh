@@ -604,6 +604,8 @@ class Fetch
     /*Max number of FT added to the FTQ per Cycle*/
     const unsigned  numPredPerCycle;
 
+    const bool enableFBinFTQ;
+
   protected:
     struct FetchStatGroup : public statistics::Group
     {

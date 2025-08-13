@@ -247,3 +247,9 @@ class BaseO3CPU(BaseCPU):
         1,
         "Maximum prefetches send per cycle. (Used for decoupled front-end)",
     )
+
+    enableFBinFTQ = Param.Bool(
+        False,
+        "Enable the Fetch target queue to store the fetch block"
+        "information in the FTQ",
+    )

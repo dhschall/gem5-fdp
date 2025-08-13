@@ -107,6 +107,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       icachePort(this, _cpu),
       processTrapEvent(this),
       numPredPerCycle(params.numPredPerCycle),
+      enableFBinFTQ(params.enableFBinFTQ),
       fetchStats(_cpu, this)
 {
     if (numThreads > MaxThreads)
@@ -440,8 +441,7 @@ Fetch::processCacheCompletion(PacketPtr pkt)
             pkt->req->getPaddr(), pkt->req->getVaddr());
 
 
-    if(decoupledFrontEnd) {
-
+    if(decoupledFrontEnd && enableFBinFTQ) {
 
     std::vector<FetchTargetPtr> result = ftq->findAll(tid, [pkt](FetchTargetPtr ft) {
         return ft->hasPaddr() && ft->getPaddr() == pkt->req->getPaddr();
@@ -1672,7 +1672,7 @@ bool
 Fetch::fetchTargetHasFBReady(ThreadID tid, bool &status_change, FetchTargetPtr curFT, Addr fetchAddr) {
 
 
-return ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
+return enableFBinFTQ && ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
 
 }
 
