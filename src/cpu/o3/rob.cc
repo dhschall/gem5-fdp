@@ -448,7 +448,7 @@ ROB::doSquash(ThreadID tid, bool squashedDueToMemOrder)
         doneSquashing[tid] = true;
         return;
     }
-
+    stats.robSquashCycles++;
     bool robTailUpdate = false;
 
     unsigned int numInstsToSquash = squashWidth;
@@ -705,8 +705,9 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(independentInstDelta, statistics::units::Count::get(),
         "TODO"),
     ADD_STAT(independentInstDeltaNoSquashed, statistics::units::Count::get(),
-         "TODO")
-    
+         "TODO"), 
+    ADD_STAT(robSquashCycles, statistics::units::Count::get(),
+        "The number of cycles the ROB spends squashing instructions")
     
 {
     // instSquashedPerSquash.init(0, 23, 6);

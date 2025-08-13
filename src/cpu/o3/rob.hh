@@ -375,6 +375,7 @@ void squashInst(DynInstPtr inst);
         statistics::Scalar independentInst;
         statistics::Distribution independentInstDelta;
         statistics::Distribution independentInstDeltaNoSquashed;
+        statistics::Scalar robSquashCycles;
 
     } stats;
 
