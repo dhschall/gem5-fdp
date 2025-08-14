@@ -1,6 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2011-2013, 2016-2024 Arm Limited
+// Copyright (c) 2011-2013, 2016-2025 Arm Limited
 // All rights reserved
 //
 // The license below extends only to copyright in the software and shall
@@ -335,6 +335,12 @@ let {{
     decoder_output += RegMiscRegOp64Constructor.subst(mrsIop)
     exec_output += BasicExecute.subst(mrsIop)
 
+    mrsNonSerIop = ArmInstObjParams("mrs", "MrsNonSer64", "RegMiscRegImmOp64",
+                                    mrsCode)
+    header_output += RegMiscRegOp64Declare.subst(mrsNonSerIop)
+    decoder_output += RegMiscRegOp64Constructor.subst(mrsNonSerIop)
+    exec_output += BasicExecute.subst(mrsNonSerIop)
+
     mrsNZCVCode = '''
         CPSR cpsr = 0;
         cpsr.nz = CondCodesNZ;
@@ -357,6 +363,14 @@ let {{
     header_output += MiscRegRegOp64Declare.subst(msrIop)
     decoder_output += MiscRegRegOp64Constructor.subst(msrIop)
     exec_output += BasicExecute.subst(msrIop)
+
+    msrNonSerIop = ArmInstObjParams("msr", "MsrNonSer64", "MiscRegRegImmOp64",
+                                    ["IsNonSpeculative"],
+                                    msrCode)
+    header_output += MiscRegRegOp64Declare.subst(msrNonSerIop)
+    decoder_output += MiscRegRegOp64Constructor.subst(msrNonSerIop)
+    exec_output += BasicExecute.subst(msrNonSerIop)
+
 
     tlbiCode = msr_check_code + '''
         performTlbi(xc, flat_idx, XOp1);
@@ -426,7 +440,6 @@ let {{
     header_output += MiscRegRegOp64Declare.subst(msrNZCVIop)
     decoder_output += MiscRegRegOp64Constructor.subst(msrNZCVIop)
     exec_output += BasicExecute.subst(msrNZCVIop)
-
 
     msrdczva_ea_code = msr_check_code
     msrdczva_ea_code += '''

@@ -1235,23 +1235,28 @@ namespace ArmISA
     enum MiscRegInfo
     {
         MISCREG_IMPLEMENTED,
-        MISCREG_UNVERIFIABLE,   // Does the value change on every read (e.g. a
-                                // arch generic counter)
-        MISCREG_UNSERIALIZE,    // Should the checkpointed value be restored?
-        MISCREG_WARN_NOT_FAIL,  // If MISCREG_IMPLEMENTED is deasserted, it
-                                // tells whether the instruction should raise a
-                                // warning or fail
-        MISCREG_MUTEX,  // True if the register corresponds to a pair of
-                        // mutually exclusive registers
-        MISCREG_BANKED,  // True if the register is banked between the two
-                         // security states, and this is the parent node of the
-                         // two banked registers
+        MISCREG_UNVERIFIABLE,  // Does the value change on every read (e.g. a
+                               // arch generic counter)
+        MISCREG_UNSERIALIZE,   // Should the checkpointed value be restored?
+        MISCREG_WARN_NOT_FAIL, // If MISCREG_IMPLEMENTED is deasserted, it
+                               // tells whether the instruction should raise a
+                               // warning or fail
+        MISCREG_MUTEX,         // True if the register corresponds to a pair of
+                               // mutually exclusive registers
+        MISCREG_BANKED, // True if the register is banked between the two
+                        // security states, and this is the parent node of the
+                        // two banked registers
         MISCREG_BANKED64, // True if the register is banked between the two
                           // security states, and this is the parent node of
                           // the two banked registers. Used in AA64 only.
         MISCREG_BANKED_CHILD, // The entry is one of the child registers that
                               // forms a banked set of regs (along with the
                               // other child regs)
+        MISCREG_SERIALIZING,  // True if the register requires CPU to serialize
+                              // execution while writing to it. If false,
+                              // register does allow other instructions to be
+                              // executed but the register write is still
+                              // non-speculative (only happening at commit)
 
         // Access permissions
         // User mode
@@ -1308,17 +1313,25 @@ namespace ArmISA
             ThreadContext *tc, const MiscRegOp64 &inst);
 
       public:
-        MiscRegLUTEntry() :
-            lower(0), upper(0),
-            _reset(0), _res0(0), _res1(0), _raz(0), _rao(0), info(0),
-            faultRead({defaultFault<MISCREG_USR_S_RD, MISCREG_USR_NS_RD>,
-                       defaultFault<MISCREG_PRI_S_RD, MISCREG_PRI_NS_RD>,
-                       defaultFault<MISCREG_HYP_S_RD, MISCREG_HYP_NS_RD>,
-                       defaultFault<MISCREG_MON_NS0_RD, MISCREG_MON_NS1_RD>}),
-            faultWrite({defaultFault<MISCREG_USR_S_WR, MISCREG_USR_NS_WR>,
-                        defaultFault<MISCREG_PRI_S_WR, MISCREG_PRI_NS_WR>,
-                        defaultFault<MISCREG_HYP_S_WR, MISCREG_HYP_NS_WR>,
-                        defaultFault<MISCREG_MON_NS0_WR, MISCREG_MON_NS1_WR>})
+        MiscRegLUTEntry()
+            : lower(0),
+              upper(0),
+              _reset(0),
+              _res0(0),
+              _res1(0),
+              _raz(0),
+              _rao(0),
+              info(0),
+              faultRead(
+                  {defaultFault<MISCREG_USR_S_RD, MISCREG_USR_NS_RD>,
+                   defaultFault<MISCREG_PRI_S_RD, MISCREG_PRI_NS_RD>,
+                   defaultFault<MISCREG_HYP_S_RD, MISCREG_HYP_NS_RD>,
+                   defaultFault<MISCREG_MON_NS0_RD, MISCREG_MON_NS1_RD>}),
+              faultWrite(
+                  {defaultFault<MISCREG_USR_S_WR, MISCREG_USR_NS_WR>,
+                   defaultFault<MISCREG_PRI_S_WR, MISCREG_PRI_NS_WR>,
+                   defaultFault<MISCREG_HYP_S_WR, MISCREG_HYP_NS_WR>,
+                   defaultFault<MISCREG_MON_NS0_WR, MISCREG_MON_NS1_WR>})
         {}
         uint64_t reset() const { return _reset; }
         uint64_t res0()  const { return _res0; }
@@ -1423,6 +1436,12 @@ namespace ArmISA
         bankedChild(bool v = true) const
         {
             entry.info[MISCREG_BANKED_CHILD] = v;
+            return *this;
+        }
+        chain
+        serializing(bool v = true) const
+        {
+            entry.info[MISCREG_SERIALIZING] = v;
             return *this;
         }
         chain
@@ -1721,7 +1740,7 @@ namespace ArmISA
           : entry(e)
         {
             // force unimplemented registers to be thusly declared
-            implemented(1).unserialize(1);
+            implemented(true).serializing(true).unserialize(true);
         }
     };
 
@@ -2984,6 +3003,12 @@ namespace ArmISA
         regName(const RegId &id) const override
         {
             return miscRegName[id.index()];
+        }
+
+        bool
+        serializing(const RegId &id) const override
+        {
+            return lookUpMiscReg[id.index()].info[MISCREG_SERIALIZING];
         }
     };
 
