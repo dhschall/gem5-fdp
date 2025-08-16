@@ -165,6 +165,11 @@ class BPredUnit : public SimObject
         return btb->lookup(tid, pc.instAddr());
     }
 
+    BTBLookupResult BTBLookupWithLatency(ThreadID tid, PCStateBase &pc)
+    {
+        return btb->lookupWithLatency(tid, pc.instAddr());
+    }
+    
     /**
      * Looks up a given PC in the BTB to get current static instruction
      * information. This is necessary in a decoupled frontend as

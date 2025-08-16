@@ -49,7 +49,8 @@ namespace branch_prediction
 BranchTargetBuffer::BranchTargetBuffer(const Params &params)
     : ClockedObject(params),
       numThreads(params.numThreads),
-      stats(this)
+      stats(this),
+      staticLatency(params.latency)
 {
 }
 

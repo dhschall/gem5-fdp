@@ -206,7 +206,9 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
      * chance to detect a branch without a BTB hit.
      */
     stats.BTBLookups++;
-    const PCStateBase * btb_target = btb->lookup(tid, pc.instAddr(), brType);
+    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType);
+    const PCStateBase * btb_target = btb_res.target;
+    totalLatency += btb_res.latency;
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;

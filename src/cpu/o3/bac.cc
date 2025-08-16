@@ -650,7 +650,6 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
     PCStateBase &cur_pc = *bacPC[tid];
     Addr search_addr = cur_pc.instAddr();
     Addr start_addr = search_addr;
-
     // In each cycles a new fetch target is created starting with
     // the current PC.
     FetchTargetPtr curFT = newFetchTarget(tid, cur_pc);
@@ -692,7 +691,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
     // Make a copy of the current PC since the BPU will update it.
     std::unique_ptr<PCStateBase> next_pc(cur_pc.clone());
     StaticInstPtr staticInst = nullptr;
-
+    
     if (branch_found) {
         // Branch found in instruction stream. As the current
         // BPU implementation required the static instruction we need to
