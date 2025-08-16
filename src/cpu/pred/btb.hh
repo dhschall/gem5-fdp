@@ -122,7 +122,6 @@ class BranchTargetBuffer : public ClockedObject
         return BTBLookupResult(lookup(tid, instPC, type), Cycles(0));
     }
     
-    virtual Cycles getStaticLatency() const = 0;
 
   protected:
     /** Number of the threads for which the branch history is maintained. */

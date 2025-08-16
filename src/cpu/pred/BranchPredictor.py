@@ -181,9 +181,6 @@ class MultiLevelBTB(BranchTargetBuffer):
         "L2 BTB indexing policy",
     )
 
-    
-    latency = Param.Cycles(1, "Default BTB latency (used for L1)")
-
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"

@@ -68,7 +68,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
     
-    Cycles getStaticLatency() const override { return staticLatency; }
 
   private:
     L1BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
@@ -83,6 +82,26 @@ class MultiLevelBTB : public BranchTargetBuffer
     const Cycles l2Latency;
     
     const unsigned l1NumEntries;
+
+    // Multi-level BTB specific statistics
+    struct MultiLevelBTBStats : public statistics::Group
+    {
+        MultiLevelBTBStats(statistics::Group *parent);
+
+        // L1 BTB statistics
+        statistics::Vector l1Hits;
+        statistics::Vector l1Misses;
+        statistics::Formula l1HitRate;
+        
+        // L2 BTB statistics  
+        statistics::Vector l2Hits;
+        statistics::Vector l2Misses;
+        statistics::Formula l2HitRate;
+        
+        // Overall statistics
+        statistics::Formula overallHitRate;
+        
+    } multiLevelStats;
 };
 
 } // namespace gem5::branch_prediction
