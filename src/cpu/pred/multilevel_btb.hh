@@ -67,7 +67,8 @@ class MultiLevelBTB : public BranchTargetBuffer
                 StaticInstPtr inst = nullptr) override;
     
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
-    
+   
+    void regStats() override;
 
   private:
     L1BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
@@ -87,21 +88,16 @@ class MultiLevelBTB : public BranchTargetBuffer
     struct MultiLevelBTBStats : public statistics::Group
     {
         MultiLevelBTBStats(statistics::Group *parent);
+        statistics::Vector lookups;
+        statistics::Vector misses;
+        statistics::Vector updates;
+        statistics::Vector mispredict;
+        statistics::Scalar evictions;
 
-        // L1 BTB statistics
         statistics::Vector l1Hits;
-        statistics::Vector l1Misses;
-        statistics::Formula l1HitRate;
-        
-        // L2 BTB statistics  
         statistics::Vector l2Hits;
-        statistics::Vector l2Misses;
-        statistics::Formula l2HitRate;
         
-        // Overall statistics
-        statistics::Formula overallHitRate;
-        
-    } multiLevelStats;
+    } stats;
 };
 
 } // namespace gem5::branch_prediction
