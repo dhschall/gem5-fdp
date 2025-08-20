@@ -9,17 +9,6 @@ namespace gem5::branch_prediction
 
 MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
-      ADD_STAT(lookups, statistics::units::Count::get(),
-               "Number of BTB lookups"),
-      ADD_STAT(misses, statistics::units::Count::get(),
-               "Number of BTB misses"),
-      ADD_STAT(updates, statistics::units::Count::get(),
-               "Number of BTB updates"),
-      ADD_STAT(mispredict, statistics::units::Count::get(),
-               "Number of BTB mispredictions. "
-               "No target found or target wrong."),
-      ADD_STAT(evictions, statistics::units::Count::get(),
-               "Number of BTB evictions"),
       ADD_STAT(l1Hits, statistics::units::Count::get(), 
                "Number of L1 BTB hits per branch type"),
       ADD_STAT(l2Hits, statistics::units::Count::get(), 
@@ -36,6 +25,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent)
         .flags(total | pdf);
         
     for (int i = 0; i < enums::Num_BranchType; i++) {
+
         l1Hits.subname(i, enums::BranchTypeStrings[i]);
         l2Hits.subname(i, enums::BranchTypeStrings[i]);
     }
@@ -51,7 +41,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l1Latency(p.l1Latency),
       l2Latency(p.l2Latency),
       l1NumEntries(p.l1NumEntries),
-      stats(this)
+      multilevelstats(this)
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
@@ -83,10 +73,10 @@ MultiLevelBTB::findL2Entry(Addr instPC, ThreadID tid)
 bool
 MultiLevelBTB::valid(ThreadID tid, Addr instPC)
 {
-    L1BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
+    /*L1BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
     if (l1_entry != nullptr && l1_entry->match({instPC, tid})) {
         return true;
-    }
+    }*/
     
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
     return l2_entry != nullptr;
@@ -110,7 +100,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         // hit in l1, but l1entry is fake. Need to look up l2
         BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
         if (l2_entry != nullptr) {
-            stats.l1Hits[type]++;
+            multilevelstats.l1Hits[type]++;
             DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
             return BTBLookupResult(l2_entry->target.get(), l1Latency);
         }
@@ -119,7 +109,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
     // L1miss, lookup l2 btb
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
-        stats.l2Hits[type]++;
+        multilevelstats.l2Hits[type]++;
         DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles\n", instPC, l2Latency);
         auto l1_victim = l1btb.findVictim({instPC, tid});
         l1btb.insertEntry({instPC, tid}, l1_victim);
@@ -164,13 +154,5 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     DPRINTF(BTB, "Updated BTB for PC %#x -> %#x\n", instPC, target.instAddr());
 }
 
-void
-MultiLevelBTB::regStats()
-{
-   
-    BranchTargetBuffer::regStats();
-    
-    stats.regStats();
-}
 
 } // namespace gem5::branch_prediction
