@@ -245,7 +245,13 @@ class BranchPredictor(SimObject):
         "This info is only available from the BTB. "
         "Low-end CPUs predecoding might be used to identify branches. ",
     )
-
+    updateBTBAtSquash = Param.Bool(
+        False,
+        "Update the BTB at squash time instead of commit. This can be useful "
+        "to update the BTB earlier to avoid BTB misses on subsequent "
+        "branches. However, it can also lead to BTB pollution if the branch "
+        "is on the false path and will be squashed later.",
+    )
     btb = Param.BranchTargetBuffer(SimpleBTB(), "Branch target buffer (BTB)")
     ras = Param.ReturnAddrStack(
         ReturnAddrStack(), "Return address stack, set to NULL to disable RAS."

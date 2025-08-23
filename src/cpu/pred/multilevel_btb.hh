@@ -9,44 +9,6 @@
 namespace gem5::branch_prediction
 {
 
-// Simplified L1 BTB entry. Only store the branch address.
-struct L1BTBEntry : public ReplaceableEntry
-{
-    using IndexingPolicy = gem5::BTBIndexingPolicy;
-    using KeyType = gem5::BTBTagType::KeyType;
-    
-    Addr instPC;
-    ThreadID tid;
-    bool valid;
-    
-    L1BTBEntry() : instPC(0), tid(0), valid(false) {}
-    
-    void update(Addr pc, ThreadID thread_id) {
-        instPC = pc;
-        tid = thread_id;
-        valid = true;
-    }
-    
-    
-    // Required methods for AssociativeCache
-    bool match(const KeyType &key) const {
-        return valid && (instPC == key.address) && (tid == key.tid);
-    }
-    
-    bool isValid() const { return valid; }
-    
-    void insert(const KeyType &key) {
-        instPC = key.address;
-        tid = key.tid;
-        valid = true;
-    }
-    
-    void invalidate() {
-        valid = false;
-        instPC = 0;
-        tid = 0;
-    }
-};
 
 class MultiLevelBTB : public BranchTargetBuffer
 {
@@ -70,11 +32,11 @@ class MultiLevelBTB : public BranchTargetBuffer
    
 
   private:
-    L1BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
+    BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
     
     BTBEntry *findL2Entry(Addr instPC, ThreadID tid);
 
-    AssociativeCache<L1BTBEntry> l1btb;
+    AssociativeCache<BTBEntry> l1btb;
     
     AssociativeCache<BTBEntry> l2btb;
     

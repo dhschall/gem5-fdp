@@ -34,7 +34,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent)
 MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
     : BranchTargetBuffer(p),
       l1btb("l1BTB", p.l1NumEntries, p.l1Associativity,
-            p.l1ReplPolicy, p.l1IndexingPolicy, L1BTBEntry()),
+            p.l1ReplPolicy, p.l1IndexingPolicy, BTBEntry(genTagExtractor(p.l1IndexingPolicy))),
       l2btb("l2BTB", p.l2NumEntries, p.l2Associativity,
             p.l2ReplPolicy, p.l2IndexingPolicy,
             BTBEntry(genTagExtractor(p.l2IndexingPolicy))),
@@ -58,7 +58,7 @@ MultiLevelBTB::memInvalidate()
     l2btb.clear();
 }
 
-L1BTBEntry *
+BTBEntry *
 MultiLevelBTB::findL1Entry(Addr instPC, ThreadID tid)
 {
     return l1btb.findEntry({instPC, tid});
@@ -73,13 +73,18 @@ MultiLevelBTB::findL2Entry(Addr instPC, ThreadID tid)
 bool
 MultiLevelBTB::valid(ThreadID tid, Addr instPC)
 {
-    /*L1BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
-    if (l1_entry != nullptr && l1_entry->match({instPC, tid})) {
+    BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
+    if (l1_entry != nullptr) {
+        DPRINTF(BTB, "L1 BTB valid for PC %#x\n", instPC);
         return true;
-    }*/
+    }
     
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
-    return l2_entry != nullptr;
+    if(l2_entry != nullptr) {
+        DPRINTF(BTB, "L2 BTB valid for PC %#x\n", instPC);
+        return true;
+    }
+    return false;
 }
 
 const PCStateBase *
@@ -95,38 +100,37 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
     stats.lookups[type]++;
 
     // lookup l1 btb firstly
-    L1BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
-    if (l1_entry != nullptr && l1_entry->match({instPC, tid})) {
-        // hit in l1, but l1entry is fake. Need to look up l2
-        BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
-        if (l2_entry != nullptr) {
-            multilevelstats.l1Hits[type]++;
-            DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
-            return BTBLookupResult(l2_entry->target.get(), l1Latency);
-        }
+    BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
+    if (l1_entry != nullptr) {
+        multilevelstats.l1Hits[type]++;
+        DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
+        return BTBLookupResult(l1_entry->target.get(), l1Latency, true, false);
     }
 
     // L1miss, lookup l2 btb
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
         multilevelstats.l2Hits[type]++;
-        DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles\n", instPC, l2Latency);
         auto l1_victim = l1btb.findVictim({instPC, tid});
         l1btb.insertEntry({instPC, tid}, l1_victim);
-        l1_victim->update(instPC, tid);
-        return BTBLookupResult(l2_entry->target.get(), l2Latency);
+        l1_victim->update(*l2_entry->target, l2_entry->inst);
+        DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n", instPC, l2Latency);
+        return BTBLookupResult(l2_entry->target.get(), l2Latency, false, true);
     }
-
     // Miss in both l1 and l2
     stats.misses[type]++;
     DPRINTF(BTB, "BTB miss for PC %#x\n", instPC);
-    return BTBLookupResult(nullptr, Cycles(0));
+    return BTBLookupResult(nullptr, l1Latency + l2Latency, false, false);
 }
 
 const StaticInstPtr
 MultiLevelBTB::getInst(ThreadID tid, Addr instPC)
 {
-    // L1 BTB only store branch address, so the instruction information is stored in L2 BTB
+    //For this implementation, L2 is not strictly inclusive of L1, so we need to check both
+    BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
+    if (l1_entry) {
+        return l1_entry->inst;
+    }
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
     if (l2_entry) {
         return l2_entry->inst;
@@ -147,9 +151,9 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     l2_victim->update(target, inst);
 
   
-    L1BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
+    BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
     l1btb.insertEntry({instPC, tid}, l1_victim);
-    l1_victim->update(instPC, tid);
+    l1_victim->update(target, inst);
 
     DPRINTF(BTB, "Updated BTB for PC %#x -> %#x\n", instPC, target.instAddr());
 }
