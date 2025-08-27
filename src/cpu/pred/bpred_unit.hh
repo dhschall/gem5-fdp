@@ -49,6 +49,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/btb.hh"
+#include "cpu/pred/multilevel_btb.hh"
 #include "cpu/pred/conditional.hh"
 #include "cpu/pred/indirect.hh"
 #include "cpu/pred/ras.hh"
@@ -165,6 +166,11 @@ class BPredUnit : public SimObject
         return btb->lookup(tid, pc.instAddr());
     }
 
+    BTBLookupResult BTBLookupWithLatency(ThreadID tid, PCStateBase &pc)
+    {
+        return btb->lookupWithLatency(tid, pc.instAddr());
+    }
+    
     /**
      * Looks up a given PC in the BTB to get current static instruction
      * information. This is necessary in a decoupled frontend as
@@ -339,6 +345,10 @@ class BPredUnit : public SimObject
         /** Was BTB hit at prediction time */
         bool btbHit;
 
+        /** BTB level hit information for MultiLevelBTB */
+        bool l1btbHit;
+        bool l2btbHit;
+
         /** Which component provided the target */
         TargetProvider targetProvider;
 
@@ -391,7 +401,12 @@ class BPredUnit : public SimObject
      * @param bpu_history The history of the branch to be commited.
      */
     void commitBranch(ThreadID tid, PredictorHistory* &bpu_history);
-
+    /**
+     *  Update the BTB with the correct target of a branch.
+     * @param tid The thread id.
+     * @param bpu_history The history of the branch to be updated.
+     */
+     void updateBTB(ThreadID tid, PredictorHistory *&bpu_history);
     /**
      * Special function for the decoupled front-end. In it there can be
      * branches which are not detected by the BPU in the first place as it
@@ -417,6 +432,8 @@ class BPredUnit : public SimObject
     void updateStatsOverriding(bool prediction, bool actuallyTaken, bool overridden);
 
   protected:
+
+    bool isMultiLevelBTB;
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
 
@@ -427,7 +444,11 @@ class BPredUnit : public SimObject
      * This info is only available from the BTB.
      * Low-end CPUs predecoding might be used to identify branches. */
     const bool requiresBTBHit;
-
+    /** Update the BTB at squash time instead of commit. This can be useful
+     * to update the BTB earlier to avoid BTB misses on subsequent branches.
+     * However, it can also lead to BTB pollution if the branch is on the
+     * false path and will be squashed later. */
+     const bool updateBTBAtSquash;
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
 
@@ -461,6 +482,7 @@ class BPredUnit : public SimObject
         std::unordered_set<Addr> uniqueBranches; 
 
         void preDumpStats() override;
+        void resetStats() override;
 
         /** Stats per branch type */
         statistics::Vector2d lookups;
@@ -501,6 +523,8 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectHits;
         statistics::Scalar indirectMisses;
         statistics::Scalar indirectMispredicted;
+        statistics::Scalar l1btbHits;
+        statistics::Scalar l2btbHits;
 
     } stats;
 

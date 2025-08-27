@@ -59,6 +59,7 @@ BPredUnit::BPredUnit(const Params &params)
     : SimObject(params),
       numThreads(params.numThreads),
       requiresBTBHit(params.requiresBTBHit),
+      updateBTBAtSquash(params.updateBTBAtSquash),
       instShiftAmt(params.instShiftAmt),
       predHist(numThreads),
       btb(params.btb),
@@ -68,6 +69,7 @@ BPredUnit::BPredUnit(const Params &params)
       iPred(params.indirectBranchPred),
       stats(this)
 {
+    isMultiLevelBTB = (dynamic_cast<const MultiLevelBTB*>(btb) != nullptr);
 }
 
 
@@ -206,10 +208,17 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
      * chance to detect a branch without a BTB hit.
      */
     stats.BTBLookups++;
-    const PCStateBase * btb_target = btb->lookup(tid, pc.instAddr(), brType);
+    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType);
+    const PCStateBase * btb_target = btb_res.target;
+    totalLatency += btb_res.latency;
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;
+
+        if (isMultiLevelBTB) {
+            hist->l1btbHit = btb_res.l1Hit;
+            hist->l2btbHit = btb_res.l2Hit;
+        }
 
         if (hist->predTaken) {
             hist->targetProvider = TargetProvider::BTB;
@@ -406,6 +415,8 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
         } else {
             stats.mispredictDueToPredictor[tid][hist->type]++;
         }
+        ++stats.condIncorrect;
+        ppMisses->notify(1);
     }
 
 
@@ -448,22 +459,17 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                          hist->rasHistory);
     }
 
-    // Update the BTB with commited branches.
-    // Install all taken
-    if (hist->actuallyTaken) {
+    
+    // Correct BTB (at commit) -------------------------------------
+    // Update the BTB for all committed taken branches.
+    if (hist->actuallyTaken && !updateBTBAtSquash) { updateBTB(tid, hist); }
 
-        DPRINTF(Branch,"[tid:%i] BTB Update called for [sn:%llu] "
-                    "PC %#x -> T: %#x\n", tid,
-                    hist->seqNum, hist->pc, hist->target->instAddr());
-
-        stats.BTBUpdates++;
-
-        stats.uniqueBranches.insert(hist->pc);
-
-        btb->update(tid, hist->pc,
-                        *hist->target,
-                         hist->type,
-                         hist->inst);
+    if (isMultiLevelBTB && hist->btbHit) {
+        if (hist->l1btbHit) {
+            stats.l1btbHits++;
+        } else if (hist->l2btbHit) {
+            stats.l2btbHits++;
+        }
     }
 }
 
@@ -551,8 +557,6 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
 
     History &pred_hist = predHist[tid];
 
-    ++stats.condIncorrect;
-    ppMisses->notify(1);
 
 
     DPRINTF(Branch, "[tid:%i] Squash from %s start from sequence number %i, "
@@ -570,8 +574,8 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
     // fix up the entry.
     if (!pred_hist.empty()) {
 
-        PredictorHistory* const hist = pred_hist.front();
-
+        PredictorHistory *hist = pred_hist.front();
+        
         DPRINTF(Branch, "[tid:%i] [squash sn:%llu] Mispredicted: %s, PC:%#x\n",
                     tid, squashed_sn, toString(hist->type), hist->pc);
 
@@ -666,37 +670,41 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
             }
         }
 
-        // Correct BTB ---------------------------------------------------
+        // Correct BTB (at squash)---------------------------------------------
         // Update the BTB for all mispredicted taken branches.
-        // Always if `requiresBTBHit` is true otherwise only if the
-        // branch was direct or no indirect predictor is available.
-        if (actually_taken &&
-            (requiresBTBHit || hist->inst->isDirectCtrl() ||
-            (!iPred && !hist->inst->isReturn()))) {
-
-            if (!hist->btbHit) {
-                ++stats.BTBMispredicted;
-                if (hist->condPred)
-                    ++stats.predTakenBTBMiss;
-            }
-
-            DPRINTF(Branch,"[tid:%i] BTB Update called for [sn:%llu] "
-                        "PC %#x -> T: %#x\n", tid,
-                        hist->seqNum, hist->pc, hist->target->instAddr());
-
-            stats.uniqueBranches.insert(hist->pc);
-            // stats.BTBUpdates++;
-            // btb->update(tid, hist->pc,
-            //                 *hist->target,
-            //                  hist->type,
-            //                  hist->inst);
-            btb->incorrectTarget(hist->pc, hist->type);
-        }
+        if (actually_taken && updateBTBAtSquash) { updateBTB(tid, hist); }
 
     } else {
         DPRINTF(Branch, "[tid:%i] [sn:%llu] pred_hist empty, can't "
                 "update\n", tid, squashed_sn);
     }
+}
+
+void
+BPredUnit::updateBTB(ThreadID tid, PredictorHistory *&hist)
+{
+    // If a BTB hit is not required to identify branches
+    // (requiresBTBHit=False) we will not install `returns`
+    // and `indirect` branchee into the BTB.
+    if (!requiresBTBHit) {
+        if (hist->inst->isReturn()) return;
+        // For indirect branches we do install them if there is no
+        // indirector available
+        if (iPred && hist->inst->isIndirectCtrl()) return;
+    }
+
+    DPRINTF(Branch, "[tid:%i] BTB Update for [sn:%llu] PC %#x -> T:%#x\n", tid,
+            hist->seqNum, hist->pc, hist->target->instAddr());
+
+    if (!hist->btbHit) {
+        ++stats.BTBMispredicted;
+        if (hist->condPred) ++stats.predTakenBTBMiss;
+    }
+
+    stats.BTBUpdates++;
+    stats.uniqueBranches.insert(hist->pc);
+    btb->update(tid, hist->pc, *hist->target, hist->type, hist->inst);
+    btb->incorrectTarget(hist->pc, hist->type);
 }
 
 void
@@ -820,7 +828,11 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(indirectMisses, statistics::units::Count::get(),
                "Number of indirect misses."),
       ADD_STAT(indirectMispredicted, statistics::units::Count::get(),
-               "Number of mispredicted indirect branches.")
+               "Number of mispredicted indirect branches."),
+      ADD_STAT(l1btbHits, statistics::units::Count::get(),
+              "Number of L1 BTB hits per thread and branch type (MultiLevelBTB only)"),
+      ADD_STAT(l2btbHits, statistics::units::Count::get(),
+              "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)")
 
 {
     using namespace statistics;
@@ -880,6 +892,11 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
 
 void BPredUnit::BPredUnitStats::preDumpStats() {
     BTBUniqueBranches = uniqueBranches.size();
+}
+
+void BPredUnit::BPredUnitStats::resetStats() {
+    statistics::Group::resetStats();
+    uniqueBranches.clear();
 }
 
 } // namespace branch_prediction
