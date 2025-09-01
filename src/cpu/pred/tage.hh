@@ -76,8 +76,10 @@ namespace branch_prediction
 
 class TAGE: public ConditionalPredictor
 {
-  protected:
+  public:
     TAGEBase *tage;
+  
+  protected:
 
     Random::RandomPtr rng = Random::genRandom();
 
@@ -95,7 +97,7 @@ class TAGE: public ConditionalPredictor
         }
     };
 
-    virtual bool predict(ThreadID tid, Addr branch_pc, bool cond_branch,
+    virtual Prediction predict(ThreadID tid, Addr branch_pc, bool cond_branch,
                          void* &b);
 
   public:
@@ -103,16 +105,25 @@ class TAGE: public ConditionalPredictor
     TAGE(const TAGEParams &params);
 
     // Base class methods.
-    bool lookup(ThreadID tid, Addr pc, void* &bp_history) override;
+    Prediction lookup(ThreadID tid, Addr pc, void* &bp_history) override;
     void updateHistories(ThreadID tid, Addr pc, bool uncond,
                          bool taken, Addr target, const StaticInstPtr &inst,
                          void * &bp_history) override;
     void update(ThreadID tid, Addr pc, bool taken, void * &bp_history,
                 bool squashed, const StaticInstPtr &inst,
                 Addr target) override;
-    void squash(ThreadID tid, void * &bp_history) override;
-    void branchPlaceholder(ThreadID tid, Addr pc,
-                           bool uncond, void * &bp_history) override;
+    virtual void squash(ThreadID tid, void * &bp_history) override;
+    virtual void branchPlaceholder(ThreadID tid, Addr pc,
+                                   bool uncond, void * &bp_history) override;
+
+    unsigned int getNumHistoryTables() const
+    {
+        return tage->nHistoryTables;
+    }
+
+    uint16_t gtag(ThreadID tid, Addr pc, int bank) const {
+        return tage->gtag(tid, pc, bank);
+    }
 };
 
 } // namespace branch_prediction

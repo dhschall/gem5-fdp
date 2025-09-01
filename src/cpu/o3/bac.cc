@@ -84,6 +84,7 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       decodeToFetchDelay(params.decodeToFetchDelay),
       commitToFetchDelay(params.commitToFetchDelay),
       bacToFetchDelay(params.bacToFetchDelay),
+      bacBranchPredictDelay(params.bacBranchPredictDelay),
       cacheBlkSize(cpu->cacheLineSize()),
       fetchTargetWidth(params.fetchTargetWidth),
       minInstSize(params.minInstSize),
@@ -101,6 +102,7 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
     for (int i = 0; i < MaxThreads; i++) {
         bacPC[i].reset(params.isa[0]->newPCState());
         stalls[i] = {false, false, false};
+        branchPredictRemaining[i] = Cycles(0);
     }
 
     assert(bpu != nullptr);
@@ -393,10 +395,22 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
         return true;
     }
 
+    if (branchPredictRemaining[tid] > Cycles(0)) {
+        --branchPredictRemaining[tid];
+        DPRINTF(BAC,
+            "[global] Stalling for Branch Predictor for %i more cycles.\n",
+            branchPredictRemaining[tid]
+        );
+        stalls[tid].bpu = true;
+    } else {
+        stalls[tid].bpu = false;
+    }
+
     if (checkStall(tid)) {
         bacStatus[tid] = Blocked;
         return true;
     }
+
 
     // If at this point the FTQ is still invalid we need to wait for
     // A resteer/squash signal.
@@ -469,6 +483,9 @@ BAC::squashBpuHistories(ThreadID tid)
     }
 
     DPRINTF(BAC, "%s(tid:%i): FTQ sz: %i\n", __func__, tid, ftq->size(tid));
+
+    unsigned n_fts = ftq->size(tid);
+    if (n_fts == 0) return;
 
     // Iterate over the FTQ in reverse order to
     // revert all predictions made.
@@ -562,9 +579,9 @@ BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
     return ft;
 }
 
-bool
-BAC::predict(ThreadID tid, const StaticInstPtr &inst, const FetchTargetPtr &ft,
-             PCStateBase &pc)
+Prediction
+BAC::predict(ThreadID tid, const StaticInstPtr &inst,
+             const FetchTargetPtr &ft, PCStateBase &pc)
 {
 
     /** Perform the prediction.
@@ -576,10 +593,13 @@ BAC::predict(ThreadID tid, const StaticInstPtr &inst, const FetchTargetPtr &ft,
      * main history of the BPU and insert these missing histories.
      */
     assert(ft->bpuHistory == nullptr);
-    bool taken = bpu->predict(inst, ft->ftNum(), pc, tid, ft->bpuHistory);
 
-    DPRINTF(Branch, "[tid:%i, ftn:%llu] History added.\n", tid, ft->ftNum());
-    return taken;
+    BPredUnit::Prediction pred = bpu->predict(
+        inst, ft->ftNum(), pc, tid, ft->bpu_history
+    );
+
+    DPRINTF(Branch,"[tid:%i, ftn:%llu] History added.\n", tid, ft->ftNum());
+    return pred;
 }
 
 void
@@ -674,9 +694,11 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             staticInst = bpu->BTBGetInst(tid, cur_pc.instAddr());
             assert(staticInst);
 
-            // Now make the actual prediction. Note the BPU will advance
-            // the PC to the next instruction.
-            predict_taken = predict(tid, staticInst, curFT, *next_pc);
+        // Now make the actual prediction. Note the BPU will advance
+        // the PC to the next instruction.
+        Prediction pred = predict(tid, staticInst, curFT, *next_pc);
+        predict_taken = pred.taken;
+        branchPredictRemaining[tid] = Cycles(pred.latency);
 
             DPRINTF(BAC,
                     "[tid:%i, ftn:%llu] Branch found at PC %#x "
@@ -874,6 +896,9 @@ BAC::updatePreDecode(ThreadID tid, const InstSeqNum seqNum,
         bpu->branchPlaceholder(tid, pc.instAddr(), inst->isUncondCtrl(),
                                hist->bpHistory);
 
+        hist->predTaken = hist->condPred = false;
+        hist->targetProvider = BPredUnit::TargetProvider::NoTarget;
+
         set(hist->target, std::unique_ptr<PCStateBase>(pc.clone()));
         inst->advancePC(*hist->target);
     }
@@ -923,8 +948,12 @@ BAC::updatePC(const DynInstPtr &inst, PCStateBase &fetch_pc,
         } else {
             // With a coupled front-end we need to make the branch prediction
             // here.
-            predict_taken =
-                bpu->predict(inst->staticInst, inst->seqNum, fetch_pc, tid);
+            //
+            // Latency is ignored in coupled mode
+            Prediction pred = bpu->predict(
+                inst->staticInst, inst->seqNum, fetch_pc, tid
+            );
+            predict_taken = pred.taken;
         }
 
         DPRINTF(BAC,
@@ -971,39 +1000,78 @@ BAC::updatePC(const DynInstPtr &inst, PCStateBase &fetch_pc,
     return predict_taken;
 }
 
+
+void
+BAC::profileCycle(ThreadID tid)
+{
+    switch (bacStatus[tid]) {
+    case Idle:
+        stats.idleCycles++;
+        break;
+    case Running:
+        stats.runCycles++;
+        break;
+    case Squashing:
+        stats.squashCycles++;
+        break;
+    case Blocked:
+        stats.blockedCycles++;
+        break;
+    case FTQFull:
+        stats.ftqFullCycles++;
+        break;
+
+    default:
+        break;
+    }
+}
+
+
 BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
     : statistics::Group(cpu, "bac"),
-      ADD_STAT(status, statistics::units::Cycle::get(),
+    ADD_STAT(status, statistics::units::Cycle::get(),
                "Number of cycles BAC in state"),
-      ADD_STAT(fetchTargets, statistics::units::Count::get(),
-               "Number of fetch targets created "),
-      ADD_STAT(branches, statistics::units::Count::get(),
-               "Number of branches that BAC encountered"),
-      ADD_STAT(predTakenBranches, statistics::units::Count::get(),
-               "Number of branches that BAC predicted taken."),
-      ADD_STAT(branchesNotLastuOp, statistics::units::Count::get(),
-               "Number of branches that fetch encountered which are not the "
-               "last uOp within a macrooperation. Jump to itself."),
-      ADD_STAT(branchMisspredict, statistics::units::Count::get(),
-               "Number of mispredicted branches"),
-      ADD_STAT(noBranchMisspredict, statistics::units::Count::get(),
-               "Number of non-branch instructions mispredicted"),
-      ADD_STAT(squashBranchDecode, statistics::units::Count::get(),
-               "Number of branches squashed from decode"),
-      ADD_STAT(squashBranchCommit, statistics::units::Count::get(),
-               "Number of branches squashed from commit"),
-      ADD_STAT(preDecUpdate, statistics::units::Count::get(),
-               "Number of branches extracted from the predecoder"),
-      ADD_STAT(noHistByType, statistics::units::Count::get(),
-               "Number and type of branches that were undetected by the BPU."),
-      ADD_STAT(typeMissmatch, statistics::units::Count::get(),
-               "Number branches where the branch type miss match"),
-      ADD_STAT(multiBranchInst, statistics::units::Count::get(),
-               "Number branches because its not the last branch."),
-      ADD_STAT(ftSizeDist, statistics::units::Count::get(),
-               "Number of bytes per fetch target"),
-      ADD_STAT(ftNumber, statistics::units::Count::get(),
-               "Number of fetch target inserted to the FTQ per cycle")
+
+    ADD_STAT(idleCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC is idle. (PC invalid)"),
+    ADD_STAT(runCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC is running"),
+    ADD_STAT(squashCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC is squashing"),
+    ADD_STAT(blockedCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC is blocked"),
+    ADD_STAT(ftqFullCycles, statistics::units::Cycle::get(),
+            "Number of cycles BAC has spent waiting for FTQ to become free"),
+
+    ADD_STAT(fetchTargets, statistics::units::Count::get(),
+           "Number of fetch targets created "),
+    ADD_STAT(branches, statistics::units::Count::get(),
+            "Number of branches that BAC encountered"),
+    ADD_STAT(predTakenBranches, statistics::units::Count::get(),
+            "Number of branches that BAC predicted taken."),
+    ADD_STAT(branchesNotLastuOp, statistics::units::Count::get(),
+             "Number of branches that fetch encountered which are not the "
+             "last uOp within a macrooperation. Jump to itself."),
+    ADD_STAT(branchMisspredict, statistics::units::Count::get(),
+            "Number of mispredicted branches"),
+    ADD_STAT(noBranchMisspredict, statistics::units::Count::get(),
+            "Number of non-branch instructions mispredicted"),
+    ADD_STAT(squashBranchDecode, statistics::units::Count::get(),
+            "Number of branches squashed from decode"),
+    ADD_STAT(squashBranchCommit, statistics::units::Count::get(),
+            "Number of branches squashed from commit"),
+    ADD_STAT(preDecUpdate, statistics::units::Count::get(),
+            "Number of branches extracted from the predecoder"),
+    ADD_STAT(noHistByType, statistics::units::Count::get(),
+            "Number and type of branches that were undetected by the BPU."),
+    ADD_STAT(typeMissmatch, statistics::units::Count::get(),
+            "Number branches where the branch type miss match"),
+    ADD_STAT(multiBranchInst, statistics::units::Count::get(),
+            "Number branches because its not the last branch."),
+    ADD_STAT(ftSizeDist, statistics::units::Count::get(),
+             "Number of bytes per fetch target"),
+    ADD_STAT(ftNumber, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle")
 {
     using namespace statistics;
     status.init(ThreadStatusMax).flags(statistics::pdf | statistics::nozero);

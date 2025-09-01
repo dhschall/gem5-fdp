@@ -46,7 +46,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/branch_type.hh"
 #include "params/ConditionalPredictor.hh"
-#include "sim/sim_object.hh"
+#include "sim/clocked_object.hh"
 
 namespace gem5
 {
@@ -54,7 +54,7 @@ namespace gem5
 namespace branch_prediction
 {
 
-class ConditionalPredictor : public SimObject
+class ConditionalPredictor : public ClockedObject
 {
   public:
 
@@ -62,6 +62,13 @@ class ConditionalPredictor : public SimObject
 
     ConditionalPredictor(const Params &params);
 
+    /**
+     * Returns the configured prediction latency in cycles
+     * @return The prediction latency in cycles
+     */
+    Cycles getStaticLatency() const {
+        return staticLatency;
+    }
 
     /**
      * Looks up a given conditional branch PC of in the BP to see if it
@@ -72,7 +79,7 @@ class ConditionalPredictor : public SimObject
      * has the branch predictor state associated with the lookup.
      * @return Whether the branch is taken or not taken.
      */
-    virtual bool lookup(ThreadID tid, Addr pc, void * &bp_history) = 0;
+    virtual Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) = 0;
 
     /**
      * Ones done with the prediction this function updates the
@@ -90,9 +97,8 @@ class ConditionalPredictor : public SimObject
      *
      */
     virtual void updateHistories(ThreadID tid, Addr pc, bool uncond,
-                                 bool taken, Addr target,
-                                 const StaticInstPtr &inst,
-                                 void * &bp_history) = 0;
+                           bool taken, Addr target,
+                           const StaticInstPtr &inst, void * &bp_history) = 0;
 
     /**
      * @param tid The thread id.
@@ -141,9 +147,18 @@ class ConditionalPredictor : public SimObject
 
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
+
+    /** Static latency of the predictor in cycles */
+    const Cycles staticLatency;
+
+    /** Return a prediction with only static latency */
+    Prediction staticPrediction(bool taken) const
+    {
+        return Prediction{taken, staticLatency};
+    }
 };
 
 } // namespace branch_prediction
 } // namespace gem5
 
-#endif // __CPU_PRED_CONDITIONAL_BASE_HH__
+#endif //__CPU_PRED_CONDITIONAL_BASE_HH__

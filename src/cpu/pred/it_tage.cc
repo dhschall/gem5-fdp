@@ -207,8 +207,8 @@ ITTAGE_TAGE::updateHistories(ThreadID tid, bool speculative,
     DPRINTF(Indirect, "%s(hist:%#x, nbits:%i) pc:%#x; ptr:%d, GHR:%#x\n",
             __func__, bi->ghist, bi->nGhist, bi->branchPC, tHist.ptGhist,
             getGHR(tid));
-    // assert(threadHistory[tid].gHist ==
-    //         &threadHistory[tid].globalHistory[threadHistory[tid].ptGhist]);
+    //assert(threadHistory[tid].gHist ==
+    //        &threadHistory[tid].globalHistory[threadHistory[tid].ptGhist]);
 
 }
 
@@ -252,7 +252,7 @@ ITTAGE_TAGE::updateIndirect(ThreadID tid,
 
 
 
-bool
+int
 ITTAGE_TAGE::allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken)
 {
     if (TAGEBase::allocateEntry(idx, bi, taken)) {
@@ -264,9 +264,9 @@ ITTAGE_TAGE::allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken)
         assert(idx <= nHistoryTables);
         assert(b->tableIndices[idx] < (1<<(logTagTableSizes[idx])));
         set(tgtTable[idx][b->tableIndices[idx]].target, b->corrTarget);
-        return true;
+        return 1;
     }
-    return false;
+    return 0;
 }
 
 

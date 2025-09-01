@@ -135,7 +135,7 @@ class ITTAGE_TAGE : public TAGEBase
     void updateIndirect(ThreadID tid, ITTAGEBranchInfo* bi, int nrand,
                         const PCStateBase& target);
 
-    bool allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken) override;
+    int allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken) override;
 
     /**
      * Handles the update of the TAGE entries

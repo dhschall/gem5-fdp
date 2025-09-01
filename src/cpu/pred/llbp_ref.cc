@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023 The University of Edinburgh
+ * Copyright (c) 2025 Technical University of Munich
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -38,12 +38,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/pred/2bit_local.hh"
+#include "cpu/pred/llbp_ref.hh"
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/Fetch.hh"
+#include "cpu/pred/llbpref/llbp.h"
 
 namespace gem5
 {
@@ -51,41 +52,26 @@ namespace gem5
 namespace branch_prediction
 {
 
-LocalBP::LocalBP(const LocalBPParams &params)
+LLBPRef::LLBPRef(const LLBPRefParams &params)
     : ConditionalPredictor(params),
-      localPredictorSize(params.localPredictorSize),
-      localCtrBits(params.localCtrBits),
-      localPredictorSets(localPredictorSize / localCtrBits),
-      localCtrs(localPredictorSets, SatCounter8(localCtrBits)),
-      indexMask(localPredictorSets - 1)
+      predictor(nullptr),
+      stats(this)
 {
-    if (!isPowerOf2(localPredictorSize)) {
-        fatal("Invalid local predictor size!\n");
+    if (params.inf) {
+        predictor = new LLBP::LLBPInfTageSCL64k();
+    } else {
+        predictor = new LLBP::LLBPTageSCL64k();
     }
-
-    if (!isPowerOf2(localPredictorSets)) {
-        fatal("Invalid number of local predictor sets! Check localCtrBits.\n");
-    }
-
-    DPRINTF(Fetch, "index mask: %#x\n", indexMask);
-
-    DPRINTF(Fetch, "local predictor size: %i\n",
-            localPredictorSize);
-
-    DPRINTF(Fetch, "local counter bits: %i\n", localCtrBits);
-
-    DPRINTF(Fetch, "instruction shift amount: %i\n",
-            instShiftAmt);
 }
 
-void LocalBP::branchPlaceholder(ThreadID tid, Addr pc,
-                                bool uncond, void * &bpHistory)
+LLBPRef::~LLBPRef()
 {
-// Placeholder for a function that only returns history items
+    static_cast<LLBP::LLBP*>(predictor)->PrintStat(1.0);
+    delete predictor;
 }
 
 void
-LocalBP::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
+LLBPRef::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
                          Addr target, const StaticInstPtr &inst,
                          void * &bp_history)
 {
@@ -94,64 +80,74 @@ LocalBP::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
 
 
 Prediction
-LocalBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
+LLBPRef::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 {
-    bool taken;
-    unsigned local_predictor_idx = getLocalIndex(branch_addr);
-
-    DPRINTF(Fetch, "Looking up index %#x\n",
-            local_predictor_idx);
-
-    uint8_t counter_val = localCtrs[local_predictor_idx];
-
-    DPRINTF(Fetch, "prediction is %i.\n",
-            (int)counter_val);
-
-    taken = getPrediction(counter_val);
-
-    return staticPrediction(taken);
+    auto pc = branch_addr >> instShiftAmt;
+    auto pred = predictor->GetPrediction(pc);
+    return staticPrediction(pred);
 }
 
 void
-LocalBP::update(ThreadID tid, Addr branch_addr, bool taken, void *&bp_history,
+LLBPRef::update(ThreadID tid, Addr branch_addr, bool taken, void *&bp_history,
                 bool squashed, const StaticInstPtr & inst, Addr target)
 {
-    assert(bp_history == NULL);
-    unsigned local_predictor_idx;
-
-    // No state to restore, and we do not update on the wrong
-    // path.
     if (squashed) {
         return;
     }
 
-    // Update the local predictor.
-    local_predictor_idx = getLocalIndex(branch_addr);
-
-    DPRINTF(Fetch, "Looking up index %#x\n", local_predictor_idx);
-
-    if (taken) {
-        DPRINTF(Fetch, "Branch updated as taken.\n");
-        localCtrs[local_predictor_idx]++;
-    } else {
-        DPRINTF(Fetch, "Branch updated as not taken.\n");
-        localCtrs[local_predictor_idx]--;
+    auto brtype = getBranchType(inst);
+    OpType opType = OPTYPE_OP;
+    switch (brtype) {
+        case BranchType::DirectUncond:
+            opType = OPTYPE_JMP_DIRECT_UNCOND;
+            break;
+        case BranchType::DirectCond:
+            opType = OPTYPE_JMP_DIRECT_COND;
+            break;
+        case BranchType::IndirectUncond:
+            opType = OPTYPE_JMP_INDIRECT_UNCOND;
+            break;
+        case BranchType::IndirectCond:
+            opType = OPTYPE_JMP_INDIRECT_COND;
+            break;
+        case BranchType::CallDirect:
+            opType = OPTYPE_CALL_DIRECT_UNCOND;
+            break;
+        case BranchType::CallIndirect:
+            opType = OPTYPE_CALL_INDIRECT_UNCOND;
+            break;
+        case BranchType::Return:
+            opType = OPTYPE_RET_UNCOND;
+            break;
+        default:
+            opType = OPTYPE_OP;
+            break;
     }
+
+    if (opType == OPTYPE_OP) {
+        return;
+    }
+    auto pc = branch_addr >> instShiftAmt;
+    auto _target = target >> instShiftAmt;
+
+    if (brtype == BranchType::DirectCond) {
+        predictor->UpdatePredictor(pc, taken, false, _target);
+    } else {
+        predictor->TrackOtherInst(pc, opType, taken, _target);
+    }
+
+
+
+
 }
 
-inline
-bool
-LocalBP::getPrediction(uint8_t &count)
+void
+LLBPRef::LLBPStats::preDumpStats()
 {
-    // Get the MSB of the count
-    return (count >> (localCtrBits - 1));
-}
-
-inline
-unsigned
-LocalBP::getLocalIndex(Addr &branch_addr)
-{
-    return (branch_addr >> instShiftAmt) & indexMask;
+    // This function is called before the stats are dumped.
+    // We can use it to print some additional information.
+    // DPRINTF(LLBP, "LLBPRef: Pre-dump stats for predictor\n");
+    parent->predictor->PrintStat(1.0);
 }
 
 

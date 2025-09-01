@@ -143,7 +143,7 @@ class SimpleBTB(BranchTargetBuffer):
     )
 
 
-class ConditionalPredictor(SimObject):
+class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"
     cxx_header = "cpu/pred/conditional.hh"
@@ -152,6 +152,9 @@ class ConditionalPredictor(SimObject):
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     instShiftAmt = Param.Unsigned(
         Parent.instShiftAmt, "Number of bits to shift instructions by"
+    )
+    latency = Param.Cycles(
+        0, "Static (flat) latency of the predictor (in cycles)"
     )
     speculativeHistUpdate = Param.Bool(
         Parent.speculativeHistUpdate,
@@ -237,6 +240,10 @@ class BranchPredictor(SimObject):
     )
     conditionalBranchPred = Param.ConditionalPredictor(
         "Conditional branch predictor"
+    )
+    overridingBranchPred = Param.ConditionalPredictor(
+        NULL,
+        "Secondary, overriding predictor which corrects the primary predictor",
     )
     indirectBranchPred = Param.IndirectPredictor(
         SimpleIndirectPredictor(),
@@ -702,6 +709,9 @@ class TAGE_SC_L(LTAGE):
     statistical_corrector = Param.StatisticalCorrector(
         "Statistical Corrector. Set to NULL to disable it"
     )
+    loop_enabled = Param.Bool(
+        True, "Use the loop predictor in the branch predictor"
+    )
 
 
 class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
@@ -813,6 +823,66 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     tage = TAGE_SC_L_TAGE_8KB()
     loop_predictor = TAGE_SC_L_8KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
+
+class LLBP_TAGE_64KB(TAGE_SC_L_TAGE_64KB):
+    type = "LLBP_TAGE_64KB"
+    cxx_class = "gem5::branch_prediction::LLBP_TAGE_64KB"
+    cxx_header = "cpu/pred/llbp.hh"
+
+class LLBP(ConditionalPredictor):
+    type = "LLBP"
+    cxx_class = "gem5::branch_prediction::LLBP"
+    cxx_header = "cpu/pred/llbp.hh"
+
+    base = Param.TAGE_SC_L("Base predictor")
+
+    rcrType = Param.Int(3, "RCR Type of Branches to hash")
+    rcrWindow = Param.Int(8, "RCR Number of Branches to hash")
+    rcrDist = Param.Int(8, "RCR Number of Branches to skip")
+    rcrShift = Param.Int(2, "RCR Number of bits to shift PC by")
+    rcrTagWidth = Param.Int(14, "RCR Tag Width")
+
+    backingStorageCapacity = Param.Int(
+        14000, "Backing Storage Capacity (in number of contexts)"
+    )
+    patterTagBits = Param.Int(14, "Number of bits in the pattern tag (TTWidth)")
+    backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
+
+    patternBufferCapacity = Param.Int(
+        64, "Pattern Buffer Capacity (in number of contexts)"
+    )
+    patternBufferAssoc = Param.Int(4, "Pattern Buffer Associativity")
+
+    patternSetCapacity = Param.Int(
+        64, "Pattern Set Capacity (>> base numTables) [0 for infinite]"
+    )
+    patternSetAssoc = Param.Int(
+        4, "Pattern Set Associativity [ignored if cap = 0]"
+    )
+    patternSetBankBits = Param.Int(
+        8, "Pattern Set amount of bits reserved for TAGE bank in key"
+    )
+
+    patternCounterWidth = Param.Int(3, "Bits in Pattern Direction Counter")
+    contextCounterWidth = Param.Int(2, "Bits in Context Replacement Counter")
+
+    lightningPredEnabled = Param.Bool(
+        False,
+        "Whether to enable lightning predictions: override with 0 latency on high confidence branches",
+    )
+    lightningPredCutoff = Param.Int(
+        2,
+        "Lightning prediction cutoff: if the branch confidence is above this value, a lightning prediction is made",
+    )
+
+
+class LLBPRef(ConditionalPredictor):
+    type = "LLBPRef"
+    cxx_class = "gem5::branch_prediction::LLBPRef"
+    cxx_header = "cpu/pred/llbp_ref.hh"
+    inf = Param.Bool(
+        False, "Use infinite storage capacity for the backing storage"
+    )
 
 
 class MultiperspectivePerceptron(ConditionalPredictor):
@@ -1155,6 +1225,15 @@ class MultiperspectivePerceptronTAGE8KB(MultiperspectivePerceptronTAGE):
     tage = MPP_TAGE_8KB()
     loop_predictor = MPP_LoopPredictor_8KB()
     statistical_corrector = MPP_StatisticalCorrector_8KB()
+
+
+class TageSCLRef(ConditionalPredictor):
+    type = "TageSCLRef"
+    cxx_class = "gem5::branch_prediction::TageSCLRef"
+    cxx_header = "cpu/pred/tagescl_ref.hh"
+
+    localPredictorSize = Param.Unsigned(2048, "Size of local predictor")
+    localCtrBits = Param.Unsigned(2, "Bits per counter")
 
 
 class ITTAGE_TAGE(TAGEBase):

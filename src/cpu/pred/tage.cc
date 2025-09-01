@@ -62,9 +62,9 @@ namespace gem5
 namespace branch_prediction
 {
 
-TAGE::TAGE(const TAGEParams &params)
-    : ConditionalPredictor(params),
-      tage(params.tage)
+TAGE::TAGE(const TAGEParams &params) :
+    ConditionalPredictor(params),
+    tage(params.tage)
 {
 }
 
@@ -110,20 +110,22 @@ TAGE::squash(ThreadID tid, void * &bp_history)
     bp_history = nullptr;
 }
 
-bool
+Prediction
 TAGE::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
 {
     TageBranchInfo *bi = new TageBranchInfo(*tage, pc, cond_branch);
     b = (void*)(bi);
-    return tage->tagePredict(tid, pc, cond_branch, bi->tageBranchInfo);
+    return staticPrediction(
+        tage->tagePredict(tid, pc, cond_branch, bi->tageBranchInfo)
+    );
 }
 
-bool
+Prediction
 TAGE::lookup(ThreadID tid, Addr pc, void* &bp_history)
 {
-    bool retval = predict(tid, pc, true, bp_history);
+    Prediction retval = predict(tid, pc, true, bp_history);
 
-    DPRINTF(Tage, "Lookup branch: %lx; predict:%d\n", pc, retval);
+    DPRINTF(Tage, "Lookup branch: %lx; predict:%d\n", pc, retval.taken);
 
     return retval;
 }

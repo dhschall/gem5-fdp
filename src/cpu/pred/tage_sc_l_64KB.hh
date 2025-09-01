@@ -67,10 +67,15 @@ class TAGE_SC_L_TAGE_64KB : public TAGE_SC_L_TAGE
     uint16_t gtag(ThreadID tid, Addr pc, int bank) const override;
 
     void handleAllocAndUReset(
-        bool alloc, bool taken, TAGEBase::BranchInfo *bi, int nrand) override;
+        bool alloc, bool taken, TAGEBase::BranchInfo* bi, int nrand) override;
+
+    int allocateEntry(int idx, TAGEBase::BranchInfo* bi, bool taken) override;
 
     void handleTAGEUpdate(
-        Addr branch_pc, bool taken, TAGEBase::BranchInfo *bi) override;
+        Addr branch_pc, bool taken, TAGEBase::BranchInfo* bi) override;
+    
+    virtual bool isUseful(bool taken, TAGEBase::BranchInfo* bi) const;
+    virtual bool isNotUseful(bool taken, TAGEBase::BranchInfo* bi) const;
 };
 
 class TAGE_SC_L_64KB_StatisticalCorrector : public StatisticalCorrector

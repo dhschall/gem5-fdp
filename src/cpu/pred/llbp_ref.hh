@@ -1,4 +1,5 @@
 /*
+ * Copyright (c) 2011, 2014 ARM Limited
  * Copyright (c) 2022-2023 The University of Edinburgh
  * All rights reserved
  *
@@ -11,7 +12,7 @@
  * unmodified and in its entirety in all distributions of the software,
  * modified or unmodified, in source code or in binary form.
  *
- * Copyright (c) 2014 The Regents of The University of Michigan
+ * Copyright (c) 2004-2006 The Regents of The University of Michigan
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,17 +39,21 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* @file
- * Implementation of a bi-mode branch predictor
- */
+#ifndef __CPU_PRED_LLBP_REF_PRED_HH__
+#define __CPU_PRED_LLBP_REF_PRED_HH__
 
-#ifndef __CPU_PRED_BI_MODE_PRED_HH__
-#define __CPU_PRED_BI_MODE_PRED_HH__
+#include <vector>
 
 #include "base/sat_counter.hh"
+#include "base/types.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/conditional.hh"
-#include "params/BiModeBP.hh"
+#include "params/LLBPRef.hh"
+
+namespace LLBP
+{
+  class LLBP;
+}
 
 namespace gem5
 {
@@ -56,82 +61,56 @@ namespace gem5
 namespace branch_prediction
 {
 
-/**
- * Implements a bi-mode branch predictor. The bi-mode predictor is a two-level
- * branch predictor that has three seprate history arrays: a taken array, a
- * not-taken array, and a choice array. The taken/not-taken arrays are indexed
- * by a hash of the PC and the global history. The choice array is indexed by
- * the PC only. Because the taken/not-taken arrays use the same index, they must
- * be the same size.
- *
- * The bi-mode branch predictor aims to eliminate the destructive aliasing that
- * occurs when two branches of opposite biases share the same global history
- * pattern. By separating the predictors into taken/not-taken arrays, and using
- * the branch's PC to choose between the two, destructive aliasing is reduced.
- */
 
-class BiModeBP : public ConditionalPredictor
+/**
+ * Implements a local predictor that uses the PC to index into a table of
+ * counters.  Note that any time a pointer to the bp_history is given, it
+ * should be NULL using this predictor because it does not have any branch
+ * predictor state that needs to be recorded or updated; the update can be
+ * determined solely by the branch being taken or not taken.
+ */
+class LLBPRef : public ConditionalPredictor
 {
   public:
-    BiModeBP(const BiModeBPParams &params);
+    /**
+     * Default branch predictor constructor.
+     */
+    LLBPRef(const LLBPRefParams &params);
+    ~LLBPRef();
+
+    // Overriding interface functions
     Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) override;
+
+    // void branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
+    //                        void * &bpHistory) override;
+
     void updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
                          Addr target, const StaticInstPtr &inst,
                          void * &bp_history) override;
-    void squash(ThreadID tid, void * &bp_history) override;
+
     void update(ThreadID tid, Addr pc, bool taken,
                 void * &bp_history, bool squashed,
                 const StaticInstPtr & inst, Addr target) override;
 
+    void squash(ThreadID tid, void * &bp_history) override
+    { assert(bp_history == NULL); }
+
   private:
-    void updateGlobalHistReg(ThreadID tid, bool taken);
-    void uncondBranch(ThreadID tid, Addr pc, void * &bp_history);
+    // LLBP::LLBPTageSCL64k *predictor;
+    LLBP::LLBP *predictor;  // Pointer to the LLBP predictor
 
-    struct BPHistory
+    struct LLBPStats : public statistics::Group
     {
-        unsigned globalHistoryReg;
-        // was the taken array's prediction used?
-        // true: takenPred used
-        // false: notPred used
-        bool takenUsed;
-        // prediction of the taken array
-        // true: predict taken
-        // false: predict not-taken
-        bool takenPred;
-        // prediction of the not-taken array
-        // true: predict taken
-        // false: predict not-taken
-        bool notTakenPred;
-        // the final taken/not-taken prediction
-        // true: predict taken
-        // false: predict not-taken
-        bool finalPred;
-    };
+      LLBPRef *parent;
+      LLBPStats(LLBPRef *_parent)
+            : statistics::Group(_parent, "LLBPRef"),
+              parent(_parent) {}
 
-    std::vector<unsigned> globalHistoryReg;
-    unsigned globalHistoryBits;
-    unsigned historyRegisterMask;
-
-    unsigned choicePredictorSize;
-    unsigned choiceCtrBits;
-    unsigned choiceHistoryMask;
-    unsigned globalPredictorSize;
-    unsigned globalCtrBits;
-    unsigned globalHistoryMask;
-
-    // choice predictors
-    std::vector<SatCounter8> choiceCounters;
-    // taken direction predictors
-    std::vector<SatCounter8> takenCounters;
-    // not-taken direction predictors
-    std::vector<SatCounter8> notTakenCounters;
-
-    unsigned choiceThreshold;
-    unsigned takenThreshold;
-    unsigned notTakenThreshold;
+        void preDumpStats() override;
+    } stats;
 };
 
 } // namespace branch_prediction
 } // namespace gem5
 
-#endif // __CPU_PRED_BI_MODE_PRED_HH__
+#endif // __CPU_PRED_2BIT_LOCAL_PRED_HH__

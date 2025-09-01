@@ -69,7 +69,6 @@ class TAGEBase : public SimObject
     TAGEBase(const TAGEBaseParams &p);
     void init() override;
 
-  protected:
     // Prediction Structures
 
     // Tage Entry
@@ -464,7 +463,7 @@ class TAGEBase : public SimObject
      * Try to allocate an entry at index idx.
      * Returns true if the allocation was successful
     */
-    virtual bool allocateEntry(int idx, BranchInfo* bi, bool taken = false);
+    virtual int allocateEntry(int idx, BranchInfo* bi, bool taken = false);
 
     /**
      * Extra steps for calculating altTaken
@@ -486,7 +485,6 @@ class TAGEBase : public SimObject
     bool isSpeculativeUpdateEnabled() const;
     size_t getSizeInBits() const;
 
-  protected:
     const unsigned logRatioBiModalHystEntries;
     const unsigned nHistoryTables;
     const unsigned tagTableCounterBits;
@@ -496,6 +494,7 @@ class TAGEBase : public SimObject
     const unsigned maxHist;
     const unsigned pathHistBits;
 
+    protected:
     std::vector<unsigned> tagTableTagWidths;
     std::vector<int> logTagTableSizes;
 
@@ -546,10 +545,13 @@ class TAGEBase : public SimObject
     /** Use taken only history. */
     const bool takenOnlyHistory;
 
+    public:
     // Tells which tables are active
     // (for the base TAGE implementation all are active)
     // Some other classes use this for handling associativity
     std::vector<bool> noSkip;
+
+    protected:
 
     const bool speculativeHistUpdate;
 
@@ -561,6 +563,7 @@ class TAGEBase : public SimObject
     {
         TAGEBaseStats(statistics::Group *parent, unsigned nHistoryTables);
         // stats
+        statistics::Scalar allocationsTotal;
         statistics::Scalar longestMatchProviderCorrect;
         statistics::Scalar altMatchProviderCorrect;
         statistics::Scalar bimodalAltMatchProviderCorrect;

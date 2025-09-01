@@ -332,7 +332,13 @@ TAGEBase::updateGHist(ThreadID tid, uint64_t bv, uint8_t n)
         // Shift the next bit of the bit vector into the history
         // Use `at` to check for out-of-bounds access.
         tHist.ptGhist--;
-        tHist.globalHist.at(tHist.ptGhist) = (bv & 1) ? 1 : 0;
+        if (tHist.ptGhist >= tHist.globalHist.size()) {
+            DPRINTF(Tage, "BUG: PTGhist out of bounds, resetting");
+            warn("BUG: PTGhist out of bounds, resetting @ %lu\n", curTick());
+            // tHist.ptGhist = tHist.globalHist.size() - 1;
+        }
+
+        tHist.globalHist[tHist.ptGhist] = (bv & 1) ? 1 : 0;
         bv >>= 1;
 
         // Update the folded histories with the new bit.
@@ -498,15 +504,17 @@ TAGEBase::handleAllocAndUReset(bool alloc, bool taken, BranchInfo* bi,
     handleUReset();
 }
 
-bool
+int
 TAGEBase::allocateEntry(int idx, BranchInfo* bi, bool taken)
 {
     if (gtable[idx][bi->tableIndices[idx]].u != 0)
-        return false;
+        return 0;
+
+    ++stats.allocationsTotal;
 
     gtable[idx][bi->tableIndices[idx]].tag = bi->tableTags[idx];
     gtable[idx][bi->tableIndices[idx]].ctr = (taken) ? 0 : -1;
-    return true;
+    return 1;
 }
 
 void
@@ -839,6 +847,8 @@ TAGEBase::getGHR(ThreadID tid) const
 TAGEBase::TAGEBaseStats::TAGEBaseStats(
     statistics::Group *parent, unsigned nHistoryTables)
     : statistics::Group(parent),
+      ADD_STAT(allocationsTotal, statistics::units::Count::get(),
+               "Number of times TAGE inserted a new pattern"),
       ADD_STAT(longestMatchProviderCorrect, statistics::units::Count::get(),
                "Number of times TAGE Longest Match is the provider and the "
                "prediction is correct"),

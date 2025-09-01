@@ -41,6 +41,10 @@
 
 #include "cpu/pred/conditional.hh"
 
+#include "base/sat_counter.hh"
+#include "base/types.hh"
+#include "params/TageSCLRef.hh"
+
 namespace gem5
 {
 
@@ -48,18 +52,28 @@ namespace branch_prediction
 {
 
 ConditionalPredictor::ConditionalPredictor(const Params &params)
-    : SimObject(params),
-      instShiftAmt(params.instShiftAmt)
+    : ClockedObject(params),
+      instShiftAmt(params.instShiftAmt),
+      staticLatency(params.latency)
 {
 }
 
 
-void
-ConditionalPredictor::branchPlaceholder(ThreadID tid, Addr pc,
-                             bool uncond, void * &bp_history)
-{
-    panic("BPredUnit::branchPlaceholder() not implemented for this BP.\n");
-}
+  /**
+   * Implements a local predictor that uses the PC to index into a table of
+   * counters.  Note that any time a pointer to the bp_history is given, it
+   * should be NULL using this predictor because it does not have any branch
+   * predictor state that needs to be recorded or updated; the update can be
+   * determined solely by the branch being taken or not taken.
+   */
+  class TageSCLRef : public ConditionalPredictor {};
+
+  void
+  ConditionalPredictor::branchPlaceholder(ThreadID tid, Addr pc,
+                              bool uncond, void * &bp_history)
+  {
+      panic("BPredUnit::branchPlaceholder() not implemented for this BP.\n");
+  }
 
 } // namespace branch_prediction
 } // namespace gem5
