@@ -128,7 +128,7 @@ BiModeBP::squash(ThreadID tid, void * &bp_history)
  * choice array's prediction is used to select between the two
  * direction predictors for the final branch prediction.
  */
-bool
+Prediction
 BiModeBP::lookup(ThreadID tid, Addr branchAddr, void * &bp_history)
 {
     unsigned choiceHistoryIdx = ((branchAddr >> instShiftAmt)
@@ -163,7 +163,7 @@ BiModeBP::lookup(ThreadID tid, Addr branchAddr, void * &bp_history)
     history->finalPred = finalPrediction;
     bp_history = static_cast<void*>(history);
 
-    return finalPrediction;
+    return staticPrediction(finalPrediction);
 }
 
 

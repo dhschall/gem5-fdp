@@ -95,7 +95,7 @@ class TAGE: public ConditionalPredictor
         }
     };
 
-    virtual bool predict(ThreadID tid, Addr branch_pc, bool cond_branch,
+    virtual Prediction predict(ThreadID tid, Addr branch_pc, bool cond_branch,
                          void* &b);
 
   public:
@@ -103,7 +103,7 @@ class TAGE: public ConditionalPredictor
     TAGE(const TAGEParams &params);
 
     // Base class methods.
-    bool lookup(ThreadID tid, Addr pc, void* &bp_history) override;
+    Prediction lookup(ThreadID tid, Addr pc, void* &bp_history) override;
     void updateHistories(ThreadID tid, Addr pc, bool uncond,
                          bool taken, Addr target, const StaticInstPtr &inst,
                          void * &bp_history) override;
@@ -112,7 +112,7 @@ class TAGE: public ConditionalPredictor
                 Addr target) override;
     void squash(ThreadID tid, void * &bp_history) override;
     void branchPlaceholder(ThreadID tid, Addr pc,
-                           bool uncond, void * &bp_history) override;
+                                   bool uncond, void * &bp_history) override;
 };
 
 } // namespace branch_prediction

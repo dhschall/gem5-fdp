@@ -41,25 +41,28 @@
 
 #include "cpu/pred/conditional.hh"
 
+#include "base/types.hh"
+
 namespace gem5
 {
 
 namespace branch_prediction
 {
 
-ConditionalPredictor::ConditionalPredictor(const Params &params)
-    : SimObject(params),
-      instShiftAmt(params.instShiftAmt)
-{
-}
+  ConditionalPredictor::ConditionalPredictor(const Params &params)
+      : ClockedObject(params),
+        instShiftAmt(params.instShiftAmt),
+        staticLatency(params.latency)
+  {
+  }
 
 
-void
-ConditionalPredictor::branchPlaceholder(ThreadID tid, Addr pc,
-                             bool uncond, void * &bp_history)
-{
-    panic("BPredUnit::branchPlaceholder() not implemented for this BP.\n");
-}
+  void
+  ConditionalPredictor::branchPlaceholder(ThreadID tid, Addr pc,
+                              bool uncond, void * &bp_history)
+  {
+      panic("BPredUnit::branchPlaceholder() not implemented for this BP.\n");
+  }
 
 } // namespace branch_prediction
 } // namespace gem5

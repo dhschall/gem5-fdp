@@ -401,7 +401,7 @@ TAGE_SC_L::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
     bp_history = (void *)(bi);
 }
 
-bool
+Prediction
 TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
 {
     TageSCLBranchInfo *bi = new TageSCLBranchInfo(*tage,
@@ -412,9 +412,9 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
 
     bool pred_taken = tage->tagePredict(tid, pc, cond_branch,
                                         bi->tageBranchInfo);
-    pred_taken = loopPredictor->loopPredict(tid, pc, cond_branch,
-                                            bi->lpBranchInfo, pred_taken,
-                                            instShiftAmt);
+        pred_taken = loopPredictor->loopPredict(tid, pc, cond_branch,
+                                                bi->lpBranchInfo, pred_taken,
+                                                instShiftAmt);
 
     if (bi->lpBranchInfo->loopPredUsed) {
         bi->tageBranchInfo->provider = LOOP;
@@ -454,7 +454,7 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
     // record final prediction
     bi->lpBranchInfo->predTaken = pred_taken;
 
-    return pred_taken;
+    return staticPrediction(pred_taken);
 }
 
 void
@@ -490,7 +490,7 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, void *&bp_history,
                 pc, taken);
         tage->updateStats(taken, bi->tageBranchInfo);
 
-        loopPredictor->updateStats(taken, bi->lpBranchInfo);
+            loopPredictor->updateStats(taken, bi->lpBranchInfo);
 
         if (statisticalCorrector) {
             statisticalCorrector->updateStats(taken, bi->scBranchInfo);
@@ -505,7 +505,7 @@ TAGE_SC_L::update(ThreadID tid, Addr pc, bool taken, void *&bp_history,
                                                    );
         }
 
-        loopPredictor->condBranchUpdate(tid, pc, taken,
+            loopPredictor->condBranchUpdate(tid, pc, taken,
                                         bi->tageBranchInfo->tagePred,
                                         bi->lpBranchInfo, instShiftAmt);
 
