@@ -149,7 +149,7 @@ TournamentBP::updateLocalHist(unsigned local_history_idx, bool taken)
         (localHistoryTable[local_history_idx] << 1) | taken;
 }
 
-bool
+Prediction
 TournamentBP::lookup(ThreadID tid, Addr pc, void * &bp_history)
 {
     bool local_prediction;
@@ -188,9 +188,9 @@ TournamentBP::lookup(ThreadID tid, Addr pc, void * &bp_history)
     // Select and return the prediction
     // History update will be happen in the next function
     if (choice_prediction) {
-        return global_prediction;
+        return staticPrediction(global_prediction);
     } else {
-        return local_prediction;
+        return staticPrediction(local_prediction);
     }
 }
 

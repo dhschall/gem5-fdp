@@ -52,6 +52,7 @@ namespace gem5
 {
 
 struct BaseO3CPUParams;
+typedef branch_prediction::Prediction Prediction;
 
 namespace o3
 {
@@ -90,7 +91,8 @@ typedef std::shared_ptr<FetchTarget> FetchTargetPtr;
  */
 class BAC
 {
-    typedef branch_prediction::BranchType BranchType;
+  typedef branch_prediction::BranchType BranchType;
+  typedef branch_prediction::BPredUnit BPredUnit;
 
   public:
     /** Overall decoupled BPU stage status. Used to determine if the CPU can
@@ -184,6 +186,9 @@ class BAC
     /** Process all input signals and create the next fetch target. */
     void tick();
 
+    /** Register stats for the current cycle */
+    void profileCycle(ThreadID tid);
+
   private:
     /** Reset this pipeline stage */
     void resetStage();
@@ -247,9 +252,9 @@ class BAC
      * @param inst The branch instruction.
      * @param ft The fetch target that is currently processed.
      * @param PC The predicted PC is passed back through this parameter.
-     * @return Returns if the branch is taken or not.
+     * @return Returns the prediction result from the BPU.
      */
-    bool predict(ThreadID tid, const StaticInstPtr &inst,
+    Prediction predict(ThreadID tid, const StaticInstPtr &inst,
                  const FetchTargetPtr &ft, PCStateBase &pc);
 
     /**
@@ -365,6 +370,9 @@ class BAC
      */
     bool wroteToTimeBuffer;
 
+    /** Tracks remaining cycles that the branch predictor stalls BAC */
+    Cycles branchPredictRemaining[MaxThreads];
+
     /** Source of possible stalls. */
     struct Stalls
     {
@@ -390,6 +398,9 @@ class BAC
 
     /** BAC to fetch delay. */
     const Cycles bacToFetchDelay;
+
+    /** BAC branch predict delay. */
+    const Cycles bacBranchPredictDelay;
 
     /** Cache block size. */
     const unsigned int cacheBlkSize;
@@ -431,6 +442,16 @@ class BAC
 
         /** Stat for total number of cycles spent in each BAC state */
         statistics::Vector status;
+        /** Stat for total number of idle cycles. */
+        statistics::Scalar idleCycles;
+        /** Stat for total number of normal running cycles. */
+        statistics::Scalar runCycles;
+        /** Stat for total number of squashing cycles. */
+        statistics::Scalar squashCycles;
+        /** Stat for total number of blocked cycles. */
+        statistics::Scalar blockedCycles;
+        /** Stat for total number of cycles the FTQ was full. */
+        statistics::Scalar ftqFullCycles;
 
         /** Stat for total number fetch targets created. */
         statistics::Scalar fetchTargets;

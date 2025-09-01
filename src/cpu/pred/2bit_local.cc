@@ -93,7 +93,7 @@ LocalBP::updateHistories(ThreadID tid, Addr pc, bool uncond, bool taken,
 }
 
 
-bool
+Prediction
 LocalBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 {
     bool taken;
@@ -109,7 +109,7 @@ LocalBP::lookup(ThreadID tid, Addr branch_addr, void * &bp_history)
 
     taken = getPrediction(counter_val);
 
-    return taken;
+    return staticPrediction(taken);
 }
 
 void

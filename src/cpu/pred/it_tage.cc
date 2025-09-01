@@ -207,8 +207,8 @@ ITTAGE_TAGE::updateHistories(ThreadID tid, bool speculative,
     DPRINTF(Indirect, "%s(hist:%#x, nbits:%i) pc:%#x; ptr:%d, GHR:%#x\n",
             __func__, bi->ghist, bi->nGhist, bi->branchPC, tHist.ptGhist,
             getGHR(tid));
-    // assert(threadHistory[tid].gHist ==
-    //         &threadHistory[tid].globalHistory[threadHistory[tid].ptGhist]);
+    //assert(threadHistory[tid].gHist ==
+    //        &threadHistory[tid].globalHistory[threadHistory[tid].ptGhist]);
 
 }
 
