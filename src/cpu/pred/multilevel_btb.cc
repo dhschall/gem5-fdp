@@ -9,21 +9,21 @@ namespace gem5::branch_prediction
 
 MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent)
     : statistics::Group(parent),
-      ADD_STAT(l1Hits, statistics::units::Count::get(), 
+      ADD_STAT(l1Hits, statistics::units::Count::get(),
                "Number of L1 BTB hits per branch type"),
-      ADD_STAT(l2Hits, statistics::units::Count::get(), 
+      ADD_STAT(l2Hits, statistics::units::Count::get(),
                "Number of L2 BTB hits per branch type")
 {
     using namespace statistics;
-    
+
     l1Hits
         .init(enums::Num_BranchType)
         .flags(total | pdf);
-    
+
     l2Hits
         .init(enums::Num_BranchType)
         .flags(total | pdf);
-        
+
     for (int i = 0; i < enums::Num_BranchType; i++) {
 
         l1Hits.subname(i, enums::BranchTypeStrings[i]);
@@ -40,7 +40,6 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
             BTBEntry(genTagExtractor(p.l2IndexingPolicy))),
       l1Latency(p.l1Latency),
       l2Latency(p.l2Latency),
-      l1NumEntries(p.l1NumEntries),
       multilevelstats(this)
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
@@ -78,7 +77,7 @@ MultiLevelBTB::valid(ThreadID tid, Addr instPC)
         DPRINTF(BTB, "L1 BTB valid for PC %#x\n", instPC);
         return true;
     }
-    
+
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
     if(l2_entry != nullptr) {
         DPRINTF(BTB, "L2 BTB valid for PC %#x\n", instPC);
@@ -145,12 +144,12 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
 {
     stats.updates[type]++;
 
-    
+
     BTBEntry *l2_victim = l2btb.findVictim({instPC, tid});
     l2btb.insertEntry({instPC, tid}, l2_victim);
     l2_victim->update(target, inst);
 
-  
+
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(target, inst);

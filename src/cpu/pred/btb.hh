@@ -59,9 +59,9 @@ struct BTBLookupResult
 {
     const PCStateBase* target;
     Cycles latency;
-    bool l1Hit;
-    bool l2Hit;
-    
+    bool l1Hit = false;
+    bool l2Hit = false;
+
     BTBLookupResult(const PCStateBase* _target = nullptr, Cycles _latency = Cycles(0), bool _l1Hit = false, bool _l2Hit = false)
         : target(_target), latency(_latency), l1Hit(_l1Hit), l2Hit(_l2Hit) {}
 };
@@ -123,7 +123,7 @@ class BranchTargetBuffer : public ClockedObject
       // Default behavior: use classic lookup and zero latency
         return BTBLookupResult(lookup(tid, instPC, type), Cycles(0));
     }
-    
+
 
   protected:
     /** Number of the threads for which the branch history is maintained. */

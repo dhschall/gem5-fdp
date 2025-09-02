@@ -58,6 +58,7 @@
 #include "params/BranchPredictor.hh"
 #include "sim/probe/pmu.hh"
 #include "sim/sim_object.hh"
+#include "mem/stack_dist_calc.hh"
 
 namespace gem5
 {
@@ -170,7 +171,7 @@ class BPredUnit : public SimObject
     {
         return btb->lookupWithLatency(tid, pc.instAddr());
     }
-    
+
     /**
      * Looks up a given PC in the BTB to get current static instruction
      * information. This is necessary in a decoupled frontend as
@@ -287,7 +288,7 @@ class BPredUnit : public SimObject
               call(inst->isCall()), uncond(inst->isUncondCtrl()),
               predTaken(false), actuallyTaken(false), condPred(false),
               overridden(false),
-              btbHit(false), targetProvider(TargetProvider::NoTarget),
+              btbHit(false), l1btbHit(false), l2btbHit(false), targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
               indirectHistory(nullptr), rasHistory(nullptr)
@@ -360,6 +361,7 @@ class BPredUnit : public SimObject
 
         /** The predicted target */
         std::unique_ptr<PCStateBase> target;
+
 
         /**
          * Pointer to the history objects passed back from the branch
@@ -479,9 +481,11 @@ class BPredUnit : public SimObject
     {
         BPredUnitStats(BPredUnit *bp);
 
-        std::unordered_set<Addr> uniqueBranches; 
+        std::unordered_set<Addr> uniqueBranches;
+        StackDistCalc sdcalc;
 
         void preDumpStats() override;
+        void resetStats() override;
 
         /** Stats per branch type */
         statistics::Vector2d lookups;
@@ -511,6 +515,8 @@ class BPredUnit : public SimObject
 
         /** BTB stats. */
         statistics::Scalar BTBUniqueBranches;
+        statistics::Histogram BTBstackDist;
+        statistics::SparseHistogram BTBstackDistLog;
         statistics::Scalar BTBLookups;
         statistics::Scalar BTBUpdates;
         statistics::Scalar BTBHits;
@@ -522,8 +528,8 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectHits;
         statistics::Scalar indirectMisses;
         statistics::Scalar indirectMispredicted;
-        statistics::Vector2d l1btbHits;
-        statistics::Vector2d l2btbHits;
+        statistics::Scalar l1btbHits;
+        statistics::Scalar l2btbHits;
 
     } stats;
 

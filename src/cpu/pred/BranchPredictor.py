@@ -142,15 +142,16 @@ class SimpleBTB(BranchTargetBuffer):
         "BTB indexing policy",
     )
 
+
 class MultiLevelBTB(BranchTargetBuffer):
     type = "MultiLevelBTB"
     cxx_class = "gem5::branch_prediction::MultiLevelBTB"
     cxx_header = "cpu/pred/multilevel_btb.hh"
 
     # L1 BTB configuration
-    l1NumEntries = Param.Unsigned(64, "Number of L1 BTB entries")
-    l1Associativity = Param.Unsigned(4, "L1 BTB associativity")
-    l1Latency = Param.Cycles(1, "L1 BTB access latency in cycles")
+    l1NumEntries = Param.Unsigned(256, "Number of L1 BTB entries")
+    l1Associativity = Param.Unsigned(8, "L1 BTB associativity")
+    l1Latency = Param.Cycles(0, "L1 BTB access latency in cycles")
     l1ReplPolicy = Param.BaseReplacementPolicy(
         LRURP(), "L1 BTB replacement policy"
     )
@@ -166,8 +167,8 @@ class MultiLevelBTB(BranchTargetBuffer):
 
     # L2 BTB configuration
     l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
-    l2Associativity = Param.Unsigned(1, "L2 BTB associativity")
-    l2Latency = Param.Cycles(3, "L2 BTB access latency in cycles")
+    l2Associativity = Param.Unsigned(8, "L2 BTB associativity")
+    l2Latency = Param.Cycles(4, "L2 BTB access latency in cycles")
     l2ReplPolicy = Param.BaseReplacementPolicy(
         LRURP(), "L2 BTB replacement policy"
     )
@@ -180,6 +181,7 @@ class MultiLevelBTB(BranchTargetBuffer):
         ),
         "L2 BTB indexing policy",
     )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
@@ -844,10 +846,12 @@ class TAGE_SC_L_8KB(TAGE_SC_L):
     loop_predictor = TAGE_SC_L_8KB_LoopPredictor()
     statistical_corrector = TAGE_SC_L_8KB_StatisticalCorrector()
 
+
 class LLBP_TAGE_64KB(TAGE_SC_L_TAGE_64KB):
     type = "LLBP_TAGE_64KB"
     cxx_class = "gem5::branch_prediction::LLBP_TAGE_64KB"
     cxx_header = "cpu/pred/llbp.hh"
+
 
 class LLBP(ConditionalPredictor):
     type = "LLBP"
@@ -865,7 +869,9 @@ class LLBP(ConditionalPredictor):
     backingStorageCapacity = Param.Int(
         14000, "Backing Storage Capacity (in number of contexts)"
     )
-    patterTagBits = Param.Int(14, "Number of bits in the pattern tag (TTWidth)")
+    patterTagBits = Param.Int(
+        14, "Number of bits in the pattern tag (TTWidth)"
+    )
     backingStorageLatency = Param.Cycles(6, "Backing Storage Latency")
 
     patternBufferCapacity = Param.Int(
