@@ -17,29 +17,29 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void memInvalidate() override;
     bool valid(ThreadID tid, Addr instPC) override;
-    
+
     const PCStateBase *lookup(ThreadID tid, Addr instPC,
                               BranchType type = BranchType::NoBranch) override;
-    
+
     BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
                                       BranchType type = BranchType::NoBranch) override;
-    
+
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;
-    
+
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
-   
+
 
   private:
     BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
-    
+
     BTBEntry *findL2Entry(Addr instPC, ThreadID tid);
 
     AssociativeCache<BTBEntry> l1btb;
-    
+
     AssociativeCache<BTBEntry> l2btb;
-    
+
     const Cycles l1Latency;
     const Cycles l2Latency;
 
@@ -49,7 +49,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         MultiLevelBTBStats(statistics::Group *parent);
         statistics::Vector l1Hits;
         statistics::Vector l2Hits;
-        
+
     } multilevelstats;
 };
 

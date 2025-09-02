@@ -432,7 +432,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                 hist->bpHistory, false,
                 hist->inst,
                 hist->target->instAddr());
-    
+
     if (hist->inst->isCondCtrl())
         updateStatsOverriding(hist->condPred, hist->actuallyTaken, hist->overridden);
 
@@ -459,7 +459,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
                          hist->rasHistory);
     }
 
-    
+
     // Correct BTB (at commit) -------------------------------------
     // Update the BTB for all committed taken branches.
     if (hist->actuallyTaken && !updateBTBAtSquash) { updateBTB(tid, hist); }
@@ -575,7 +575,7 @@ BPredUnit::squash(const InstSeqNum &squashed_sn,
     if (!pred_hist.empty()) {
 
         PredictorHistory *hist = pred_hist.front();
-        
+
         DPRINTF(Branch, "[tid:%i] [squash sn:%llu] Mispredicted: %s, PC:%#x\n",
                     tid, squashed_sn, toString(hist->type), hist->pc);
 
@@ -703,6 +703,14 @@ BPredUnit::updateBTB(ThreadID tid, PredictorHistory *&hist)
 
     stats.BTBUpdates++;
     stats.uniqueBranches.insert(hist->pc);
+
+    //Calculate the stack distance
+    const uint64_t sd(stats.sdcalc.calcStackDistAndUpdate(hist->pc).first);
+    if (sd != StackDistCalc::Infinity) {
+        stats.BTBstackDist.sample(sd);
+        stats.BTBstackDistLog.sample(sd == 0 ? 1 : floorLog2(sd));
+    }
+
     btb->update(tid, hist->pc, *hist->target, hist->type, hist->inst);
     btb->incorrectTarget(hist->pc, hist->type);
 }
@@ -811,6 +819,10 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "Number of branches predicted correctly after being overridden"),
       ADD_STAT(BTBUniqueBranches, statistics::units::Count::get(),
                "Number of unique branches encountered by the BTB"),
+      ADD_STAT(BTBstackDist, statistics::units::Count::get(),
+               "Stack distance for BTB updates"),
+      ADD_STAT(BTBstackDistLog, statistics::units::Count::get(),
+               "Log2 stack distance for BTB updates"),
       ADD_STAT(BTBLookups, statistics::units::Count::get(),
                "Number of BTB lookups"),
       ADD_STAT(BTBUpdates, statistics::units::Count::get(),
@@ -887,6 +899,13 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
         .init(bp->numThreads, enums::Num_BranchType)
         .flags(total | pdf);
     targetWrong.ysubnames(enums::BranchTypeStrings);
+
+    BTBstackDist
+        .init(16)
+        .flags(total | pdf);
+    BTBstackDistLog
+        .init(16)
+        .flags(total | pdf);
 
 }
 

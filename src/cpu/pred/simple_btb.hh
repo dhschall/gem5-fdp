@@ -62,6 +62,8 @@ class SimpleBTB : public BranchTargetBuffer
     bool valid(ThreadID tid, Addr instPC) override;
     const PCStateBase *lookup(ThreadID tid, Addr instPC,
                               BranchType type = BranchType::NoBranch) override;
+    BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
+                                BranchType type = BranchType::NoBranch) override;
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;
@@ -77,6 +79,8 @@ class SimpleBTB : public BranchTargetBuffer
 
     /** The actual BTB. */
     AssociativeCache<BTBEntry> btb;
+
+    const Cycles latency;
 };
 
 } // namespace gem5::branch_prediction
