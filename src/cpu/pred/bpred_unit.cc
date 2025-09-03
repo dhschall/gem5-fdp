@@ -68,6 +68,7 @@ BPredUnit::BPredUnit(const Params &params)
       iPred(params.indirectBranchPred),
       stats(this)
 {
+    isMultiLevelBTB = (dynamic_cast<const MultiLevelBTB*>(btb) != nullptr);
 }
 
 
@@ -210,11 +211,25 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
      * necessary as modern front-end does not have a
      * chance to detect a branch without a BTB hit.
      */
+
+    //Calculate the stack distance of BTB lookup
+    const uint64_t sd(stats.sdcalc.calcStackDistAndUpdate(hist->pc).first);
+    if (sd != StackDistCalc::Infinity) {
+        stats.BTBstackDist.sample(sd);
+        stats.BTBstackDistLog.sample(sd == 0 ? 1 : floorLog2(sd));
+    }
+
     stats.BTBLookups++;
-    const PCStateBase * btb_target = btb->lookup(tid, pc.instAddr(), brType);
+    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType);
+    const PCStateBase * btb_target = btb_res.target;
+    totalLatency += btb_res.latency;
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;
+        if (isMultiLevelBTB) {
+            hist->l1btbHit = btb_res.l1Hit;
+            hist->l2btbHit = btb_res.l2Hit;
+        }
 
         if (hist->predTaken) {
             hist->targetProvider = TargetProvider::BTB;
@@ -455,6 +470,14 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
     // Correct BTB (at commit) -------------------------------------
     // Update the BTB for all committed taken branches.
     if (hist->actuallyTaken && !updateBTBAtSquash) { updateBTB(tid, hist); }
+
+    if (isMultiLevelBTB && hist->btbHit) {
+        if (hist->l1btbHit) {
+            stats.l1btbHits++;
+        } else if (hist->l2btbHit) {
+            stats.l2btbHits++;
+        }
+    }
 }
 
 
@@ -798,6 +821,10 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "after being overridden"),
       ADD_STAT(BTBUniqueBranches, statistics::units::Count::get(),
                "Number of unique branches encountered by the BTB"),
+      ADD_STAT(BTBstackDist, statistics::units::Count::get(),
+               "Stack distance for BTB lookups"),
+      ADD_STAT(BTBstackDistLog, statistics::units::Count::get(),
+               "Log2 stack distance for BTB lookups"),
       ADD_STAT(BTBLookups, statistics::units::Count::get(),
                "Number of BTB lookups"),
       ADD_STAT(BTBUpdates, statistics::units::Count::get(),
@@ -815,7 +842,11 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(indirectMisses, statistics::units::Count::get(),
                "Number of indirect misses."),
       ADD_STAT(indirectMispredicted, statistics::units::Count::get(),
-               "Number of mispredicted indirect branches.")
+               "Number of mispredicted indirect branches."),
+      ADD_STAT(l1btbHits, statistics::units::Count::get(),
+              "Number of L1 BTB hits per thread and branch type (MultiLevelBTB only)"),
+      ADD_STAT(l2btbHits, statistics::units::Count::get(),
+              "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)")
 
 {
     using namespace statistics;
@@ -871,10 +902,22 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
         .flags(total | pdf);
     targetWrong.ysubnames(enums::BranchTypeStrings);
 
+    BTBstackDist
+        .init(16)
+        .flags(total | pdf);
+    BTBstackDistLog
+        .init(16)
+        .flags(total | pdf);
+
 }
 
 void BPredUnit::BPredUnitStats::preDumpStats() {
     BTBUniqueBranches = uniqueBranches.size();
+}
+
+void BPredUnit::BPredUnitStats::resetStats() {
+    statistics::Group::resetStats();
+    uniqueBranches.clear();
 }
 
 } // namespace branch_prediction
