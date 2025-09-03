@@ -49,10 +49,12 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/btb.hh"
+#include "cpu/pred/multilevel_btb.hh"
 #include "cpu/pred/conditional.hh"
 #include "cpu/pred/indirect.hh"
 #include "cpu/pred/ras.hh"
 #include "cpu/static_inst.hh"
+#include "mem/stack_dist_calc.hh"
 #include "enums/TargetProvider.hh"
 #include "params/BranchPredictor.hh"
 #include "sim/probe/pmu.hh"
@@ -155,6 +157,11 @@ class BPredUnit : public SimObject
     BTBLookup(ThreadID tid, PCStateBase &pc)
     {
         return btb->lookup(tid, pc.instAddr());
+    }
+
+    BTBLookupResult BTBLookupWithLatency(ThreadID tid, PCStateBase &pc)
+    {
+        return btb->lookupWithLatency(tid, pc.instAddr());
     }
 
     /**
@@ -271,7 +278,7 @@ class BPredUnit : public SimObject
               call(inst->isCall()), uncond(!inst->isCondCtrl()),
               predTaken(false), actuallyTaken(false), condPred(false),
               overridden(false),
-              btbHit(false), targetProvider(TargetProvider::NoTarget),
+              btbHit(false), l1btbHit(false), l2btbHit(false), targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
               indirectHistory(nullptr), rasHistory(nullptr)
@@ -329,6 +336,12 @@ class BPredUnit : public SimObject
         /** Was BTB hit at prediction time */
         bool btbHit;
 
+        /** Was L1 BTB hit at prediction time (multi-level BTB only)*/
+        bool l1btbHit;
+
+        /** Was L2 BTB hit at prediction time (multi-level BTB only)*/
+        bool l2btbHit;
+
         /** Which component provided the target */
         TargetProvider targetProvider;
 
@@ -340,6 +353,8 @@ class BPredUnit : public SimObject
 
         /** The predicted target */
         std::unique_ptr<PCStateBase> target;
+
+
 
         /**
          * Pointer to the history objects passed back from the branch
@@ -423,6 +438,10 @@ class BPredUnit : public SimObject
                                bool overridden);
 
   protected:
+
+    /** Whether the BTB is a multi-level BTB */
+    bool isMultiLevelBTB;
+
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
 
@@ -472,7 +491,12 @@ class BPredUnit : public SimObject
 
         std::unordered_set<Addr> uniqueBranches;
 
+        /** Stack distance calculator for BTB lookups */
+        StackDistCalc sdcalc;
+
         void preDumpStats() override;
+
+        void resetStats() override;
 
         /** Stats per branch type */
         statistics::Vector2d lookups;
@@ -502,6 +526,8 @@ class BPredUnit : public SimObject
 
         /** BTB stats. */
         statistics::Scalar BTBUniqueBranches;
+        statistics::Histogram BTBstackDist;
+        statistics::SparseHistogram BTBstackDistLog;
         statistics::Scalar BTBLookups;
         statistics::Scalar BTBUpdates;
         statistics::Scalar BTBHits;
@@ -513,6 +539,10 @@ class BPredUnit : public SimObject
         statistics::Scalar indirectHits;
         statistics::Scalar indirectMisses;
         statistics::Scalar indirectMispredicted;
+
+        /** Different levels of BTB hits (multi-level BTB only)*/
+        statistics::Scalar l1btbHits;
+        statistics::Scalar l2btbHits;
 
     } stats;
 

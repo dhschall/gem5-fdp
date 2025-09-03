@@ -85,6 +85,7 @@ class BranchTargetBuffer(ClockedObject):
     abstract = True
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
+    latency = Param.Cycles(0, "Default BTB latency")
 
 
 class BTBIndexingPolicy(SimObject):
@@ -142,6 +143,46 @@ class SimpleBTB(BranchTargetBuffer):
             numThreads=1,
         ),
         "BTB indexing policy",
+    )
+
+
+class MultiLevelBTB(BranchTargetBuffer):
+    type = "MultiLevelBTB"
+    cxx_class = "gem5::branch_prediction::MultiLevelBTB"
+    cxx_header = "cpu/pred/multilevel_btb.hh"
+
+    # L1 BTB configuration
+    l1NumEntries = Param.Unsigned(256, "Number of L1 BTB entries")
+    l1Associativity = Param.Unsigned(8, "L1 BTB associativity")
+    l1Latency = Param.Cycles(0, "L1 BTB access latency in cycles")
+    l1ReplPolicy = Param.BaseReplacementPolicy(
+        LRURP(), "L1 BTB replacement policy"
+    )
+    l1IndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.l1Associativity,
+            num_entries=Parent.l1NumEntries,
+            set_shift=Parent.instShiftAmt,
+            numThreads=1,
+        ),
+        "L1 BTB indexing policy",
+    )
+
+    # L2 BTB configuration
+    l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
+    l2Associativity = Param.Unsigned(8, "L2 BTB associativity")
+    l2Latency = Param.Cycles(4, "L2 BTB access latency in cycles")
+    l2ReplPolicy = Param.BaseReplacementPolicy(
+        LRURP(), "L2 BTB replacement policy"
+    )
+    l2IndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.l2Associativity,
+            num_entries=Parent.l2NumEntries,
+            set_shift=Parent.instShiftAmt,
+            numThreads=1,
+        ),
+        "L2 BTB indexing policy",
     )
 
 
@@ -229,7 +270,7 @@ class BranchPredictor(SimObject):
         "Low-end CPUs predecoding might be used to identify branches. ",
     )
     updateBTBAtSquash = Param.Bool(
-        True,
+        False,
         "Update the BTB at squash time instead of commit. This can be useful "
         "to update the BTB earlier to avoid BTB misses on subsequent "
         "branches. However, it can also lead to BTB pollution if the branch "
@@ -255,7 +296,7 @@ class BranchPredictor(SimObject):
 
     # Taken only history as used in most modern server CPUs.
     takenOnlyHistory = Param.Bool(
-        False,
+        True,
         "Build the global history only from taken branches (2-bit) "
         "instead of direction history from all branches. Widely implemented "
         "in modern server CPUs: https://ieeexplore.ieee.org/document/9246215",

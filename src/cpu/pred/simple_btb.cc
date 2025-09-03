@@ -51,7 +51,7 @@ SimpleBTB::SimpleBTB(const SimpleBTBParams &p)
     : BranchTargetBuffer(p),
       btb("simpleBTB", p.numEntries, p.associativity,
           p.btbReplPolicy, p.btbIndexingPolicy,
-          BTBEntry(genTagExtractor(p.btbIndexingPolicy)))
+          BTBEntry(genTagExtractor(p.btbIndexingPolicy))), latency(p.latency)
 {
     DPRINTF(BTB, "BTB: Creating BTB object.\n");
 
@@ -96,6 +96,12 @@ SimpleBTB::lookup(ThreadID tid, Addr instPC, BranchType type)
 
     stats.misses[type]++;
     return nullptr;
+}
+
+BTBLookupResult
+SimpleBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
+{
+    return BTBLookupResult(lookup(tid, instPC, type), latency);
 }
 
 const StaticInstPtr

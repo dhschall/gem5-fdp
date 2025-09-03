@@ -55,6 +55,17 @@ namespace gem5
 namespace branch_prediction
 {
 
+struct BTBLookupResult
+{
+  const PCStateBase* target;
+  Cycles latency;
+  bool l1Hit;
+  bool l2Hit;
+      
+  BTBLookupResult(const PCStateBase* _target = nullptr, Cycles _latency = Cycles(0), bool _l1Hit = false, bool _l2Hit = false)
+      : target(_target), latency(_latency), l1Hit(_l1Hit), l2Hit(_l2Hit) {}
+};
+
 class BranchTargetBuffer : public ClockedObject
 {
   public:
@@ -106,9 +117,19 @@ class BranchTargetBuffer : public ClockedObject
       stats.mispredict[type]++;
     }
 
+    virtual BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
+                            BranchType type = BranchType::NoBranch)
+    {
+      // Default behavior: use classic lookup and zero latency
+        return BTBLookupResult(lookup(tid, instPC, type), Cycles(0));
+    }
+
   protected:
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;
+
+    /** Latency of the BTB in cycles */
+    const Cycles latency;
 
     struct BranchTargetBufferStats : public statistics::Group
     {
