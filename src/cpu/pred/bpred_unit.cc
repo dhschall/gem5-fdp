@@ -208,6 +208,11 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
      * chance to detect a branch without a BTB hit.
      */
     stats.BTBLookups++;
+    const uint64_t sdAtLookup(stats.sdcalcAtLookup.calcStackDistAndUpdate(hist->pc).first);
+    if (sdAtLookup != StackDistCalc::Infinity) {
+        stats.BTBstackDistAtLookup.sample(sdAtLookup);
+        stats.BTBstackDistLogAtLookup.sample(sdAtLookup == 0 ? 1 : floorLog2(sdAtLookup));
+    }
     auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType);
     const PCStateBase * btb_target = btb_res.target;
     totalLatency += btb_res.latency;
@@ -823,6 +828,10 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "Stack distance for BTB updates"),
       ADD_STAT(BTBstackDistLog, statistics::units::Count::get(),
                "Log2 stack distance for BTB updates"),
+      ADD_STAT(BTBstackDistAtLookup, statistics::units::Count::get(),
+               "Stack distance for BTB updates"),
+      ADD_STAT(BTBstackDistLogAtLookup, statistics::units::Count::get(),
+               "Log2 stack distance for BTB updates"),
       ADD_STAT(BTBLookups, statistics::units::Count::get(),
                "Number of BTB lookups"),
       ADD_STAT(BTBUpdates, statistics::units::Count::get(),
@@ -904,6 +913,13 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
         .init(16)
         .flags(total | pdf);
     BTBstackDistLog
+        .init(16)
+        .flags(total | pdf);
+
+    BTBstackDistAtLookup
+        .init(16)
+        .flags(total | pdf);
+    BTBstackDistLogAtLookup
         .init(16)
         .flags(total | pdf);
 

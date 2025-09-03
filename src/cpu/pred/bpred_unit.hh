@@ -483,6 +483,7 @@ class BPredUnit : public SimObject
 
         std::unordered_set<Addr> uniqueBranches;
         StackDistCalc sdcalc;
+        StackDistCalc sdcalcAtLookup;
 
         void preDumpStats() override;
         void resetStats() override;
@@ -517,6 +518,8 @@ class BPredUnit : public SimObject
         statistics::Scalar BTBUniqueBranches;
         statistics::Histogram BTBstackDist;
         statistics::SparseHistogram BTBstackDistLog;
+        statistics::Histogram BTBstackDistAtLookup;
+        statistics::SparseHistogram BTBstackDistLogAtLookup;
         statistics::Scalar BTBLookups;
         statistics::Scalar BTBUpdates;
         statistics::Scalar BTBHits;
