@@ -94,8 +94,11 @@ class Scoreboard
     bool
     getReg(PhysRegIdPtr phys_reg) const
     {
-        if (phys_reg->isFixedMapping()) {
-            // Fixed mapping regs are always ready
+        if (phys_reg->isAlwaysReady()) {
+            // This is usually the case for registers that
+            // can only be updated non-speculatively
+            // (The register is not being written by another
+            // inflight instruction)
             return true;
         }
 
@@ -108,9 +111,11 @@ class Scoreboard
     void
     setReg(PhysRegIdPtr phys_reg)
     {
-        if (phys_reg->isFixedMapping()) {
-            // Fixed mapping regs are always ready, ignore attempts to change
-            // that
+        if (phys_reg->isAlwaysReady()) {
+            // This is usually the case for registers that
+            // can only be updated non-speculatively
+            // (The register is not being written by another
+            // inflight instruction)
             return;
         }
 
@@ -126,9 +131,11 @@ class Scoreboard
     void
     unsetReg(PhysRegIdPtr phys_reg)
     {
-        if (phys_reg->isFixedMapping()) {
-            // Fixed mapping regs are always ready, ignore attempts to
-            // change that
+        if (phys_reg->isAlwaysReady()) {
+            // This is usually the case for registers that
+            // can only be updated non-speculatively
+            // (The register is not being written by another
+            // inflight instruction)
             return;
         }
 

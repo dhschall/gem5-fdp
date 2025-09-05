@@ -484,6 +484,12 @@ class PhysRegId : private RegId
      */
     bool isFixedMapping() const { return !isRenameable(); }
 
+    bool
+    isAlwaysReady() const
+    {
+        return regClass().isSerializing(regClass()[index()]);
+    }
+
     /** Flat index accessor */
     const RegIndex& flatIndex() const { return flatIdx; }
 
