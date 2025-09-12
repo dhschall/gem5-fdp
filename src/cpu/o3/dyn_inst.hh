@@ -1066,6 +1066,23 @@ class DynInst : public ExecContext, public RefCounted
         const RegId& reg = si->destRegIdx(idx);
         assert(reg.is(MiscRegClass));
         setMiscReg(reg.index(), val);
+
+        /** If the MiscReg allows non-serializing updates, we
+         * can update the value immediately without waiting
+         * for commit, but only if the instruction is non
+         * speculative
+         */
+        if (!reg.regClass().isSerializing(reg)) {
+            assert(isNonSpeculative());
+
+            bool no_squash_from_TC = thread->noSquashFromTC;
+            thread->noSquashFromTC = true;
+
+            /** Update the architectural state with the new value */
+            cpu->setMiscReg(reg.index(), val, threadNumber);
+
+            thread->noSquashFromTC = no_squash_from_TC;
+        }
     }
 
     /** Called at the commit stage to update the misc. registers. */

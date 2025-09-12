@@ -102,14 +102,13 @@ InstructionQueue::InstructionQueue(CPU *cpu_ptr, IEW *iew_ptr,
     const auto &reg_classes = params.isa[0]->regClasses();
     // Set the number of total physical registers
     // As the vector registers have two addressing modes, they are added twice
-    numPhysRegs = params.numPhysIntRegs + params.numPhysFloatRegs +
-                    params.numPhysVecRegs +
-                    params.numPhysVecRegs * (
-                            reg_classes.at(VecElemClass)->numRegs() /
-                            reg_classes.at(VecRegClass)->numRegs()) +
-                    params.numPhysVecPredRegs +
-                    params.numPhysMatRegs +
-                    params.numPhysCCRegs;
+    numPhysRegs =
+        params.numPhysIntRegs + params.numPhysFloatRegs +
+        params.numPhysVecRegs +
+        params.numPhysVecRegs * (reg_classes.at(VecElemClass)->numRegs() /
+                                 reg_classes.at(VecRegClass)->numRegs()) +
+        params.numPhysVecPredRegs + params.numPhysMatRegs +
+        params.numPhysCCRegs + reg_classes.at(MiscRegClass)->numRegs();
 
     //Create an entry for each physical register within the
     //dependency graph.
