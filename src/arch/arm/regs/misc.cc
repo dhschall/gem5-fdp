@@ -3140,6 +3140,7 @@ ISA::initializeMiscRegMetadata()
      *  architecturally mandated."
      */
 
+    // clang-format off
     InitReg(MISCREG_CPSR)
       .reset(resetCPSR(system))
       .allPrivileges();
@@ -6033,11 +6034,13 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_CONTEXTIDR_NS);
     InitReg(MISCREG_TPIDR_EL1)
       .allPrivileges().exceptUserMode()
+      .serializing(false)
       .faultRead(EL1, faultFgtEL1<true, &HFGTR::tpidrEL1>)
       .faultWrite(EL1, faultFgtEL1<false, &HFGTR::tpidrEL1>)
       .mapsTo(MISCREG_TPIDRPRW_NS);
     InitReg(MISCREG_TPIDR_EL0)
       .allPrivileges()
+      .serializing(false)
       .faultRead(EL0, faultFgtEL0<true, &HFGTR::tpidrEL0>)
       .faultWrite(EL0, faultFgtEL0<false, &HFGTR::tpidrEL0>)
       .faultRead(EL1, faultFgtEL1<true, &HFGTR::tpidrEL0>)
@@ -6051,9 +6054,11 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_TPIDRURO_NS);
     InitReg(MISCREG_TPIDR_EL2)
       .hyp().mon()
+      .serializing(false)
       .mapsTo(MISCREG_HTPIDR);
     InitReg(MISCREG_TPIDR_EL3)
-      .mon();
+      .mon()
+      .serializing(false);
     // BEGIN Generic Timer (AArch64)
     InitReg(MISCREG_CNTFRQ_EL0)
       .reads(1)
@@ -7065,7 +7070,7 @@ ISA::initializeMiscRegMetadata()
         .mon();
     InitReg(MISCREG_PIR_EL3)
         .mon();
-
+    // clang-format on
 
     // Register mappings for some unimplemented registers:
     // ESR_EL1 -> DFSR
