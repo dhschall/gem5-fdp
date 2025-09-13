@@ -310,6 +310,8 @@ def operands {{
     'PInt1': PIntReg('reg1'),
     'PInt2': PIntReg('reg2'),
     'PInt3': PIntReg('reg3'),
+    'SpDest': IntRegX64('spMapping(dest)'),
+    'SpOp1': IntRegX64('spMapping(op1)'),
 
     #Fixed index integer reg operands
     'SpMode': IntRegNPC('int_reg::regInMode((OperatingMode)regMode, '

@@ -312,6 +312,10 @@ namespace Aarch64
         } else {
             if (read) {
                 switch (miscReg) {
+                  case MISCREG_SP_EL0:
+                  case MISCREG_SP_EL1:
+                  case MISCREG_SP_EL2:
+                        return new MrsSp64(machInst, rt, miscReg);
                   case MISCREG_NZCV:
                     return new MrsNZCV64(machInst, rt, miscReg);
                   case MISCREG_DC_CIVAC_Xt:
@@ -333,6 +337,10 @@ namespace Aarch64
                 }
             } else {
                 switch (miscReg) {
+                  case MISCREG_SP_EL0:
+                  case MISCREG_SP_EL1:
+                  case MISCREG_SP_EL2:
+                    return new MsrSp64(machInst, miscReg, rt);
                   case MISCREG_NZCV:
                     return new MsrNZCV64(machInst, miscReg, rt);
                   case MISCREG_DC_ZVA_Xt:

@@ -3114,6 +3114,9 @@ namespace ArmISA
     int
     unflattenMiscReg(int reg);
 
+    // Converting from the MISCREG_SP notation to the int_reg::Sp one
+    RegIndex spMapping(MiscRegIndex sp_idx);
+
 } // namespace ArmISA
 } // namespace gem5
 

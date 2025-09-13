@@ -740,6 +740,21 @@ unflattenMiscReg(int reg)
     return unflattenResultMiscReg[reg];
 }
 
+RegIndex
+spMapping(MiscRegIndex reg)
+{
+    switch (reg) {
+        case MISCREG_SP_EL2:
+            return int_reg::Sp2;
+        case MISCREG_SP_EL1:
+            return int_reg::Sp1;
+        case MISCREG_SP_EL0:
+            return int_reg::Sp0;
+        default:
+            panic("Invalid SP register\n");
+    }
+}
+
 Fault
 checkFaultAccessAArch64SysReg(MiscRegIndex reg, CPSR cpsr,
                               ThreadContext *tc, const MiscRegOp64 &inst)
