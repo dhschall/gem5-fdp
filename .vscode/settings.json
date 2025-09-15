@@ -8,6 +8,10 @@
     "githubPullRequests.pushBranch": "always",
     "githubPullRequests.queries": [
         {
+            "label": "Local Pull Request Branches",
+            "query": "default"
+        },
+        {
             "label": "[gem5] My PRs in review",
             "query": "repo:gem5/gem5 is:open -is:draft author:${user}"
         },
@@ -22,6 +26,10 @@
         {
             "label": "[gem5] All PRs in review",
             "query": "repo:gem5/gem5 is:open -is:draft sort:created-desc"
+        },
+        {
+            "label": "All Open",
+            "query": "default"
         }
     ],
     "githubIssues.queries": [
