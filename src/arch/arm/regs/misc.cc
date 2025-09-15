@@ -4827,81 +4827,97 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_ID_PFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_PFR0);
     InitReg(MISCREG_ID_PFR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_PFR1);
     InitReg(MISCREG_ID_DFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_DFR0);
     InitReg(MISCREG_ID_AFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_AFR0);
     InitReg(MISCREG_ID_MMFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR0);
     InitReg(MISCREG_ID_MMFR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR1);
     InitReg(MISCREG_ID_MMFR2_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR2);
     InitReg(MISCREG_ID_MMFR3_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR3);
     InitReg(MISCREG_ID_MMFR4_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR4);
     InitReg(MISCREG_ID_ISAR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR0);
     InitReg(MISCREG_ID_ISAR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR1);
     InitReg(MISCREG_ID_ISAR2_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR2);
     InitReg(MISCREG_ID_ISAR3_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR3);
     InitReg(MISCREG_ID_ISAR4_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR4);
     InitReg(MISCREG_ID_ISAR5_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR5);
     InitReg(MISCREG_ID_ISAR6_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR6);
@@ -4938,6 +4954,7 @@ ISA::initializeMiscRegMetadata()
           return pfr0_el1;
       }())
       .unserialize(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4950,6 +4967,7 @@ ISA::initializeMiscRegMetadata()
           return pfr1_el1;
       }())
       .unserialize(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4959,21 +4977,25 @@ ISA::initializeMiscRegMetadata()
           dfr0_el1.pmuver = p.pmu ? 1 : 0; // Enable PMUv3
           return dfr0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64DFR1_EL1)
       .reset(p.id_aa64dfr1_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64AFR0_EL1)
       .reset(p.id_aa64afr0_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64AFR1_EL1)
       .reset(p.id_aa64afr1_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5001,6 +5023,7 @@ ISA::initializeMiscRegMetadata()
                           (release->has(ArmExtension::FEAT_FHM) ? 0x1 : 0x0);
           return isar0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5019,6 +5042,7 @@ ISA::initializeMiscRegMetadata()
                            (release->has(ArmExtension::FEAT_BF16) ? 0x1 : 0x0);
           return isar1_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5029,6 +5053,7 @@ ISA::initializeMiscRegMetadata()
           mmfr0_el1.parange = encodePhysAddrRange64(parange);
           return mmfr0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5044,6 +5069,7 @@ ISA::initializeMiscRegMetadata()
           mmfr1_el1.afp = release->has(ArmExtension::FEAT_AFP) ? 0x1 : 0x0;
           return mmfr1_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5057,6 +5083,7 @@ ISA::initializeMiscRegMetadata()
           mmfr2_el1.evt = release->has(ArmExtension::FEAT_EVT) ? 0x2 : 0x0;
           return mmfr2_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -5069,6 +5096,7 @@ ISA::initializeMiscRegMetadata()
           mmfr3_el1.s1pie = release->has(ArmExtension::FEAT_S1PIE) ? 0x1 : 0x0;
           return mmfr3_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
