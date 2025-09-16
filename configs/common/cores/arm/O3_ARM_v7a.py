@@ -51,6 +51,7 @@ class O3_ARM_v7a_Complex_Int(FUDesc):
         OpDesc(opClass="IntMult", opLat=3, pipelined=True),
         OpDesc(opClass="IntDiv", opLat=12, pipelined=False),
         OpDesc(opClass="IprAccess", opLat=3, pipelined=True),
+        OpDesc(opClass="System", opLat=3, pipelined=True),
     ]
     count = 1
 

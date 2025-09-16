@@ -273,7 +273,7 @@ class MinorDefaultMemFU(MinorFU):
 
 
 class MinorDefaultMiscFU(MinorFU):
-    opClasses = minorMakeOpClassSet(["IprAccess", "InstPrefetch"])
+    opClasses = minorMakeOpClassSet(["IprAccess", "InstPrefetch", "System"])
     opLat = 1
 
 

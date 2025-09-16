@@ -1667,7 +1667,7 @@ class HPI_MemFU(MinorFU):
 
 
 class HPI_MiscFU(MinorFU):
-    opClasses = minorMakeOpClassSet(["IprAccess", "InstPrefetch"])
+    opClasses = minorMakeOpClassSet(["IprAccess", "InstPrefetch", "System"])
     opLat = 1
 
 
