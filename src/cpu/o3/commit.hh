@@ -53,6 +53,7 @@
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
 
@@ -126,6 +127,10 @@ class Commit
     ProbePointArg<DynInstPtr> *ppCommitStall;
     /** To probe when an instruction is squashed */
     ProbePointArg<DynInstPtr> *ppSquash;
+
+    // LVP Unit -Pete
+    LoadValuePredictionUnit *loadValuePred;
+    bool predictValues;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);

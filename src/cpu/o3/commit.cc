@@ -56,6 +56,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
 #include "debug/Activity.hh"
 #include "debug/Commit.hh"
 #include "debug/CommitRate.hh"
@@ -63,9 +64,11 @@
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/LVP.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
+#include "debug/CVU.hh"
 
 namespace gem5
 {
@@ -83,6 +86,8 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
+      loadValuePred(nullptr),       // add the LVP unit -Pete
+      predictValues(params.predictValues),
       cpu(_cpu),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
@@ -112,6 +117,8 @@ Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
             priority_list.push_back(tid);
         }
     }
+
+    loadValuePred = params.loadValuePred;   // add the LVP unit -Pete
 
     for (ThreadID tid = 0; tid < MaxThreads; tid++) {
         commitStatus[tid] = Idle;
@@ -960,10 +967,54 @@ Commit::commitInsts()
         } else {
             set(pc[tid], head_inst->pcState());
 
+
+            // If it was a load, we want to read the actual result of the
+            // instruction so we can update the LVPU -Pete
+            RegVal reg_result = 0;
+            bool validResult = false;
+            if (predictValues){
+                if (head_inst->isLoad()) {
+                    // Not 100% sure why I have to do this check but it eliminates a segfault that was occuring
+                    if (head_inst->isValSpeculation){
+                        head_inst->popResult();
+                    }
+
+                    if (head_inst->getInstResult().isValid()) {
+                        reg_result = head_inst->getInstResult().asRegVal();
+                        validResult = true;
+                    }
+                }
+            }
+
             // Try to commit the head instruction.
             bool commit_success = commitHead(head_inst, num_committed);
-
             if (commit_success) {
+                // here we have to update the LVP if it was a load instruction -Pete
+                if (predictValues){
+                    // DPRINTF(Commit, "Checking LVP for inst [%llu]\n", head_inst->seqNum);
+                    // print if it was load, if it was constandLoad and if we have a valid result
+                    DPRINTF(Commit, "Is Load: %d, Is Constant Load: %d, Valid Result: %d\n", head_inst->isLoad(), head_inst->isConstantLoad, validResult);
+                    if (head_inst->isLoad() && !head_inst->isConstantLoad && validResult) {
+                        loadValuePred->verifyPrediction(head_inst->threadNumber, head_inst->pcState().instAddr(), head_inst->effAddr, reg_result, head_inst->getLVPValue(), head_inst->getLVPClassification());
+                        // debug statement to see if we are speculating
+                        DPRINTF(Commit, "Inst [%llu] Speculating: %d, LVP Classification: %d\n", head_inst->seqNum, head_inst->isValSpeculation, head_inst->getLVPClassification());
+                        // if we mispredicted, we have to do some squashing:
+                        if (head_inst->isValSpeculation && head_inst->getLVPValue() != reg_result) {
+                            DPRINTF(CVU, "Mispredicted load value for instr [%llu], squashing, rob entries: %d\n", head_inst->seqNum, rob->getThreadEntries(head_inst->threadNumber));
+                            squashAfter(head_inst->threadNumber, head_inst);
+                            // let's let the rob know this was a value mispredict
+                            rob->setValueMispredictSquash(true);
+                        }
+                    }
+                    if (head_inst->isValSpeculation && !validResult) {
+                            DPRINTF(Commit, "Mispredicted load value for instr [%llu], squashing\n", head_inst->seqNum);
+                            squashAfter(head_inst->threadNumber, head_inst);
+                            // let's let the rob know this was a value mispredict
+                            rob->setValueMispredictSquash(true);
+                        }
+                }
+
+
                 ++num_committed;
                 cpu->commitStats[tid]
                     ->committedInstType[head_inst->opClass()]++;
@@ -1231,6 +1282,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     updateComInstStats(head_inst);
 
     DPRINTF(Commit,
+            "[tid:%i] [sn:%llu] Committing instruction with PC %s\n",
+            tid, head_inst->seqNum, head_inst->pcState());
+    DPRINTF(CVU,
             "[tid:%i] [sn:%llu] Committing instruction with PC %s\n",
             tid, head_inst->seqNum, head_inst->pcState());
     if (head_inst->traceData) {

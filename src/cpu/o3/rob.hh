@@ -291,7 +291,12 @@ class ROB
     /** Number of instructions that can be squashed in a single cycle. */
     unsigned squashWidth;
 
+    bool valueMispredictSquash;
+
   public:
+
+    void setValueMispredictSquash(bool value)
+    { valueMispredictSquash = value; }
     /** Iterator pointing to the instruction which is the last instruction
      *  in the ROB.  This may at times be invalid (ie when the ROB is empty),
      *  however it should never be incorrect.

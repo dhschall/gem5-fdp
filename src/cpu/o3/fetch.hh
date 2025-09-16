@@ -53,6 +53,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/pc_event.hh"
 #include "cpu/pred/bpred_unit.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/translation.hh"
 #include "enums/SMTFetchPolicy.hh"
@@ -422,6 +423,10 @@ class Fetch
 
     /** Fetch Target Queue */
     FTQ *ftq;
+
+    /* VPredUnit */
+    LoadValuePredictionUnit *loadValuePred;
+    const bool predictValues;
 
     std::unique_ptr<PCStateBase> pc[MaxThreads];
 

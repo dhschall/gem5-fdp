@@ -463,6 +463,9 @@ class Rename
     /** The maximum skid buffer size. */
     unsigned skidBufferMax;
 
+    // Need to know whether to predict values -Pete
+    bool predictValues;
+
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.
      */

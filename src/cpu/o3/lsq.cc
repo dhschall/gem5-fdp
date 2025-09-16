@@ -51,6 +51,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
 #include "debug/Drain.hh"
 #include "debug/Fetch.hh"
 #include "debug/HtmCpu.hh"
@@ -130,9 +131,13 @@ LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
       recvRespCachelines(0),
       recvRespLastCachelineAddr(0),
       recvRespLastActiveCycle(0),
-      retryRespEvent([this]{ sendRetryResp(); }, name())
+      retryRespEvent([this]{ sendRetryResp(); }, name()),
+      loadValuePred(nullptr),
+      predictValues(params.predictValues)
 {
     assert(numThreads > 0 && numThreads <= MaxThreads);
+
+    loadValuePred = params.loadValuePred;
 
     //**********************************************
     //************ Handle SMT Parameters ***********
@@ -829,6 +834,31 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
             inst->effAddr = request->getVaddr();
             inst->effSize = size;
             inst->effAddrValid(true);
+
+            if (predictValues){
+                // process the load request in the lvpu if it is a constant prediction -Pete
+
+                // if (inst->isLoad() && inst->getLVPClassification() == LVP_CONSTANT && loadValuePred->processLoadAddress(inst->threadNumber, inst->effAddr, inst->pcState().instAddr())){
+                //         // if it is truly a constant load, we can predict the value without even going to memory
+                //         inst->isConstantLoad = true;
+                //         // Now set the correct register value and return
+                //         inst->setRegOperand(inst->staticInst.get(), 0, inst->lvp_value);
+                //         inst->setExecuted();
+                //         // do the writeback stage just like in lsq_unit writeback -Pete
+                //         iewStage->wakeCPU();
+                //         // Need to insert instruction into queue to commit
+                //         iewStage->instToCommit(inst);
+                //         iewStage->activityThisCycle();
+                //         // see if this load changed the PC
+                //         iewStage->checkMisprediction(inst);
+                //         return NoFault;
+                // }
+
+                // // process all store requests in the lvpu -Pete
+                // if (inst->isStore()){
+                //     loadValuePred->processStoreAddress(inst->threadNumber, inst->effAddr);
+                // }
+            }
 
             if (cpu->checker) {
                 inst->reqToVerify = std::make_shared<Request>(*request->req());

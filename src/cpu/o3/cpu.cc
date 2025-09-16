@@ -56,6 +56,7 @@
 #include "debug/Drain.hh"
 #include "debug/O3CPU.hh"
 #include "debug/Quiesce.hh"
+#include "debug/DumpRegs.hh"
 #include "enums/MemoryMode.hh"
 #include "sim/cur_tick.hh"
 #include "sim/full_system.hh"
@@ -367,6 +368,19 @@ CPU::CPUStats::CPUStats(CPU *cpu)
         .prereq(quiesceCycles);
 }
 
+void 
+CPU::dumpRegisters(){
+    const std::vector<std::string> regNames = {
+        "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
+    };
+    RegClass my_class(IntRegClass, "IntRegClass", 16, debug::InvalidReg);
+    for (int i = 0; i < regNames.size(); i++){
+        RegId my_reg(my_class, i);
+        DPRINTF(DumpRegs, "%s: 0x%lx\n", regNames[i], getArchReg(my_reg,0));
+    }
+}
+
 void
 CPU::tick()
 {
@@ -378,6 +392,7 @@ CPU::tick()
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
 
 //    activity = false;
+    dumpRegisters();
 
     //Tick each of the stages
     bac.tick();

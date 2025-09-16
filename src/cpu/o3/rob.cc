@@ -48,6 +48,7 @@
 #include "debug/Fetch.hh"
 #include "debug/ROB.hh"
 #include "params/BaseO3CPU.hh"
+#include "debug/CVU.hh"
 
 namespace gem5
 {
@@ -60,6 +61,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       cpu(_cpu),
       numEntries(params.numROBEntries),
       squashWidth(params.squashWidth),
+      valueMispredictSquash(false),
       numInstsInROB(0),
       numThreads(params.numThreads),
       stats(_cpu)
@@ -311,6 +313,7 @@ ROB::doSquash(ThreadID tid)
         squashIt[tid] = instList[tid].end();
 
         doneSquashing[tid] = true;
+        valueMispredictSquash = false;
         return;
     }
 
@@ -325,6 +328,13 @@ ROB::doSquash(ThreadID tid)
     {
         numInstsToSquash = numEntries;
     }
+
+    // if value mispredict squash everything in 1 cycle
+    // if (valueMispredictSquash) {
+    //     // DPRINTF(ROB, "Value mispredict, squashing all instructions.\n");
+    //     // numInstsToSquash = numEntries;
+    //     DPRINTF(CVU, "entries in ROB: %d\n", numEntries);
+    // }
 
     for (int numSquashed = 0;
          numSquashed < numInstsToSquash &&
@@ -351,7 +361,7 @@ ROB::doSquash(ThreadID tid)
             squashIt[tid] = instList[tid].end();
 
             doneSquashing[tid] = true;
-
+            valueMispredictSquash = false;
             return;
         }
 
@@ -378,6 +388,7 @@ ROB::doSquash(ThreadID tid)
     if (robTailUpdate) {
         updateTail();
     }
+    valueMispredictSquash = false;
 }
 
 

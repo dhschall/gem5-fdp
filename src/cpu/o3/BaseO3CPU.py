@@ -42,6 +42,7 @@ from m5.objects.BaseCPU import BaseCPU
 
 # from m5.objects.O3Checker import O3Checker
 from m5.objects.BranchPredictor import *
+from m5.objects.LoadValuePredictionUnit import *
 from m5.objects.FUPool import *
 from m5.objects.IndexingPolicies import *
 from m5.objects.ReplacementPolicies import *
@@ -214,6 +215,9 @@ class BaseO3CPU(BaseCPU):
         ),
         "Branch Predictor",
     )
+    loadValuePred = Param.LoadValuePredictionUnit(LoadValuePredictionUnit(), "Value Predictor")
+    predictValues = Param.Bool(False, "Enable Load Value Predictor")
+
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
     recvRespThrottling = Param.Bool(
