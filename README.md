@@ -10,6 +10,10 @@ system software changes, and compile-time and run-time system optimizations.
 
 The main website can be found at <http://www.gem5.org>.
 
+# Multiple branch prediction 
+
+The O3 core parameter `numPredperCycle` defines how many predictions per cycle the frontend makes. This works in combination with the parameters `maxPrefetchesPerCycle`, `maxOutstandingTranslations`, and `maxOutstandingPrefetches` to ensure sufficient prefetching. 
+
 ## Testing status
 
 **Note**: These regard tests run on the develop branch of gem5:
