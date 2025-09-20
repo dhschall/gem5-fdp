@@ -5,19 +5,20 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/callback.hh"
 #include "base/logging.hh"
 #include "base/sat_counter.hh"
 #include "base/trace.hh"
 #include "cpu/pred/branch_type.hh"
 #include "debug/Fetch.hh"
 #include "debug/RecycledEntry.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5
 {
 namespace branch_prediction
 {
 
-// Helper: recycle only for indirect branches
 static inline bool isIndirect(BranchType t)
 {
     return t == BranchType::IndirectUncond ||
@@ -25,241 +26,282 @@ static inline bool isIndirect(BranchType t)
            t == BranchType::CallIndirect;
 }
 
-//Constructor
-
 BranchRecyclingCache::BranchRecyclingCache(const Params &p)
-  : IndirectPredictor(p),
-    _instShiftAmt(p.instShiftAmt),
-    _speculativeHistUpdate(p.speculativeHistUpdate),
-
-    // BRP params
-    mBits(14),                  // m
-    nShift(7),                  // n = m/2
-    brpSize(16384),             // 16K 2-bit counters
-    brp(brpSize, SatCounter8(2)),
+  : ConditionalPredictor(p),
+    // BRP params as paper recomend
+    mBits(14),
+    nShift(7), //=m/2
+    brpSize(16384),
+    stateMachines(brpSize, SatCounter8(2)),
     ghr(p.numThreads, 0),
-
     lastMBpc(0),
-
-  //Data Structures
-    branchRecycleBuffer(),
     branchRecycleCache(),
-    table()
+    recycledCount(0),
+    recycledNotTaken(0)
 {
-    // Initialize each BRP counter to 1 (weakly "use")
-    for (auto &c : brp) ++c;
+    for (auto &c : stateMachines) ++c;
 
     DPRINTF(RecycledEntry, "BRC: constructed (BRP=%u, m=%u, n=%u)\n",
             brpSize, mBits, nShift);
+
+    gem5::registerExitCallback([this]() { this->dumpFinalDebugCounters(); });
 }
-
-void
-BranchRecyclingCache::reset()
-{
-    branchRecycleBuffer.clear();
-    branchRecycleCache.clear();
-    lastMBpc = 0;
-
-    brp.assign(brpSize, SatCounter8(2));
-    for (auto &c : brp) ++c;
-}
-
-//Hash according to paper
 
 inline unsigned
-BranchRecyclingCache::brpIndex(ThreadID tid, Addr cb_pc) const
+BranchRecyclingCache::stateMachineIdx(ThreadID tid, Addr cb_pc) const
 {
-
     const uint64_t mask = (mBits >= 31) ? 0xffffffffu : ((1u << mBits) - 1u);
-
     const uint64_t bhr = static_cast<uint64_t>(ghr[tid]) & mask;
-    const uint64_t cb  = static_cast<uint64_t>(cb_pc >> _instShiftAmt) & mask;
+    const uint64_t cb  = static_cast<uint64_t>(cb_pc >> 2) & mask;
     const uint64_t mb  =
-        static_cast<uint64_t>((lastMBpc >> _instShiftAmt) << nShift) & mask;
+        static_cast<uint64_t>((lastMBpc >> 2) << nShift) & mask;
 
     const uint64_t x = bhr ^ cb ^ mb;
     return (x & (brpSize - 1));
 }
 
-
-//Function to check if stored Wron-Path-Outcome should be used
 inline bool
 BranchRecyclingCache::brpSaysUse(ThreadID tid, Addr cb_pc) const
 {
-    // 2-bit counter: use recycled outcome if counter >= 2
-    return ( brp[brpIndex(tid, cb_pc)] > 1);
+    return (stateMachines[stateMachineIdx(tid, cb_pc)] > 1);
 }
 
 inline void
-BranchRecyclingCache::brpTrain(ThreadID tid, Addr cb_pc, bool good)
+BranchRecyclingCache::brpTrainByIdx(unsigned idx, bool good)
 {
-    auto &c = brp[brpIndex(tid, cb_pc)];
+    auto &c = stateMachines[idx];
     if (good) ++c; else --c;
 }
 
-//Lookup to and try to recycle Wrong-Path-Outcome
-
-const PCStateBase *
-BranchRecyclingCache::lookup(ThreadID tid, InstSeqNum sn, Addr pc,
-                             void *&indirect_history)
+bool
+BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
 {
-    indirect_history = nullptr; // default
+    bp_history = nullptr;
+    const unsigned idx_now = stateMachineIdx(tid, pc);
 
-    // 1) Try recycled wrong-path outcomes first (FIFO per-PC),
-    // BUT only if BRP allows
-    auto wrongPathOutcome = branchRecycleCache.find(pc);
-    if (wrongPathOutcome != branchRecycleCache.end() &&
-     !wrongPathOutcome->second.empty() && brpSaysUse(tid, pc)) {
-        auto &q = wrongPathOutcome->second;
+    auto it = branchRecycleCache.find(pc);
+    DPRINTF(RecycledEntry, "BRC.lookup pc=%#x, brpSaysUse=%d\n",
+            pc, (int)brpSaysUse(tid, pc));
 
-        //TODO: check which in the list should be used
+    // Try to use a recycled outcome from BRC
+    if (it != branchRecycleCache.end() && !it->second.empty()
+        && brpSaysUse(tid, pc))
+    {
+        auto &q = it->second;
         const Entry &re = q.front();
 
-        // Allocate history only when we return something
         auto *h = new History();
         h->pc            = pc;
         h->usedRecycle   = true;
         h->recycledTaken = re.taken;
         h->actualKnown   = false;
         h->brType        = re.brType;
+        h->brpIdx        = idx_now;
 
-        if (re.target)
-            h->predTarget.reset(re.target->clone());
-
-        indirect_history = h;
-
+        bp_history = h;
         q.pop_front();
-        if (q.empty())
-            branchRecycleCache.erase(wrongPathOutcome);
 
-        //DPRINTF(RecycledEntry, "BRC.lookup recycled pc=%#x\n", pc);
-        return h->predTarget.get(); // may be nullptr for direction-only
+        recycledCount++;
+        DPRINTF(RecycledEntry,
+            "BRC.lookup pc=%#x recycled dir=%d (q=%zu) idx=%u\n",
+            pc, (int)re.taken, q.size(), idx_now);
+
+        return re.taken;
     }
 
-    // Fall back to last committed indirect-target table
-    auto it2 = table.find(pc);
-    if (it2 != table.end()) {
-        auto *h = new History();
-        h->pc            = pc;
-        h->usedRecycle   = false;
-        h->recycledTaken = false;
-        h->actualKnown   = false;
-        h->brType        = BranchType::IndirectUncond;
-        h->predTarget.reset(it2->second->clone());
-        indirect_history = h;
 
-        //DPRINTF(RecycledEntry, "BRC.lookup committed pc=%#x\n", pc);
-        return h->predTarget.get();
-    }
+    auto *h = new History();
+    h->pc            = pc;
+    h->usedRecycle   = false;
+    h->recycledTaken = false;
+    h->actualKnown   = false;
+    h->brType        = BranchType::DirectCond;
+    h->brpIdx        = idx_now;
+    bp_history = h;
 
-    return nullptr;
+    DPRINTF(RecycledEntry, "BRC.lookup pc=%#x fallback dir=0 idx=%u\n",
+            pc, idx_now);
+
+    recycledNotTaken++;
+    return false;
 }
 
-/* ------------------ update (capture outcomes) ------------------ */
+void
+BranchRecyclingCache::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
+                                        void * &bpHistory)
+{
+    if (bpHistory) return;
+    auto *h = new History();
+    h->pc          = pc;
+    h->usedRecycle = false;
+    h->actualKnown = false;
+    h->brType      =
+    uncond ? BranchType::DirectUncond : BranchType::DirectCond;
+    h->brpIdx      = stateMachineIdx(tid, pc);
+    bpHistory = h;
+
+    DPRINTF(RecycledEntry, "BRC.placeholder pc=%#x idx=%u\n", pc, h->brpIdx);
+}
 
 void
-BranchRecyclingCache::update(ThreadID tid, InstSeqNum sn, Addr pc,
-                             bool squash, bool taken,
-                             const PCStateBase &target,
-                             BranchType brType, void *&indirect_history)
+BranchRecyclingCache::updateHistories(ThreadID tid, Addr pc, bool uncond,
+                                      bool taken, Addr,
+                                      const StaticInstPtr &inst,
+                                      void * &bp_history)
 {
-    // Ensure a history exists so commit can train BRP if needed
-    auto *h = static_cast<History*>(indirect_history);
+    auto *h = static_cast<History*>(bp_history);
     if (!h) {
         h = new History();
-        h->pc = pc;
-        indirect_history = h;
+        h->pc          = pc;
+        h->usedRecycle = false;
+        h->actualKnown = false;
+        h->brpIdx      = stateMachineIdx(tid, pc);
+        bp_history = h;
     }
-    h->brType = brType;
 
-    if (squash) {
-        // Wrong-path outcome → capture into write buffer
+    h->actualKnown = true;
+    h->actualTaken = taken;
+
+    if (inst) {
+        if (inst->isIndirectCtrl())
+            h->brType = uncond ? BranchType::IndirectUncond
+                               : BranchType::IndirectCond;
+        else if (inst->isUncondCtrl())
+            h->brType = BranchType::DirectUncond;
+        else
+            h->brType = BranchType::DirectCond;
+    }
+
+    const unsigned mask =
+        (mBits >= 31) ? 0xffffffffu : ((1u << mBits) - 1u);
+    ghr[tid] = ((ghr[tid] << 1) | (taken ? 1u : 0u)) & mask;
+
+    DPRINTF(RecycledEntry,
+        "BRC.updateHistories pc=%#x taken=%d ghr=%#x\n",
+        pc, (int)taken, (unsigned)ghr[tid]);
+}
+void
+BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
+                             void * &bp_history, bool squashed,
+                             const StaticInstPtr &inst, Addr)
+{
+    auto *h = static_cast<History*>(bp_history);
+    if (!h) {
+        h = new History();
+        h->pc          = pc;
+        h->usedRecycle = false;
+        h->actualKnown = true;
+        h->actualTaken = taken;
+        h->brpIdx      = stateMachineIdx(tid, pc);
+        bp_history     = h;
+    }
+
+    h->actualKnown = true;
+    h->actualTaken = taken;
+
+    if (inst) {
+        if (inst->isIndirectCtrl())
+            h->brType = inst->isUncondCtrl() ? BranchType::IndirectUncond
+                                             : BranchType::IndirectCond;
+        else if (inst->isUncondCtrl())
+            h->brType = BranchType::DirectUncond;
+        else
+            h->brType = BranchType::DirectCond;
+    }
+
+    if (squashed) {
+
         Entry e;
         e.pc         = pc;
         e.hasOutcome = true;
         e.taken      = taken;
-        e.brType     = brType;
-        if (isIndirect(brType))
-            e.target.reset(target.clone());
-        branchRecycleBuffer.emplace_back(std::move(e));
+        e.brType     = h->brType;
+
+        auto &q = branchRecycleCache[pc];
+        q.emplace_back(std::move(e));
+
+        lastMBpc = pc;
+
+        DPRINTF(RecycledEntry,
+            "BRC.update SQUASH pc=%#x queued
+            wrong-path dir=%d (q=%zu); lastMBpc=%#x\n",
+            pc, (int)taken, q.size(), lastMBpc);
+
+
+        delete h;
+        bp_history = nullptr;
         return;
     }
 
-    // Correct-path resolution
-    // remember actual outcome (for BRP training + table)
-    h->actualKnown = true;
-    h->actualTaken = taken;
-    if (isIndirect(brType))
-        h->actualTarget.reset(target.clone());
-    else
-        h->actualTarget.reset();
 
-    // Update GHR (direction history); for taken-only, guard with if (taken)
-    const unsigned mask = (mBits >= 31) ? 0xffffffffu : ((1u << mBits) - 1u);
-    ghr[tid] = ((ghr[tid] << 1) | (h->actualTaken ? 1u : 0u)) & mask;
-}
+    const bool baselineCorrect = !h->actualTaken;
+    const bool wpEqCp = h->usedRecycle &&
+    (h->recycledTaken == h->actualTaken);
 
-//Sqaush
-
-void
-BranchRecyclingCache::
-squash(ThreadID tid, InstSeqNum sn, void *&indirect_history)
-{
-    if (indirect_history) {
-        auto *h = static_cast<History*>(indirect_history);
-        // Record last mispredicted branch PC component for hashing
-        lastMBpc = h->pc;
-        delete h;
-        indirect_history = nullptr;
-    }
-
-    if (!branchRecycleBuffer.empty()) {
-        // Move all wrong-path entries into per-PC recycled queues (FIFO)
-        for (auto &e : branchRecycleBuffer)
-            branchRecycleCache[e.pc].emplace_back(std::move(e));
-        branchRecycleBuffer.clear();
-
-        DPRINTF(RecycledEntry, "BRC.squash published recycled entries\n");
-    }
-}
-
-//Commit, train BRP and update
-
-void
-BranchRecyclingCache::
-commit(ThreadID tid, InstSeqNum sn, void *&indirect_history)
-{
-    auto *h = static_cast<History*>(indirect_history);
-    if (!h) return;
-
-    if (h->usedRecycle && h->actualKnown) {
-        bool good = true;
-
-        // If indirect: compare predicted vs actual targets
-        if (h->predTarget && h->actualTarget) {
-            good = (h->predTarget->instAddr() == h->actualTarget->instAddr());
+    //Train how described in Paper
+    if (h->usedRecycle) {
+        if (!baselineCorrect && wpEqCp) {
+            // If baseline mispredicted && WP==CP -> increment
+            brpTrainByIdx(h->brpIdx, true);
+            lastMBpc = pc; // record last mispredicted branch for hash
+            DPRINTF(RecycledEntry,
+                "BRC.update COMMIT pc=%#x BRP++
+                (baseline wrong, WP==CP) cnt=%u lastMBpc=%#x\n",
+                pc, (unsigned)stateMachines[h->brpIdx], lastMBpc);
+        } else if (baselineCorrect && !wpEqCp) {
+            // If baseline correct && WP!=CP -> decrement
+            brpTrainByIdx(h->brpIdx, false);
+            DPRINTF(RecycledEntry,
+                "BRC.update COMMIT pc=%#x BRP--
+                (baseline correct, WP!=CP) cnt=%u\n",
+                pc, (unsigned)stateMachines[h->brpIdx]);
+        } else {
+            DPRINTF(RecycledEntry,
+                "BRC.update COMMIT pc=%#x no BRP
+                change (usedRecycle, but no rule hit)\n",
+                pc);
         }
-        // If no target on either side -> direction-only recycle
-        else if (!h->predTarget && !h->actualTarget) {
-            good = (h->recycledTaken == h->actualTaken);
+    } else {
+        //Also train if WP wasn't used contrary to
+        //paper otherwise training would never start
+        if (!baselineCorrect) {
+            brpTrainByIdx(h->brpIdx, true);
+            lastMBpc = pc;
+            DPRINTF(RecycledEntry,
+                "BRC.update COMMIT pc=%#x BRP++
+                (seed: baseline wrong, no WP) cnt=%u lastMBpc=%#x\n",
+                pc, (unsigned)stateMachines[h->brpIdx], lastMBpc);
+        } else {
+            DPRINTF(RecycledEntry,
+                "BRC.update COMMIT pc=%#x no WP
+                -> baseline correct -> no BRP change\n",
+                pc);
         }
-
-        brpTrain(tid, h->pc, good);
-        if (!good) {
-            // On a misprediction, record this branch as the last mispredicted
-            lastMBpc = h->pc;
-        }
-        DPRINTF(RecycledEntry,
-            "BRC.commit train pc=%#x good=%d\n", h->pc, good);
-    }
-
-    // Populate/update the committed target table for indirects
-    if (h->actualKnown && isIndirect(h->brType) && h->actualTarget) {
-        table[h->pc] = std::unique_ptr<PCStateBase>(h->actualTarget->clone());
     }
 
     delete h;
-    indirect_history = nullptr;
+    bp_history = nullptr;
+}
+
+void
+BranchRecyclingCache::squash(ThreadID, void * &bp_history)
+{
+    if (bp_history) {
+        auto *h = static_cast<History*>(bp_history);
+        // last mispredicted branch PC for the BRP hash component
+        lastMBpc = h->pc;
+        delete h;
+        bp_history = nullptr;
+    }
+}
+
+void
+BranchRecyclingCache::dumpFinalDebugCounters()
+{
+    DPRINTF(RecycledEntry,
+        "BRC.final recycledCount=%llu, recycledNotTaken=%llu\n",
+        (unsigned long long)recycledCount,
+        (unsigned long long)recycledNotTaken);
 }
 
 } // namespace branch_prediction

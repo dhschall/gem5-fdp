@@ -1212,17 +1212,7 @@ class ITTAGE(IndirectPredictor):
     )
 
 
-# inside BranchPredictor.py, near the other predictors
-class BranchRecyclingCache(IndirectPredictor):
+class BranchRecyclingCache(ConditionalPredictor):
     type = "BranchRecyclingCache"
     cxx_class = "gem5::branch_prediction::BranchRecyclingCache"
     cxx_header = "cpu/pred/br_recycling.hh"
-
-    # inherit sane defaults from the parent BranchPredictor
-    instShiftAmt = Param.Unsigned(
-        Parent.instShiftAmt,
-        "Bits to shift PC for indexing (0 for x86; 2 for 4B ISAs).",
-    )
-    speculativeHistUpdate = Param.Bool(
-        Parent.speculativeHistUpdate, "Use speculative update for histories."
-    )
