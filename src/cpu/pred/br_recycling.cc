@@ -80,13 +80,16 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
     const unsigned idx_now = stateMachineIdx(tid, pc);
 
     auto it = branchRecycleCache.find(pc);
-    DPRINTF(RecycledEntry, "BRC.lookup pc=%#x, brpSaysUse=%d\n",
-            pc, (int)brpSaysUse(tid, pc));
+   /*  DPRINTF(RecycledEntry, "BRC.lookup pc=%#x, brpSaysUse=%d\n",
+            pc, (int)brpSaysUse(tid, pc)); */
 
     // Try to use a recycled outcome from BRC
     if (it != branchRecycleCache.end() && !it->second.empty()
         && brpSaysUse(tid, pc))
     {
+
+        DPRINTF(RecycledEntry, "BRC.lookup pc=%#x found qsize=%#x\n",
+            pc, it->second.size());
         auto &q = it->second;
         const Entry &re = q.front();
 
@@ -103,7 +106,7 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
 
         recycledCount++;
         DPRINTF(RecycledEntry,
-            "BRC.lookup pc=%#x recycled dir=%d (q=%zu) idx=%u\n",
+             "BRC.lookup pc=%#x recycled dir=%d (q=%zu) idx=%u\n",
             pc, (int)re.taken, q.size(), idx_now);
 
         return re.taken;
@@ -119,9 +122,9 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
     h->brpIdx        = idx_now;
     bp_history = h;
 
-    DPRINTF(RecycledEntry, "BRC.lookup pc=%#x fallback dir=0 idx=%u\n",
-            pc, idx_now);
-
+    /* DPRINTF(RecycledEntry,
+    "BRC.lookup pc=%#x fallback dir=0 idx=%u\n", pc, idx_now);
+ */
     recycledNotTaken++;
     return false;
 }
@@ -139,8 +142,9 @@ BranchRecyclingCache::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
     uncond ? BranchType::DirectUncond : BranchType::DirectCond;
     h->brpIdx      = stateMachineIdx(tid, pc);
     bpHistory = h;
-
-    DPRINTF(RecycledEntry, "BRC.placeholder pc=%#x idx=%u\n", pc, h->brpIdx);
+/*
+    DPRINTF(RecycledEntry, "BRC.placeholder
+    pc=%#x idx=%u\n", pc, h->brpIdx); */
 }
 
 void
@@ -175,11 +179,10 @@ BranchRecyclingCache::updateHistories(ThreadID tid, Addr pc, bool uncond,
     const unsigned mask =
         (mBits >= 31) ? 0xffffffffu : ((1u << mBits) - 1u);
     ghr[tid] = ((ghr[tid] << 1) | (taken ? 1u : 0u)) & mask;
-
-    DPRINTF(RecycledEntry,
-        "BRC.updateHistories pc=%#x taken=%d ghr=%#x\n",
-        pc, (int)taken, (unsigned)ghr[tid]);
-}
+/*
+    DPRINTF(RecycledEntry, "BRC.updateHistories pc=%#x
+    taken=%d ghr=%#x\n", pc, (int)taken, (unsigned)ghr[tid]);
+ */}
 void
 BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
                              void * &bp_history, bool squashed,
@@ -221,12 +224,11 @@ BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
         q.emplace_back(std::move(e));
 
         lastMBpc = pc;
-
-        DPRINTF(RecycledEntry,
-            "BRC.update SQUASH pc=%#x queued
-            wrong-path dir=%d (q=%zu); lastMBpc=%#x\n",
-            pc, (int)taken, q.size(), lastMBpc);
-
+/*
+        DPRINTF(RecycledEntry, "BRC.update SQUASH pc=%#x
+        queued wrong-path dir=%d (q=%zu); lastMBpc=%#x\n",
+         pc, (int)taken, q.size(), lastMBpc);
+ */
 
         delete h;
         bp_history = nullptr;
@@ -244,39 +246,32 @@ BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
             // If baseline mispredicted && WP==CP -> increment
             brpTrainByIdx(h->brpIdx, true);
             lastMBpc = pc; // record last mispredicted branch for hash
-            DPRINTF(RecycledEntry,
-                "BRC.update COMMIT pc=%#x BRP++
-                (baseline wrong, WP==CP) cnt=%u lastMBpc=%#x\n",
-                pc, (unsigned)stateMachines[h->brpIdx], lastMBpc);
-        } else if (baselineCorrect && !wpEqCp) {
+      /*       DPRINTF(RecycledEntry, "BRC.update COMMIT pc=%#x BRP++
+      (baseline wrong, WP==CP) cnt=%u lastMBpc=%#x\n", pc,
+      (unsigned)stateMachines[h->brpIdx], lastMBpc);
+       */  } else if (baselineCorrect && !wpEqCp) {
             // If baseline correct && WP!=CP -> decrement
             brpTrainByIdx(h->brpIdx, false);
-            DPRINTF(RecycledEntry,
-                "BRC.update COMMIT pc=%#x BRP--
-                (baseline correct, WP!=CP) cnt=%u\n",
-                pc, (unsigned)stateMachines[h->brpIdx]);
-        } else {
-            DPRINTF(RecycledEntry,
-                "BRC.update COMMIT pc=%#x no BRP
-                change (usedRecycle, but no rule hit)\n",
-                pc);
-        }
+      /*       DPRINTF(RecycledEntry, "BRC.update COMMIT pc=%#x
+      BRP-- (baseline correct, WP!=CP) cnt=%u\n", pc,
+      (unsigned)stateMachines[h->brpIdx]);
+       */  } else {
+       /*      DPRINTF(RecycledEntry, "BRC.update COMMIT pc=%#x
+       no BRP change (usedRecycle, but no rule hit)\n", pc);
+        */ }
     } else {
         //Also train if WP wasn't used contrary to
         //paper otherwise training would never start
         if (!baselineCorrect) {
             brpTrainByIdx(h->brpIdx, true);
             lastMBpc = pc;
-            DPRINTF(RecycledEntry,
-                "BRC.update COMMIT pc=%#x BRP++
-                (seed: baseline wrong, no WP) cnt=%u lastMBpc=%#x\n",
-                pc, (unsigned)stateMachines[h->brpIdx], lastMBpc);
+          /*   DPRINTF(RecycledEntry, "BRC.update COMMIT pc=%#x
+          BRP++ (seed: baseline wrong, no WP) cnt=%u lastMBpc=%#x\n",
+               pc, (unsigned)stateMachines[h->brpIdx], lastMBpc);  */
         } else {
-            DPRINTF(RecycledEntry,
-                "BRC.update COMMIT pc=%#x no WP
-                -> baseline correct -> no BRP change\n",
-                pc);
-        }
+     /*        DPRINTF(RecycledEntry, "BRC.update COMMIT pc=%#x no WP
+     -> baseline correct -> no BRP change\n", pc);
+      */   }
     }
 
     delete h;
@@ -298,9 +293,8 @@ BranchRecyclingCache::squash(ThreadID, void * &bp_history)
 void
 BranchRecyclingCache::dumpFinalDebugCounters()
 {
-    DPRINTF(RecycledEntry,
-        "BRC.final recycledCount=%llu, recycledNotTaken=%llu\n",
-        (unsigned long long)recycledCount,
+    DPRINTF(RecycledEntry, "BRC.final recycledCount=%llu,
+        recycledNotTaken=%llu\n", (unsigned long long)recycledCount,
         (unsigned long long)recycledNotTaken);
 }
 
