@@ -102,7 +102,7 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
         h->brpIdx        = idx_now;
 
         bp_history = h;
-        q.pop_front();
+      //  q.pop_front();
 
         recycledCount++;
         DPRINTF(RecycledEntry,
@@ -293,9 +293,10 @@ BranchRecyclingCache::squash(ThreadID, void * &bp_history)
 void
 BranchRecyclingCache::dumpFinalDebugCounters()
 {
-    DPRINTF(RecycledEntry, "BRC.final recycledCount=%llu,
-        recycledNotTaken=%llu\n", (unsigned long long)recycledCount,
-        (unsigned long long)recycledNotTaken);
+    DPRINTF(RecycledEntry,
+        "BRC.final recycledCount=%llu, recycledNotTaken=%llu\n",
+         (unsigned long long)recycledCount,
+         (unsigned long long)recycledNotTaken);
 }
 
 } // namespace branch_prediction
