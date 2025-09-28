@@ -51,6 +51,7 @@
 #include "debug/Activity.hh"
 #include "debug/O3PipeView.hh"
 #include "debug/Rename.hh"
+#include "debug/Serializing.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -717,6 +718,8 @@ Rename::renameInsts(ThreadID tid)
         // instructions.
         if (inst->isSerializeBefore() && !inst->isSerializeHandled()) {
             DPRINTF(Rename, "Serialize before instruction encountered.\n");
+            DPRINTF(Serializing, "Serialize before: %s\n",
+                    inst->staticInst->disassemble(inst->pcState().instAddr()));
 
             if (!inst->isTempSerializeBefore()) {
                 stats.serializing++;
@@ -737,6 +740,8 @@ Rename::renameInsts(ThreadID tid)
         } else if ((inst->isStoreConditional() || inst->isSerializeAfter()) &&
                    !inst->isSerializeHandled()) {
             DPRINTF(Rename, "Serialize after instruction encountered.\n");
+            DPRINTF(Serializing, "Serialize after: %s\n",
+                    inst->staticInst->disassemble(inst->pcState().instAddr()));
 
             stats.serializing++;
 
