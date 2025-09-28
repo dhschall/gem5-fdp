@@ -1216,3 +1216,9 @@ class BranchRecyclingCache(ConditionalPredictor):
     type = "BranchRecyclingCache"
     cxx_class = "gem5::branch_prediction::BranchRecyclingCache"
     cxx_header = "cpu/pred/br_recycling.hh"
+
+    base = Param.TAGE_SC_L(
+        TAGE_SC_L_64KB(),
+        "Base predictor",
+    )
+    enable_recycling = Param.Bool(True, "Enabling the recycling")

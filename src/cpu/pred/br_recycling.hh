@@ -10,6 +10,7 @@
 #include "base/sat_counter.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/conditional.hh"
+#include "cpu/pred/tage_sc_l.hh"
 #include "params/BranchRecyclingCache.hh"
 
 namespace gem5
@@ -63,8 +64,13 @@ class BranchRecyclingCache : public ConditionalPredictor
         BranchType brType = BranchType::DirectCond;
 
         unsigned brpIdx = 0;
+
+        bool base_pred = false;
+        void* tage_bi = nullptr;
     };
 
+    TAGE_SC_L* base;
+    const bool enableRecycling;
 
     //Paper parameters
     unsigned mBits;

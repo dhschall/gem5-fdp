@@ -183,7 +183,7 @@ class TAGE_SC_L: public LTAGE
     void branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
                            void *&bp_history) override;
 
-  protected:
+  public:
 
     struct TageSCLBranchInfo : public LTageBranchInfo
     {
@@ -200,6 +200,11 @@ class TAGE_SC_L: public LTAGE
             delete scBranchInfo;
         }
     };
+
+    void update(ThreadID tid, Addr pc, bool taken, TageSCLBranchInfo * &bi,
+                bool squashed, const StaticInstPtr & inst,
+                Addr target);
+
 
     // more provider types
     enum

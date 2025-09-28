@@ -28,6 +28,8 @@ static inline bool isIndirect(BranchType t)
 
 BranchRecyclingCache::BranchRecyclingCache(const Params &p)
   : ConditionalPredictor(p),
+    base(p.base),
+    enableRecycling(p.enable_recycling),
     // BRP params as paper recomend
     mBits(14),
     nShift(7), //=m/2
@@ -39,6 +41,10 @@ BranchRecyclingCache::BranchRecyclingCache(const Params &p)
     recycledCount(0),
     recycledNotTaken(0)
 {
+    // // First initialize the base predictor
+    // base->tage->init();
+
+    // Next the recycling cache
     for (auto &c : stateMachines) ++c;
 
     DPRINTF(RecycledEntry, "BRC: constructed (BRP=%u, m=%u, n=%u)\n",
@@ -77,6 +83,15 @@ bool
 BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
 {
     bp_history = nullptr;
+
+    // First base prediction
+    auto *h = new History();
+
+    h->base_pred = base->predict(tid, pc, true, h->tage_bi);
+    bp_history = h;
+
+
+
     const unsigned idx_now = stateMachineIdx(tid, pc);
 
     auto it = branchRecycleCache.find(pc);
@@ -93,7 +108,7 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
         auto &q = it->second;
         const Entry &re = q.front();
 
-        auto *h = new History();
+        // auto *h = new History();
         h->pc            = pc;
         h->usedRecycle   = true;
         h->recycledTaken = re.taken;
@@ -101,7 +116,7 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
         h->brType        = re.brType;
         h->brpIdx        = idx_now;
 
-        bp_history = h;
+        // bp_history = h;
       //  q.pop_front();
 
         recycledCount++;
@@ -109,32 +124,36 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
              "BRC.lookup pc=%#x recycled dir=%d (q=%zu) idx=%u\n",
             pc, (int)re.taken, q.size(), idx_now);
 
-        return re.taken;
+        // return re.taken;
+    } else {
+
+        // auto *h = new History();
+        h->pc            = pc;
+        h->usedRecycle   = false;
+        h->recycledTaken = false;
+        h->actualKnown   = false;
+        h->brType        = BranchType::DirectCond;
+        h->brpIdx        = idx_now;
+        // bp_history = h;
+
+        /* DPRINTF(RecycledEntry,
+        "BRC.lookup pc=%#x fallback dir=0 idx=%u\n", pc, idx_now);
+    */
+        recycledNotTaken++;
     }
 
-
-    auto *h = new History();
-    h->pc            = pc;
-    h->usedRecycle   = false;
-    h->recycledTaken = false;
-    h->actualKnown   = false;
-    h->brType        = BranchType::DirectCond;
-    h->brpIdx        = idx_now;
-    bp_history = h;
-
-    /* DPRINTF(RecycledEntry,
-    "BRC.lookup pc=%#x fallback dir=0 idx=%u\n", pc, idx_now);
- */
-    recycledNotTaken++;
-    return false;
+    return enableRecycling ? h->recycledTaken : h->base_pred;
 }
 
 void
 BranchRecyclingCache::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
                                         void * &bpHistory)
 {
-    if (bpHistory) return;
+    assert(!bpHistory);
+    // if (bpHistory) return;
     auto *h = new History();
+    base->branchPlaceholder(tid, pc, uncond, h->tage_bi);
+
     h->pc          = pc;
     h->usedRecycle = false;
     h->actualKnown = false;
@@ -149,18 +168,21 @@ BranchRecyclingCache::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
 
 void
 BranchRecyclingCache::updateHistories(ThreadID tid, Addr pc, bool uncond,
-                                      bool taken, Addr,
+                                      bool taken, Addr target,
                                       const StaticInstPtr &inst,
                                       void * &bp_history)
 {
-    auto *h = static_cast<History*>(bp_history);
-    if (!h) {
+    History *h;
+    if (bp_history == nullptr) {
+        assert(uncond);
         h = new History();
         h->pc          = pc;
         h->usedRecycle = false;
         h->actualKnown = false;
         h->brpIdx      = stateMachineIdx(tid, pc);
         bp_history = h;
+    } else {
+        h = static_cast<History *>(bp_history);
     }
 
     h->actualKnown = true;
@@ -182,22 +204,29 @@ BranchRecyclingCache::updateHistories(ThreadID tid, Addr pc, bool uncond,
 /*
     DPRINTF(RecycledEntry, "BRC.updateHistories pc=%#x
     taken=%d ghr=%#x\n", pc, (int)taken, (unsigned)ghr[tid]);
- */}
+ */
+    base->updateHistories(tid, pc, uncond, taken, target, inst, h->tage_bi);
+}
+
 void
 BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
                              void * &bp_history, bool squashed,
-                             const StaticInstPtr &inst, Addr)
+                             const StaticInstPtr &inst, Addr target)
 {
+    assert(bp_history);
     auto *h = static_cast<History*>(bp_history);
-    if (!h) {
-        h = new History();
-        h->pc          = pc;
-        h->usedRecycle = false;
-        h->actualKnown = true;
-        h->actualTaken = taken;
-        h->brpIdx      = stateMachineIdx(tid, pc);
-        bp_history     = h;
-    }
+    TAGE_SC_L::TageSCLBranchInfo *tage_bi =
+                    static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
+
+    // if (!h) {
+    //     h = new History();
+    //     h->pc          = pc;
+    //     h->usedRecycle = false;
+    //     h->actualKnown = true;
+    //     h->actualTaken = taken;
+    //     h->brpIdx      = stateMachineIdx(tid, pc);
+    //     bp_history     = h;
+    // }
 
     h->actualKnown = true;
     h->actualTaken = taken;
@@ -230,10 +259,14 @@ BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
          pc, (int)taken, q.size(), lastMBpc);
  */
 
-        delete h;
-        bp_history = nullptr;
+        // delete h;
+        // bp_history = nullptr;
+        base->update(tid, pc, taken, tage_bi, squashed, inst, target);
         return;
     }
+
+    // Do the base predictor update.
+    base->update(tid, pc, taken, tage_bi, squashed, inst, target);
 
 
     const bool baselineCorrect = !h->actualTaken;
@@ -274,20 +307,27 @@ BranchRecyclingCache::update(ThreadID tid, Addr pc, bool taken,
       */   }
     }
 
+
+    delete tage_bi;
     delete h;
     bp_history = nullptr;
 }
 
 void
-BranchRecyclingCache::squash(ThreadID, void * &bp_history)
+BranchRecyclingCache::squash(ThreadID tid, void * &bp_history)
 {
-    if (bp_history) {
-        auto *h = static_cast<History*>(bp_history);
-        // last mispredicted branch PC for the BRP hash component
-        lastMBpc = h->pc;
-        delete h;
-        bp_history = nullptr;
-    }
+    assert(bp_history);
+
+    // if (bp_history) {
+    auto *h = static_cast<History*>(bp_history);
+    // last mispredicted branch PC for the BRP hash component
+    lastMBpc = h->pc;
+
+    base->squash(tid, h->tage_bi);
+
+    delete h;
+    bp_history = nullptr;
+    // }
 }
 
 void
