@@ -535,12 +535,46 @@ IEW::squashDueToMemOrder(const DynInstPtr& inst, ThreadID tid)
             inst->seqNum <= toCommit->squashedSeqNum[tid]) {
         toCommit->squash[tid] = true;
 
+        toCommit->memoryViolation[tid] = true;
         toCommit->squashedSeqNum[tid] = inst->seqNum;
         set(toCommit->pc[tid], inst->pcState());
         toCommit->mispredictInst[tid] = NULL;
 
         // Must include the memory violator in the squash.
         toCommit->includeSquashInst[tid] = true;
+
+        wroteToTimeBuffer = true;
+    }
+
+    //revert branch history
+    BranchHistory decodedBranchHistory = cpu->getDecode()->getBranchHistory();
+    while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum >= inst->seqNum) {
+        decodedBranchHistory.pop_front();
+    }
+}
+
+void
+IEW::squashDueToValueMispred(const DynInstPtr& inst, ThreadID tid)
+{
+    DPRINTF(IEW, "[tid:%i] Value misprediction, squashing younger "
+            "insts, PC: %s [sn:%llu].\n", tid, inst->pcState(), inst->seqNum);
+    if (!toCommit->squash[tid] ||
+            inst->seqNum < toCommit->squashedSeqNum[tid]) {
+        toCommit->squash[tid] = true;
+
+        toCommit->valueMisprediction[tid] = true;
+        toCommit->squashedSeqNum[tid] = inst->seqNum;
+        set(toCommit->pc[tid], inst->pcState());
+        // This instruction is alright only the instructions afterwards
+        // are affected by a mispredicted value.
+        // Thus advance the PC to the next instruction
+        inst->staticInst->advancePC(*toCommit->pc[tid]);
+
+        toCommit->mispredictInst[tid] = NULL;
+
+        // Doesn't include the squashing instruction
+        toCommit->includeSquashInst[tid] = false;
+        inst->corrected = true;
 
         wroteToTimeBuffer = true;
     }
@@ -643,7 +677,27 @@ IEW::instToCommit(const DynInstPtr& inst)
         }
     }
 
-    DPRINTF(IEW, "Current wb cycle: %i, width: %i, numInst: %i\nwbActual:%i\n",
+    // Verify that the instruction of a value was correctly predicted
+    validatePredValue(inst);
+    auto tid = inst->threadNumber;
+
+    if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
+        toCommit->squashedSeqNum[tid] > inst->seqNum) {
+        if (inst->valueMispred) {
+            DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
+                    "Value mispredict detected inst PC: %s\n",
+                    tid, inst->seqNum,
+                    inst->pcState());
+
+            fetchRedirect[tid] = true;
+
+            // Squash.
+            squashDueToValueMispred(inst, tid);
+        }
+    }
+
+
+    DPRINTF(IEW, "Current wb cycle: %i, width: %i, numInst: %i wbActual:%i\n",
             wbCycle, wbWidth, wbNumInst, wbCycle * wbWidth + wbNumInst);
     // Add finished instruction to queue to commit.
     (*iewQueue)[wbCycle].insts[wbNumInst] = inst;
@@ -1410,6 +1464,30 @@ IEW::executeInsts()
 }
 
 void
+IEW::validatePredValue(const DynInstPtr &inst)
+{
+    DPRINTF(IEW, "Value validated [sn:%lli] valSpec=%i. fault=%i, iready=%i\n",
+                inst->seqNum, inst->isValSpeculation, inst->fault != NoFault, inst->getInstResult().isValid());
+    // Only validate if a prediction was made for this instruction
+    // and it the instruction didn't fault
+    if (!inst->isValSpeculation)
+        return;
+    if (inst->fault != NoFault)
+        return;
+    if (!inst->getInstResult().isValid())
+        return;
+
+    assert(inst->isExecuted());
+    // assert(inst->isResultReady());
+    // assert(inst->getInstResult().isValid());
+    auto val = inst->getInstResult().asRegVal();
+    inst->updateActualValue(val, curTick());
+    // inst->updateActualValue(val);
+    DPRINTF(IEW, "Value validated [sn:%lli] correct=%i pval=%llu, cval=%llu\n",
+                inst->seqNum, !inst->valueMispred, inst->predValue, val);
+}
+
+void
 IEW::writebackInsts()
 {
     // Loop through the head of the time buffer and wake any
@@ -1429,6 +1507,24 @@ IEW::writebackInsts()
         // Notify potential listeners that execution is complete for this
         // instruction.
         ppToCommit->notify(inst);
+
+        // // Verify that the instruction of a value was correctly predicted
+        // validatePredValue(inst);
+
+        // if (!fetchRedirect[tid] || !toCommit->squash[tid] ||
+        //     toCommit->squashedSeqNum[tid] > inst->seqNum) {
+        //     if (inst->valueMispred) {
+        //         DPRINTF(IEW, "[tid:%i] [sn:%llu] Execute: "
+        //                 "Value mispredict detected inst PC: %s\n",
+        //                 tid, inst->seqNum,
+        //                 inst->pcState());
+
+        //         fetchRedirect[tid] = true;
+
+        //         // Squash.
+        //         squashDueToValueMispred(inst, tid);
+        //     }
+        // }
 
         // Some instructions will be sent to commit without having
         // executed because they need commit to handle them.

@@ -387,6 +387,47 @@ class DynInst : public ExecContext, public RefCounted
         bool predicted = false;
     } memDepInfo;
 
+    // @todo make struct like memDepInfo
+    LVPType lvp_classification = LVP_STRONG_UNPREDICTABLE;
+    RegVal predValue = 0;
+    RegVal actualValue = 0;
+
+    // bool isConstantLoad = false;
+    bool isValSpeculation = false;
+    bool valueMispred = false;
+    bool verified = false;
+    bool corrected = false;
+    Tick pred_tick = 0;
+
+    // setter for LVP info -Pete
+    void setLVPInfo(LVPType classification, RegVal value, Tick ptick=0)
+    {
+        lvp_classification = classification;
+        predValue = value;
+        pred_tick = ptick;
+    }
+
+    // getter for LVP classification -Pete
+    LVPType getLVPClassification()
+    {
+        return lvp_classification;
+    }
+
+    // getter for LVP value -Pete
+    RegVal getLVPValue()
+    {
+        return predValue;
+    }
+
+    void updateActualValue(RegVal value, Tick tick=0)
+    {
+        assert(!verified);
+        actualValue = value;
+        valueMispred = predValue != value;
+        pred_tick = tick - pred_tick;
+        verified = true;
+    }
+
     /////////////////////// TLB Miss //////////////////////
     /**
      * Saved memory request (needed when the DTB address translation is
@@ -729,6 +770,14 @@ class DynInst : public ExecContext, public RefCounted
     /** Return the size of the instResult queue. */
     uint8_t resultSize() { return instResult.size(); }
 
+    InstResult
+    getInstResult(){
+        if (!instResult.empty()) {
+            return instResult.front();
+        }
+        return InstResult();
+    }
+
     /** Pops a result off the instResult queue.
      * If the result stack is empty, return the default value.
      * */
@@ -753,6 +802,10 @@ class DynInst : public ExecContext, public RefCounted
             instResult.emplace(reg_class, std::forward<T>(t));
         }
     }
+
+    /** Return the size of the instResult queue. */
+    std::queue<InstResult>& getResultQueue() { return instResult; }
+
     /** @} */
 
     /** Records that one of the source registers is ready. */

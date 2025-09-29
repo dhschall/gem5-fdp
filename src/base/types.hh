@@ -59,6 +59,14 @@ typedef uint64_t Tick;
 
 const Tick MaxTick = 0xffffffffffffffffULL;
 
+/* LVP Constants */
+#define LVP_CONSTANT             3
+#define LVP_PREDICTABLE          2
+#define LVP_WEAK_UNPREDICTABLE   1
+#define LVP_STRONG_UNPREDICTABLE 0
+
+typedef uint8_t LVPType;
+
 /**
  * Cycles is a wrapper class for representing cycle counts, i.e. a
  * relative difference between two points in time, expressed in a

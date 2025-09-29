@@ -52,6 +52,7 @@
 #include "cpu/o3/free_list.hh"
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/lvp/value_predictor.hh"
 #include "cpu/timebuf.hh"
 #include "sim/probe/probe.hh"
 
@@ -257,6 +258,9 @@ class Rename
 
     /** Should we SerializeBefore the current instruction */
     void handleMiscRegWaW(DynInstPtr &inst, ThreadID tid);
+
+    /** Renames the destination registers of an instruction. */
+    void valuePredict(const DynInstPtr &inst, ThreadID tid);
 
     /** Calculates the number of free ROB entries for a specific thread. */
     int calcFreeROBEntries(ThreadID tid);
@@ -465,6 +469,12 @@ class Rename
 
     /** The maximum skid buffer size. */
     unsigned skidBufferMax;
+
+    /** Value Predictor */
+    ValuePredictor *valuePred;
+
+    /** Enable value predictor */
+    const bool predictValues;
 
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.

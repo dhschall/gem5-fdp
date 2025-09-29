@@ -185,6 +185,8 @@ class CPU : public BaseCPU
         mmu->demapPage(vaddr, asn);
     }
 
+    void dumpRegisters();
+
     /** Ticks CPU, calling tick() on each stage, and checking the overall
      *  activity to see if the CPU should deschedule itself.
      */

@@ -86,6 +86,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
       numThreads(params.numThreads),
+      valuePred(params.valuePred),
+      predictValues(params.predictValues),
       stats(_cpu)
 {
     if (renameWidth > MaxWidth)
@@ -745,6 +747,8 @@ Rename::renameInsts(ThreadID tid)
 
         renameDestRegs(inst, inst->threadNumber);
 
+        valuePredict(inst, inst->threadNumber);
+
         if (inst->isAtomic() || inst->isStore()) {
             storesInProgress[tid]++;
         } else if (inst->isLoad()) {
@@ -1206,6 +1210,47 @@ Rename::handleMiscRegWaW(DynInstPtr &inst, ThreadID tid)
             return;
         }
     }
+}
+
+void
+Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
+{
+    if (!predictValues) return;
+
+    // Only predict instructions with one destination register
+    if (inst->numDestRegs() != 1) return;
+
+    // And only if the destination is an integer register
+    if (inst->destRegIdx(0).classValue() != RegClassType::IntRegClass)
+        return;
+
+    // Only loads
+    if (!inst->isLoad()) return;
+
+    // Make the actual prediction
+    VPResult lvp_result = valuePred->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
+    inst->setLVPInfo(lvp_result.taken, lvp_result.value, curTick());
+    // inst->setLVPInfo(lvp_result.taken, lvp_result.value);
+
+    // Check whether we are going predict this instruction or not.
+    if (!lvp_result.predict) return;
+
+    // We want to predict the value and set the destination reg as ready for
+    // dependent instructions here if it is predictable
+    DPRINTF(Rename, "[tid:%i] Issue: Predictable Load encountered, predicting value.\n", tid);
+    // Specutively set the register with the predicted value
+    // This should get corrected later if its wrong and if so we can flush and re-execute the instructions
+    inst->setRegOperand(inst->staticInst.get(), 0, inst->predValue);
+    // Pop the predicted value from instruction itself.
+    inst->popResult();
+
+    // Mark the destination register as ready for dependent instructions
+    DPRINTF(IEW,"Speculatively setting Destination Register %i (%s), [%d]\n",
+                    inst->renamedDestIdx(0)->index(),
+                    inst->renamedDestIdx(0)->className(),
+                    inst->seqNum);
+    scoreboard->setReg(inst->renamedDestIdx(0));
+    inst->isValSpeculation = true;
 }
 
 int

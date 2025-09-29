@@ -53,6 +53,8 @@
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/lvp/load_value_prediction_unit.hh"
+#include "cpu/lvp/value_predictor.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
 
@@ -108,11 +110,19 @@ class Commit
         Running,
         Idle,
         ROBSquashing,
-        ROBSquashingDueToMemOrder,
         TrapPending,
         FetchTrapPending,
         SquashAfterPending, //< Committing instructions before a squash.
         ThreadStatusMax
+    };
+
+    /** Squash reason */
+    enum SquashReason
+    {
+        NoSquash,
+        BranchMispred,
+        MemViolation,
+        ValueMispred
     };
 
   private:
@@ -124,6 +134,8 @@ class Commit
     ThreadStatus commitStatus[MaxThreads];
     /** Commit policy used in SMT mode. */
     CommitPolicy commitPolicy;
+    /** Per-thread squash reason */
+    SquashReason squashReason[MaxThreads];
 
     /** Probe Points. */
     ProbePointArg<DynInstPtr> *ppCommit;
@@ -132,6 +144,11 @@ class Commit
     ProbePointArg<DynInstPtr> *ppSquash;
 
     BranchHistory committedBranchHistory;
+
+    // LVP Unit -Pete
+    LoadValuePredictionUnit *loadValuePred;
+    ValuePredictor *valuePred;
+    bool predictValues;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);
@@ -279,7 +296,10 @@ class Commit
      * @param tid ID of the thread to squash.
      * @param head_inst Instruction that requested the squash.
      */
-    void squashAfter(ThreadID tid, const DynInstPtr &head_inst);
+    void squashAfter(ThreadID tid, const DynInstPtr &head_inst, bool value_mispred=false);
+
+    /** Update Value predictor */
+    void updateValuePredictor(ThreadID tid, const DynInstPtr &inst);
 
     /** Handles processing an interrupt. */
     void handleInterrupt();
@@ -369,6 +389,9 @@ class Commit
 
     /** Records if a thread has to squash this cycle due to an XC write. */
     bool tcSquash[MaxThreads];
+
+    /** Records if a thread has to squash this cycle due to a value mispred. */
+    bool valueMispred[MaxThreads];
 
     /**
      * Instruction passed to squashAfter().

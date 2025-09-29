@@ -251,6 +251,16 @@ class IEW
      */
     void squashDueToMemOrder(const DynInstPtr &inst, ThreadID tid);
 
+    /** Sends commit proper information for a squash due to a mispredicted
+     * value.
+     */
+    void squashDueToValueMispred(const DynInstPtr &inst, ThreadID tid);
+
+    /** Validate a value predicted instruction
+     * Return true wheather the value was predicted correct or not.
+    */
+    void validatePredValue(const DynInstPtr &inst);
+
     /** Sets Dispatch to blocked, and signals back to other stages to block. */
     void block(ThreadID tid);
 
