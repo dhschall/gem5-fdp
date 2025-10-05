@@ -38,8 +38,9 @@ BranchRecyclingCache::BranchRecyclingCache(const Params &p)
     ghr(p.numThreads, 0),
     lastMBpc(0),
     branchRecycleCache(),
-    recycledCount(0),
-    recycledNotTaken(0)
+    // recycledCount(0),
+    // recycledNotTaken(0),
+    stats(this)
 {
     // // First initialize the base predictor
     // base->tage->init();
@@ -50,9 +51,12 @@ BranchRecyclingCache::BranchRecyclingCache(const Params &p)
     DPRINTF(RecycledEntry, "BRC: constructed (BRP=%u, m=%u, n=%u)\n",
             brpSize, mBits, nShift);
 
-    gem5::registerExitCallback([this]() { this->dumpFinalDebugCounters(); });
+    // gem5::registerExitCallback([this]() { this->dumpFinalDebugCounters(); });
 }
 
+
+
+//Index only by PC?
 inline unsigned
 BranchRecyclingCache::stateMachineIdx(ThreadID tid, Addr cb_pc) const
 {
@@ -119,7 +123,7 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
         // bp_history = h;
       //  q.pop_front();
 
-        recycledCount++;
+
         DPRINTF(RecycledEntry,
              "BRC.lookup pc=%#x recycled dir=%d (q=%zu) idx=%u\n",
             pc, (int)re.taken, q.size(), idx_now);
@@ -134,15 +138,28 @@ BranchRecyclingCache::lookup(ThreadID tid, Addr pc, void * &bp_history)
         h->actualKnown   = false;
         h->brType        = BranchType::DirectCond;
         h->brpIdx        = idx_now;
-        // bp_history = h;
+        bp_history = h;
 
         /* DPRINTF(RecycledEntry,
         "BRC.lookup pc=%#x fallback dir=0 idx=%u\n", pc, idx_now);
     */
-        recycledNotTaken++;
-    }
 
-    return enableRecycling ? h->recycledTaken : h->base_pred;
+    }
+    //if !enableRecycling return base_pred
+    //else use recycle return recycledTaken
+    //else basePrediction
+
+
+    if(!enableRecycling){
+        stats.basePred++;
+        stats.recycledNotTaken++;
+        return h->base_pred;
+    }if (h->usedRecycle){
+        stats.recycledCount++;
+        return h->recycledTaken;
+    }else
+   return h->base_pred;
+ //   return enableRecycling ? h->recycledTaken : h->base_pred;
 }
 
 void
@@ -330,14 +347,37 @@ BranchRecyclingCache::squash(ThreadID tid, void * &bp_history)
     // }
 }
 
-void
-BranchRecyclingCache::dumpFinalDebugCounters()
+// void
+// BranchRecyclingCache::dumpFinalDebugCounters()
+// {
+//     DPRINTF(RecycledEntry,
+//         "BRC.final recycledCount=%llu, recycledNotTaken=%llu\n",
+//          (unsigned long long)recycledCount,
+//          (unsigned long long)recycledNotTaken);
+// }
+
+BranchRecyclingCache::BranchRecyclingCacheStats::BranchRecyclingCacheStats(
+    statistics::Group *parent)
+    : statistics::Group(parent),
+      ADD_STAT(recycledCount, statistics::units::Count::get(),
+               "Number of entries recycled"),
+      ADD_STAT(recycledNotTaken, statistics::units::Count::get(),
+               "Number of times a non recycled path was taken"),
+      ADD_STAT(basePred, statistics::units::Count::get(),
+               "Number of times the base predictor was used")
+    //   ADD_STAT(used, statistics::units::Count::get(),
+    //            "Number of times the RAS is the provider"),
+    //   ADD_STAT(correct, statistics::units::Count::get(),
+    //            "Number of times the RAS is the provider and the "
+    //            "prediction is correct"),
+    //   ADD_STAT(incorrect, statistics::units::Count::get(),
+    //            "Number of times the RAS is the provider and the "
+    //            "prediction is wrong")
 {
-    DPRINTF(RecycledEntry,
-        "BRC.final recycledCount=%llu, recycledNotTaken=%llu\n",
-         (unsigned long long)recycledCount,
-         (unsigned long long)recycledNotTaken);
 }
 
 } // namespace branch_prediction
 } // namespace gem5
+
+
+//Sort Cache by Sequence number and not first finished

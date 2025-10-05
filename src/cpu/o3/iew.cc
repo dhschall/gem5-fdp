@@ -137,6 +137,8 @@ IEW::regProbePoints()
      * Probe point with dynamic instruction as the argument used to probe when
      * an instruction execution completes and it is marked ready to commit.
      */
+
+     //Subscribe and get load address from DynInstPtr
     ppToCommit = new ProbePointArg<DynInstPtr>(
             cpu->getProbeManager(), "ToCommit");
 }

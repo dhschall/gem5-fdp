@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "base/sat_counter.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/conditional.hh"
@@ -89,10 +90,21 @@ class BranchRecyclingCache : public ConditionalPredictor
 
 
     // Debug counters + function
-    uint64_t recycledCount = 0;
-    uint64_t recycledNotTaken = 0;
+    // uint64_t recycledCount = 0;
+    // uint64_t recycledNotTaken = 0;
 
-    void dumpFinalDebugCounters();
+   // void dumpFinalDebugCounters();
+
+    struct BranchRecyclingCacheStats : public statistics::Group
+    {
+        BranchRecyclingCacheStats(statistics::Group *parent);
+        statistics::Scalar recycledCount;
+        statistics::Scalar recycledNotTaken;
+        statistics::Scalar basePred;
+        // statistics::Scalar used;
+        // statistics::Scalar correct;
+        // statistics::Scalar incorrect;
+    } stats;
 };
 
 } // namespace branch_prediction
