@@ -1216,6 +1216,21 @@ class BranchRecyclingCache(ConditionalPredictor):
     type = "BranchRecyclingCache"
     cxx_class = "gem5::branch_prediction::BranchRecyclingCache"
     cxx_header = "cpu/pred/br_recycling.hh"
+    cxx_exports = [PyBindMethod("setCPU")]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cpu = None
+
+    def registerCpu(self, simObj):
+        if not isinstance(simObj, SimObject):
+            raise TypeError("argument must be a SimObject type")
+        self._cpu = simObj
+
+    def regProbeListeners(self):
+        if self._cpu:
+            self.getCCObject().setCPU(self._cpu.getCCObject())
+        self.getCCObject().regProbeListeners()
 
     base = Param.TAGE_SC_L(
         TAGE_SC_L_64KB(),

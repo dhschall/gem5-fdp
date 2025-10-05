@@ -9,10 +9,13 @@
 
 #include "base/statistics.hh"
 #include "base/sat_counter.hh"
+#include "cpu/base.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/branch_type.hh"
 #include "cpu/pred/conditional.hh"
 #include "cpu/pred/tage_sc_l.hh"
 #include "params/BranchRecyclingCache.hh"
+#include "sim/probe/probe.hh"
 
 namespace gem5
 {
@@ -40,6 +43,7 @@ class BranchRecyclingCache : public ConditionalPredictor
 
     void squash(ThreadID tid, void * &bp_history) override;
 
+    void regProbeListeners() override;
   private:
     //struct for capturing wrong paths
     struct Entry
@@ -94,6 +98,19 @@ class BranchRecyclingCache : public ConditionalPredictor
     // uint64_t recycledNotTaken = 0;
 
    // void dumpFinalDebugCounters();
+
+       /** Probe listener for exec finish event */
+    ProbeListenerPtr<> listener;
+
+    /** Pointer to the CPU object that contains the FTQ */
+    BaseCPU *cpu;
+
+    void notifyExecutedInst(const o3::DynInstPtr &inst);
+
+    public:
+    void setCPU(BaseCPU * _cpu) {
+      cpu = _cpu;
+    }
 
     struct BranchRecyclingCacheStats : public statistics::Group
     {

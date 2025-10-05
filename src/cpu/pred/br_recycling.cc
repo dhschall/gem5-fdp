@@ -9,6 +9,7 @@
 #include "base/logging.hh"
 #include "base/sat_counter.hh"
 #include "base/trace.hh"
+#include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/branch_type.hh"
 #include "debug/Fetch.hh"
 #include "debug/RecycledEntry.hh"
@@ -40,6 +41,7 @@ BranchRecyclingCache::BranchRecyclingCache(const Params &p)
     branchRecycleCache(),
     // recycledCount(0),
     // recycledNotTaken(0),
+    cpu(nullptr),
     stats(this)
 {
     // // First initialize the base predictor
@@ -374,6 +376,37 @@ BranchRecyclingCache::BranchRecyclingCacheStats::BranchRecyclingCacheStats(
     //            "Number of times the RAS is the provider and the "
     //            "prediction is wrong")
 {
+}
+
+
+
+void
+BranchRecyclingCache::regProbeListeners()
+{
+    ConditionalPredictor::regProbeListeners();
+
+    if (cpu == nullptr) {
+        warn("BranchRecyclingCache: No CPU to listen from registered\n");
+        return;
+    }
+    typedef ProbeListenerArgFunc<o3::DynInstPtr> InstListener;
+    listener = cpu->getProbeManager()->connect<InstListener>(
+        "ToCommit",
+        [this](const o3::DynInstPtr &inst) {
+            notifyExecutedInst(inst);
+        });
+}
+
+void
+BranchRecyclingCache::notifyExecutedInst(const o3::DynInstPtr &inst)
+{
+    DPRINTF(RecycledEntry, "Notify: PC=%llx, sn=%llu, isLoad=%i, "
+            "isCondBranch=%i, isSquashed=%i, isAddrValid=%i, addr=%llu\n",
+            inst->pcState().instAddr(), inst->seqNum,
+            inst->isLoad(), inst->isCondCtrl(),
+            inst->isSquashed(), inst->effAddrValid(),
+            inst->isLoad() ? inst->effAddr : 0
+        );
 }
 
 } // namespace branch_prediction
