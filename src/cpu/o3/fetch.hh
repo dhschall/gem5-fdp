@@ -379,6 +379,9 @@ class Fetch
      * cycle. */
     FetchStatus updateFetchStatus();
 
+    /*Returns true if the fetch buffer of the fetch target is ready */
+    bool fetchTargetHasFBReady(ThreadID tid, bool &status_change, FetchTargetPtr curFT, Addr fetchAddr);
+
   public:
     /** Squashes a specific thread and resets the PC. Also tells the CPU to
      * remove any instructions that are not in the ROB. The source of this
@@ -599,6 +602,8 @@ class Fetch
     const unsigned maxFTPerCycle;
     const unsigned maxTakenPredPerCycle;
 
+    const bool enableFBinFTQ;
+
     /** Event used to delay fault generation of translation faults */
     ProcessTrapEvent processTrapEvent;
 
@@ -659,6 +664,11 @@ class Fetch
         statistics::Scalar stopFetchReasonReachInstFetchLimit;
         statistics::Scalar stopFetchReasonReachFetchBufferLimit;
         statistics::Scalar stopFetchReasonReachFTBW;
+        statistics::Scalar stopFetchReasonReachFetchQueueLimit;
+        statistics::Scalar stopFetchReasonQuiesce;
+        statistics::Scalar stopFetchReasonMispredict;
+        statistics::Scalar stopFetchReasonDecoderNotReady;
+
 
         statistics::Distribution instrAccessLatency;
         statistics::Distribution translationLatency;

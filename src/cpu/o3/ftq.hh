@@ -256,6 +256,23 @@ class FetchTarget
                   InstSeqNum sn, bool _is_branch,
                   bool pred_taken, const PCStateBase &pred_pc);
 
+    /*Copy the content of the buffer passed to the fetch buffer of the fetch target*/
+    void setFetchBuffer(const u_int8_t* _buffer , size_t fetchBufferSize) {
+      if(hasFetchBuffer()) return;
+        fetchBuffer = new uint8_t[fetchBufferSize];
+        memcpy(fetchBuffer, _buffer, fetchBufferSize);
+        fetchBufferValid = true;
+    }
+
+    /*Expose the content of the fetch buffer*/
+    const uint8_t* getFetchBuffer() {
+        return fetchBuffer;
+    }
+
+    /*Return true if the fetch buffer of the fetch target is valid*/
+    bool hasFetchBuffer() {
+      return fetchBufferValid;
+  }
 
     /** Fetch target status. */
     enum Status
@@ -317,6 +334,12 @@ class FetchTarget
 
     /** Print the fetch target for debugging. */
     std::string toString();
+    private:
+
+    /** The fetch target buffer */
+    uint8_t* fetchBuffer;
+    /** Whether the fetch buffer is valid */
+    bool fetchBufferValid;
 };
 
 typedef std::shared_ptr<FetchTarget> FetchTargetPtr;
@@ -431,6 +454,12 @@ class FTQ
     FetchTargetPtr findAfterHead(ThreadID tid,
                                  std::function<bool(FetchTargetPtr&)> f);
 
+
+    /**
+     * Helper function to find all fetch targets in the FTQ verifying the search comdition.
+     */
+    std::vector<FetchTargetPtr> findAll(ThreadID tid,
+                                 std::function<bool(FetchTargetPtr&)> f);
 
     /** Pushes a fetch target into the back/tail of the FTQ.
      *  @param fetchTarget Pointer to the fetch target to be inserted.
