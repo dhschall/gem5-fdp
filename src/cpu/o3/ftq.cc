@@ -62,7 +62,9 @@ FetchTarget::FetchTarget(const FTQ& parent, const ThreadID _tid,
     translation_done(false),
     paddr_valid(false),
     bpuHistory(nullptr),
-    state(Initial)
+    state(Initial),
+    fetchBuffer(nullptr),
+    fetchBufferValid(false)
 {
     set(startPC , _start_pc);
     vaddr = startPC->instAddr() & ~(ftq.cacheBlkSize-1);
@@ -73,6 +75,10 @@ FetchTarget::~FetchTarget()
     assert(bpuHistory == nullptr);
     req = nullptr;
     fault = nullptr;
+    if (fetchBuffer) {
+        delete[] fetchBuffer;
+        fetchBuffer = nullptr;
+    }
 }
 
 void
@@ -248,6 +254,18 @@ FTQ::findAfterHead(ThreadID tid, std::function<bool(FetchTargetPtr&)> f)
         if (f(*it)) return *it;
     }
     return nullptr;
+}
+
+std::vector<FetchTargetPtr>
+FTQ::findAll(ThreadID tid, std::function<bool(FetchTargetPtr&)> f){
+
+    std::vector<FetchTargetPtr> ret;
+    for (auto it = ftq[tid].begin(); it != ftq[tid].end(); it++) {
+        if (f(*it)) ret.push_back(*it);
+
+    }
+    return ret;
+
 }
 
 

@@ -140,6 +140,7 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       icachePort(this, _cpu),
       maxFTPerCycle(params.maxFTPerCycle),
       maxTakenPredPerCycle(params.maxTakenPredPerCycle),
+      enableFBinFTQ(params.enableFBinFTQ),
       processTrapEvent(this),
       fetchStats(_cpu, this)
 {
@@ -232,7 +233,14 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
              "Number of times fetch was stopped due to fetch buffer limit"),
     ADD_STAT(stopFetchReasonReachFTBW, statistics::units::Count::get(),
              "Number of times fetch was stopped due to fetch target bandwidth"),
-
+    ADD_STAT(stopFetchReasonReachFetchQueueLimit, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch target bandwidth"),
+    ADD_STAT(stopFetchReasonQuiesce, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch target bandwidth"),
+    ADD_STAT(stopFetchReasonMispredict, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch target bandwidth"),
+    ADD_STAT(stopFetchReasonDecoderNotReady, statistics::units::Count::get(),
+             "Number of times fetch was stopped due to fetch target bandwidth"),
     ADD_STAT(instrAccessLatency, statistics::units::Count::get(),
              "Demand instruction access latency (in log2(cycles))"),
     ADD_STAT(translationLatency, statistics::units::Count::get(),
@@ -432,6 +440,18 @@ Fetch::processCacheCompletion(PacketPtr pkt)
     DPRINTF(Fetch, "%s: PA:%#x, VA:%#x\n", __func__,
             pkt->req->getPaddr(), pkt->req->getVaddr());
 
+
+    if(decoupledFrontEnd && enableFBinFTQ) {
+
+        std::vector<FetchTargetPtr> result = ftq->findAll(tid, [pkt](FetchTargetPtr ft) {
+            return ft->hasPaddr() && ft->getPaddr() == pkt->req->getPaddr();
+        });
+
+        for(auto &ft : result) {
+            ft->setFetchBuffer(pkt->getConstPtr<uint8_t>(), fetchBufferSize);
+        }
+
+    }
 
     // First check if the request is the active demand request
     // we are waiting for.
@@ -1024,7 +1044,7 @@ Fetch::processFTQ(const ThreadID tid)
         ft = ftq->findAfterHead(tid,
             [this](FetchTargetPtr &ft) -> bool
             {
-                return ft->translationReady();
+                return ft->translationReady() && !ft->hasFetchBuffer();
             });
 
         if (ft != nullptr) {
@@ -1621,6 +1641,17 @@ Fetch::buildInst(ThreadID tid, StaticInstPtr staticInst,
     return instruction;
 }
 
+
+
+bool
+Fetch::fetchTargetHasFBReady(ThreadID tid, bool &status_change, FetchTargetPtr curFT, Addr fetchAddr) {
+
+
+return enableFBinFTQ && ftqReady(tid, status_change) && curFT && curFT->hasFetchBuffer() && fetchBufferAlignPC(curFT->startAddress()) == fetchBufferAlignPC(fetchAddr);
+
+}
+
+
 void
 Fetch::fetch(bool &status_change)
 {
@@ -1690,9 +1721,10 @@ Fetch::fetch(bool &status_change)
         // If buffer is no longer valid or fetchAddr has moved to point
         // to the next cache block, AND we have no remaining ucode
         // from a macro-op, then start fetch from icache.
-        if (!(fetchBufferValid[tid] && ftqReady(tid, status_change) &&
-              fetchBufferBlockPC == fetchBufferPC[tid]) &&
-            !inRom && !macroop[tid]) {
+        if (!((fetchBufferValid[tid] && ftqReady(tid, status_change) &&
+              fetchBufferBlockPC == fetchBufferPC[tid])
+              || fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr))
+            && !inRom && !macroop[tid]) {
             DPRINTF(Fetch, "[tid:%i] Attempting to translate and read "
                     "instruction, starting at PC %s.\n", tid, this_pc);
 
@@ -1754,6 +1786,13 @@ Fetch::fetch(bool &status_change)
     const unsigned numInsts = fetchBufferSize / instSize;
     unsigned blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
 
+    if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+
+        blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
+
+    }
+
+
     auto *dec_ptr = decoder[tid];
     const Addr pc_mask = dec_ptr->pcMask();
 
@@ -1761,18 +1800,21 @@ Fetch::fetch(bool &status_change)
     // Keep issuing while fetchWidth is available and branch is not
     // predicted taken
     while (numInst < fetchWidth && fetchQueue[tid].size() < fetchQueueSize
-           && !predictedBranch && !quiesce) {
+            && !quiesce && !mispredict) {
 
         // For the decoupled front-end also check if the FTQ
         // and the fetch target are still valid.
         if (decoupledFrontEnd && (!ftq->isReady(tid) || !curFT)) {
             break;
         }
-        if (decoupledFrontEnd) {
-            DPRINTF(Fetch, "Fetch from %s. PC=%s\n", curFT->toString(),
-                    this_pc);
+
+        if (curFT && !curFT->inRange(this_pc.instAddr())) {
+            warn("curFT invalid: FT=[%#x, %#x), PC=%#x",
+                curFT->startAddress(), curFT->endAddress(), this_pc.instAddr());
+                break;
         }
-        assert(!curFT || curFT->inRange(this_pc.instAddr()));
+
+        // assert(!curFT || curFT->inRange(this_pc.instAddr()));
 
         // We need to process more memory if we aren't going to get a
         // StaticInst from the rom, the current macroop, or what's already
@@ -1784,8 +1826,8 @@ Fetch::fetch(bool &status_change)
         if (needMem) {
             // If buffer is no longer valid or fetchAddr has moved to point
             // to the next cache block then start fetch from icache.
-            if (!fetchBufferValid[tid] ||
-                fetchBufferBlockPC != fetchBufferPC[tid])
+            if (!fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr) && (!fetchBufferValid[tid] ||
+                fetchBufferBlockPC != fetchBufferPC[tid]))
                 break;
 
             if (blkOffset >= numInsts) {
@@ -1794,10 +1836,15 @@ Fetch::fetch(bool &status_change)
                 break;
             }
 
+            const u_int8_t *l_buffer = fetchBuffer[tid];
+            if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+                l_buffer = curFT->getFetchBuffer();
+            }
+
             memcpy(dec_ptr->moreBytesPtr(),
-                    fetchBuffer[tid] + blkOffset * instSize, instSize);
+            l_buffer + blkOffset * instSize, instSize);
             DPRINTF(Fetch, "Copy bytes %#x from %#x to %#x\n",
-                    uint64_t(fetchBuffer[tid] + blkOffset * instSize),
+                    uint64_t(l_buffer + blkOffset * instSize),
                     fetchAddr, fetchAddr + instSize);
             decoder[tid]->moreBytes(this_pc, fetchAddr);
 
@@ -1878,6 +1925,9 @@ Fetch::fetch(bool &status_change)
             if (newMacro) {
                 fetchAddr = this_pc.instAddr() & pc_mask;
                 blkOffset = (fetchAddr - fetchBufferPC[tid]) / instSize;
+                if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+                    blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
+                }
                 pcOffset = 0;
                 curMacroop = NULL;
             }
@@ -1911,6 +1961,9 @@ Fetch::fetch(bool &status_change)
                     if ((num_ft < maxFTPerCycle) &&
                         (num_taken < maxTakenPredPerCycle)) {
                         curFT = ftq->readHead(tid);
+                        if(fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)){
+                            blkOffset = (fetchAddr - fetchBufferAlignPC(curFT->startAddress())) / instSize;
+                        }
                     }
                 } else {
                     // Poping the head FT was not successful. The BPU predicted
@@ -1927,25 +1980,59 @@ Fetch::fetch(bool &status_change)
         // or not.
         inRom = isRomMicroPC(this_pc.microPC());
     }
+    DPRINTF(Fetch, "Done fetching: ftHasFB: %s, "
+            "predictedBranch: %s, numInst: %i, blkOffset: %i, "
+            "fetchQueue[tid].size(): %i, numInsts: %i, "
+            "curMacroop: %i, dec_ptr->instReady(): %i\n",
+            fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr),
+            predictedBranch ? "true" : "false",
+            numInst, blkOffset, fetchQueue[tid].size(), numInsts,
+            curMacroop ? 1 : 0, dec_ptr->instReady() ? 1 : 0);
 
+    if (!fetchTargetHasFBReady(tid, status_change, curFT, fetchAddr)) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached end of "
+                "fetch buffer.\n", tid);
+        fetchStats.stopFetchReasonReachFetchBufferLimit++;
+    }
     if (predictedBranch) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, predicted branch "
                 "instruction encountered.\n", tid);
         fetchStats.stopFetchReasonReachBranchBW++;
-    } else if (numInst >= fetchWidth) {
+    }
+    if (numInst >= fetchWidth) {
         DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch bandwidth "
                 "for this cycle.\n", tid);
         fetchStats.stopFetchReasonReachInstFetchLimit++;
-    } else if (blkOffset >= fetchBufferSize) {
-        DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end of the"
+    }
+    if ((blkOffset >= fetchBufferSize) || (blkOffset >= numInsts)) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached the end "
                 "fetch buffer.\n", tid);
         fetchStats.stopFetchReasonReachFetchBufferLimit++;
-    } else if (decoupledFrontEnd && !curFT) {
-        DPRINTF(Fetch,
-                "[tid:%i] Done fetching, reached end of the fetch target.\n",
-                tid);
+    }
+    if (decoupledFrontEnd && !curFT) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached end of fetch "
+                "target.\n", tid);
         fetchStats.stopFetchReasonReachFTBW++;
     }
+    if (fetchQueue[tid].size() >= fetchQueueSize) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, reached fetch queue "
+                "limit.\n", tid);
+        fetchStats.stopFetchReasonReachFetchQueueLimit++;
+    }
+    if (quiesce) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, quiesce instruction "
+                "encountered.\n", tid);
+        fetchStats.stopFetchReasonQuiesce++;
+    }
+    if (mispredict) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, mispredict detected.\n", tid);
+        fetchStats.stopFetchReasonMispredict++;
+    }
+    if (!(curMacroop || dec_ptr->instReady())) {
+        DPRINTF(Fetch, "[tid:%i] Done fetching, decoder is not ready.\n", tid);
+        fetchStats.stopFetchReasonDecoderNotReady++;
+    }
+
     fetchStats.ftNumber.sample(num_ft);
 
     // is mispredict detected, we are squashing the ftq
