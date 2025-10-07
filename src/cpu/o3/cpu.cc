@@ -333,6 +333,9 @@ CPU::regProbePoints()
     ppDataAccessComplete = new ProbePointArg<
         std::pair<DynInstPtr, PacketPtr>>(
                 getProbeManager(), "DataAccessComplete");
+    ppSquashInst = new ProbePointArg<
+        std::pair<DynInstPtr, DynInstPtr>>(
+                getProbeManager(), "SquashInst");
 
     ftq.regProbePoints();
     bac.regProbePoints();
@@ -1323,6 +1326,27 @@ CPU::dumpInsts()
         ++num;
     }
 }
+
+void
+CPU::notifySquashedInstr(const DynInstPtr &sq_inst)
+{
+    if (!sq_inst) return;
+    auto seq_num = sq_inst->seqNum;
+    ListIt inst_iter = instList.end();
+
+    inst_iter--;
+
+    while ((*inst_iter)->seqNum > seq_num) {
+
+        ppSquashInst->notify(std::make_pair(sq_inst, *inst_iter));
+
+        if (inst_iter == instList.begin())
+            break;
+
+        inst_iter--;
+    }
+}
+
 /*
 void
 CPU::wakeDependents(const DynInstPtr &inst)

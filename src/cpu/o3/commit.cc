@@ -796,7 +796,7 @@ Commit::commit()
             // All younger instructions will be squashed. Set the sequence
             // number as the youngest instruction in the ROB.
             youngestSeqNum[tid] = squashed_inst;
-
+            cpu->notifySquashedInstr(rob->findInst(tid, squashed_inst));
             rob->squash(squashed_inst, tid);
             changedROBNumEntries[tid] = true;
 

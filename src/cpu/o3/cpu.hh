@@ -179,6 +179,7 @@ class CPU : public BaseCPU
 
     ProbePointArg<PacketPtr> *ppInstAccessComplete;
     ProbePointArg<std::pair<DynInstPtr, PacketPtr> > *ppDataAccessComplete;
+    ProbePointArg<std::pair<DynInstPtr, DynInstPtr>> *ppSquashInst;
 
     /** Register probe points. */
     void regProbePoints() override;
@@ -384,6 +385,8 @@ class CPU : public BaseCPU
 
     /** Debug function to print all instructions on the list. */
     void dumpInsts();
+
+    void notifySquashedInstr(const DynInstPtr &sq_inst);
 
   public:
 #ifndef NDEBUG

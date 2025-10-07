@@ -93,11 +93,22 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     /** Probe listener for exec finish event */
     ProbeListenerPtr<> listener;
+    ProbeListenerPtr<> slistener;
 
     /** Pointer to the CPU object that contains the FTQ */
     BaseCPU *cpu;
 
     void notifyExecutedInst(const o3::DynInstPtr &inst);
+    void notifySquashedInst(const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &sq_inst);
+
+    struct BranchInfo {
+      Addr pc;
+      InstSeqNum sn;
+      bool taken;
+      bool done_exec;
+    };
+
+    std::list<BranchInfo> squashedBranches;
 
   public:
     void

@@ -36,8 +36,8 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
       cpu(nullptr),
       stats(this)
 {
-    // // First initialize the base predictor
-    // base->tage->init();
+    // First initialize the base predictor
+    base->tage->init();
 
     // Next the recycling cache
     for (auto &c : stateMachines) { ++c; }
@@ -194,18 +194,18 @@ BranchRecyclingCacheDynInst::updateHistories(ThreadID tid, Addr pc,
                                              const StaticInstPtr &inst,
                                              void *&bp_history)
 {
-    // History *h;
-    // if (bp_history == nullptr) {
-    //     assert(uncond);
-    //     h = new History();
-    //     h->pc = pc;
-    //     h->usedRecycle = false;
-    //     h->actualKnown = false;
-    //     h->brpIdx = stateMachineIdx(tid, pc);
-    //     bp_history = h;
-    // } else {
-    //     h = static_cast<History *>(bp_history);
-    // }
+    History *h;
+    if (bp_history == nullptr) {
+        assert(uncond);
+        h = new History();
+        h->pc = pc;
+        h->usedRecycle = false;
+        h->actualKnown = false;
+        h->brpIdx = stateMachineIdx(tid, pc);
+        bp_history = h;
+    } else {
+        h = static_cast<History *>(bp_history);
+    }
 
     // h->actualKnown = true;
     // h->actualTaken = taken;
@@ -227,7 +227,7 @@ BranchRecyclingCacheDynInst::updateHistories(ThreadID tid, Addr pc,
     //     DPRINTF(RecycledEntry, "BRC.updateHistories pc=%#x
     //     taken=%d ghr=%#x\n", pc, (int)taken, (unsigned)ghr[tid]);
     //  */
-    // base->updateHistories(tid, pc, uncond, taken, target, inst, h->tage_bi);
+    base->updateHistories(tid, pc, uncond, taken, target, inst, h->tage_bi);
 }
 
 void
@@ -235,10 +235,10 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
                                     void *&bp_history, bool squashed,
                                     const StaticInstPtr &inst, Addr target)
 {
-    // assert(bp_history);
-    // auto *h = static_cast<History *>(bp_history);
-    // TAGE_SC_L::TageSCLBranchInfo *tage_bi =
-    //     static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
+    assert(bp_history);
+    auto *h = static_cast<History *>(bp_history);
+    TAGE_SC_L::TageSCLBranchInfo *tage_bi =
+        static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
 
     // h->actualKnown = true;
     // h->actualTaken = taken;
@@ -254,7 +254,7 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
     //     }
     // }
 
-    // if (squashed) {
+    if (squashed) {
 
     //     Entry e;
     //     e.pc = pc;
@@ -271,12 +271,12 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
     //             queued wrong-path dir=%d (q=%zu); lastMBpc=%#x\n",
     //              pc, (int)taken, q.size(), lastMBpc);
     //      */
-    //     base->update(tid, pc, taken, tage_bi, squashed, inst, target);
-    //     return;
-    // }
+        base->update(tid, pc, taken, tage_bi, squashed, inst, target);
+        return;
+    }
 
-    // // Do the base predictor update.
-    // base->update(tid, pc, taken, tage_bi, squashed, inst, target);
+    // Do the base predictor update.
+    base->update(tid, pc, taken, tage_bi, squashed, inst, target);
 
     // // const bool baselineCorrect = !h->actualTaken;
     // const bool baselineCorrect = (h->base_pred == h->actualTaken);
@@ -302,9 +302,9 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
     //     stats.training2++;
     // }
 
-    // delete tage_bi;
-    // delete h;
-    // bp_history = nullptr;
+    delete tage_bi;
+    delete h;
+    bp_history = nullptr;
 }
 
 void
@@ -359,7 +359,15 @@ BranchRecyclingCacheDynInst::regProbeListeners()
     typedef ProbeListenerArgFunc<o3::DynInstPtr> InstListener;
     listener = cpu->getProbeManager()->connect<InstListener>(
         "ToCommit",
-        [this](const o3::DynInstPtr &inst) { notifyExecutedInst(inst); });
+        [this](const o3::DynInstPtr &inst) { notifyExecutedInst(inst);
+    });
+    
+    typedef ProbeListenerArgFunc<std::pair<o3::DynInstPtr, o3::DynInstPtr>> SquashListener;
+    slistener = cpu->getProbeManager()->connect<SquashListener>(
+        "SquashInst",
+        [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
+             notifySquashedInst(p.first, p.second); 
+    });
 }
 
 void
@@ -400,6 +408,31 @@ BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
             "BRC.notify pc=%#x seq=%llu committed dir=%d (q=%zu)\n", e.pc,
             inst->seqNum, static_cast<int>(e.taken), q.size());
 }
+
+void
+BranchRecyclingCacheDynInst::notifySquashedInst(const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &inst)
+{
+    DPRINTF(RecycledEntry,
+            "Notify Squashed inst: PC=%llx, sn=%llu, due to: [PC=%llx, sn=%i] isLoad=%i, "
+            "isCondBranch=%i, isSquashed=%i, isAddrValid=%i, addr=%llu, \n",
+            inst->pcState().instAddr(), inst->seqNum,
+            mispred_inst->pcState().instAddr(), mispred_inst->seqNum,
+            inst->isLoad(),
+            inst->isCondCtrl(), inst->isSquashed(), inst->effAddrValid(),
+            inst->isLoad() ? inst->effAddr : 0);
+
+    if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
+        return;
+    }
+
+    if (mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
+        DPRINTF(RecycledEntry,
+            "Squashed instance for mispredicted branch: sn=%llu, isExecuted=%i \n",
+            inst->seqNum, inst->isExecuted());
+    }
+}
+
+
 
 } // namespace branch_prediction
 } // namespace gem5
