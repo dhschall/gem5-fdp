@@ -318,7 +318,7 @@ TAGEBase::updateGHist(ThreadID tid, uint64_t bv, uint8_t n)
         // To avoid this we copy an addition rollback window of 1k additional
         // bit. This should allow more than 500 predictions (TAGE-SC-L) in
         // flight.
-        const int rollbackBuffer = 1000;
+        const int rollbackBuffer = 2000;
         for (int i = 0; i < (maxHist + rollbackBuffer); i++) {
             tHist.globalHist[histBufferSize - maxHist - rollbackBuffer + i] =
                 tHist.globalHist[tHist.ptGhist + i];
