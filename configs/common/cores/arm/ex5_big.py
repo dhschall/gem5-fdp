@@ -55,7 +55,6 @@ class ex5_big_Complex_Int(FUDesc):
     opList = [
         OpDesc(opClass="IntMult", opLat=4, pipelined=True),
         OpDesc(opClass="IntDiv", opLat=11, pipelined=False),
-        OpDesc(opClass="IprAccess", opLat=3, pipelined=True),
         OpDesc(opClass="System", opLat=3, pipelined=True),
     ]
     count = 1

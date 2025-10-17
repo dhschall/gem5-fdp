@@ -62,5 +62,4 @@ class DefaultFUPool(FUPool):
         PredALU(),
         WritePort(),
         RdWrPort(),
-        IprPort(),
     ]

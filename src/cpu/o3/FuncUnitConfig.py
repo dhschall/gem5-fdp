@@ -204,8 +204,3 @@ class RdWrPort(FUDesc):
         OpDesc(opClass="SimdStrideSegmentedStore"),
     ]
     count = 4
-
-
-class IprPort(FUDesc):
-    opList = [OpDesc(opClass="IprAccess", opLat=3, pipelined=False)]
-    count = 1

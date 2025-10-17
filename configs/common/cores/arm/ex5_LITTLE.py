@@ -103,7 +103,6 @@ class ex5_LITTLE_MemFU(MinorDefaultMemFU):
 # Misc Unit
 class ex5_LITTLE_MiscFU(MinorDefaultMiscFU):
     opList = [
-        OpDesc(opClass="IprAccess", opLat=1),
         OpDesc(opClass="InstPrefetch", opLat=1),
         OpDesc(opClass="System", opLat=1),
     ]

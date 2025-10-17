@@ -122,9 +122,7 @@ static const OpClass SimdUnitStrideFaultOnlyFirstLoadOp
              = enums::SimdUnitStrideFaultOnlyFirstLoad;
 static const OpClass SimdWholeRegisterLoadOp
              = enums::SimdWholeRegisterLoad;
-static const OpClass SimdWholeRegisterStoreOp
-             = enums::SimdWholeRegisterStore;
-static const OpClass IprAccessOp = enums::IprAccess;
+static const OpClass SimdWholeRegisterStoreOp = enums::SimdWholeRegisterStore;
 static const OpClass InstPrefetchOp = enums::InstPrefetch;
 static const OpClass SimdUnitStrideSegmentedLoadOp = enums::SimdUnitStrideSegmentedLoad;
 static const OpClass SimdUnitStrideSegmentedStoreOp
