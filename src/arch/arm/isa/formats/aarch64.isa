@@ -318,11 +318,6 @@ namespace Aarch64
                         return new MrsSp64(machInst, rt, miscReg);
                   case MISCREG_NZCV:
                     return new MrsNZCV64(machInst, rt, miscReg);
-                  case MISCREG_SP_EL0:
-                  //case MISCREG_TPIDR_EL0:
-                  //case MISCREG_TPIDR_EL1:
-                  //case MISCREG_DAIF:
-                    return new MrsSp64(machInst, rt, miscReg);
                   case MISCREG_DC_CIVAC_Xt:
                   case MISCREG_DC_CVAC_Xt:
                   case MISCREG_DC_IVAC_Xt:
@@ -348,11 +343,6 @@ namespace Aarch64
                     return new MsrSp64(machInst, miscReg, rt);
                   case MISCREG_NZCV:
                     return new MsrNZCV64(machInst, miscReg, rt);
-                  case MISCREG_SP_EL0:
-                  //case MISCREG_TPIDR_EL0:
-                  //case MISCREG_TPIDR_EL1:
-                  //case MISCREG_DAIF:
-                    return new MsrSp64(machInst, miscReg, rt);
                   case MISCREG_DC_ZVA_Xt:
                     return new Dczva(machInst, rt, miscReg);
                   case MISCREG_DC_CVAU_Xt:
