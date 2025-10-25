@@ -76,7 +76,6 @@ if env['CONF']['BUILD_ISA']:
     DebugFlag('Scoreboard')
     DebugFlag('StoreSet')
     DebugFlag('Writeback')
-    DebugFlag('Serializing')
 
     CompoundFlag('O3CPUAll', [ 'BAC', 'FTQ', 'Fetch', 'Decode', 'Rename',
         'IEW', 'Commit',
