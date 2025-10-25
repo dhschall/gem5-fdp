@@ -335,16 +335,6 @@ let {{
     decoder_output += RegMiscRegOp64Constructor.subst(mrsIop)
     exec_output += BasicExecute.subst(mrsIop)
 
-    mrsSpCode = '''
-        XDest = MiscOp1_ud;
-    '''
-    mrsSpIop = ArmInstObjParams("mrs", "MrsSp64",
-                                "RegMiscRegImmOp64", mrsSpCode)
-    header_output += RegMiscRegOp64Declare.subst(mrsSpIop)
-    decoder_output += RegMiscRegOp64Constructor.subst(mrsSpIop)
-    exec_output += BasicExecute.subst(mrsSpIop)
-
-
     mrsNZCVCode = '''
         CPSR cpsr = 0;
         cpsr.nz = CondCodesNZ;
@@ -367,17 +357,6 @@ let {{
     header_output += MiscRegRegOp64Declare.subst(msrIop)
     decoder_output += MiscRegRegOp64Constructor.subst(msrIop)
     exec_output += BasicExecute.subst(msrIop)
-
-    msrSpCode = '''
-        MiscDest_ud = XOp1;
-    '''
-    msrSpIop = ArmInstObjParams("msr", "MsrSp64", "MiscRegRegImmOp64",
-                              msrSpCode,
-                              ["IsNonSpeculative"])
-    header_output += MiscRegRegOp64Declare.subst(msrSpIop)
-    decoder_output += MiscRegRegOp64Constructor.subst(msrSpIop)
-    exec_output += BasicExecute.subst(msrSpIop)
-
 
     tlbiCode = msr_check_code + '''
         performTlbi(xc, flat_idx, XOp1);
