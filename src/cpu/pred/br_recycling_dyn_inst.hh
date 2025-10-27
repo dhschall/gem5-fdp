@@ -1,14 +1,14 @@
-#ifndef __CPU_PRED_BR_RECYCLING_HH__
-#define __CPU_PRED_BR_RECYCLING_HH__
+#ifndef __CPU_PRED_BR_RECYCLING_DYN_INST_HH__
+#define __CPU_PRED_BR_RECYCLING_DYN_INST_HH__
 
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
 #include "base/sat_counter.hh"
 #include "base/statistics.hh"
+#include "base/types.hh"
 #include "cpu/base.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/branch_type.hh"
@@ -45,16 +45,25 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     void regProbeListeners() override;
 
+    void
+    setCPU(BaseCPU *_cpu)
+    {
+        cpu = _cpu;
+    }
+
   private:
-    // struct for capturing wrong paths
+    // Branch outcome
     struct Entry
     {
         Addr pc = 0;
         bool hasOutcome = false;
         bool taken = false;
         BranchType brType = BranchType::NoBranch;
+        InstSeqNum seqNum = 0;
+        bool valid = true;
     };
-    // History struct for branches
+
+    // Per lookup history
     struct History
     {
         Addr pc = 0;
@@ -67,67 +76,48 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
         BranchType brType = BranchType::DirectCond;
 
-        unsigned brpIdx = 0;
-
         bool base_pred = false;
+
         void *tage_bi = nullptr;
     };
 
+    // Base predictor
     TAGE_SC_L *base;
     const bool enableRecycling;
 
-    // Paper parameters
-    unsigned mBits;
-    unsigned nShift;
-    unsigned brpSize;                       // number of 2-bit counters
-    std::vector<SatCounter8> stateMachines; // 2-bit counters
-    std::vector<uint64_t> ghr;              // per-thread m-bit history
-    Addr lastMBpc = 0;                      // last mispredicted branch PC
+    // PC stack of entries LIFO
+    std::unordered_map<Addr, std::vector<Entry>> dynInstStacks;
 
-    unsigned stateMachineIdx(ThreadID tid, Addr cb_pc) const;
-    bool brpSaysUse(ThreadID tid, Addr cb_pc) const;
-    void brpTrainByIdx(unsigned idx, bool good);
+    // std::unordered_map<Addr, Entry> dynInstStacks;
 
-    // Per-PC cache of committed branch outcomes
-    std::unordered_map<Addr, std::deque<Entry>> dynInstCache;
+    // Map dynamic instance to its static PC
+    std::unordered_map<InstSeqNum, Addr> seqToPc;
 
-    /** Probe listener for exec finish event */
-    ProbeListenerPtr<> listener;
-    ProbeListenerPtr<> slistener;
-
-    /** Pointer to the CPU object that contains the FTQ */
+    // Probes
+    ProbeListenerPtr<> listener;  // ToCommit
+    ProbeListenerPtr<> slistener; // SquashInst
     BaseCPU *cpu;
 
+    // Probe handlers
     void notifyExecutedInst(const o3::DynInstPtr &inst);
-    void notifySquashedInst(const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &sq_inst);
+    void notifySquashedInst(const o3::DynInstPtr &mispred_inst,
+                            const o3::DynInstPtr &sq_inst);
 
-    struct BranchInfo {
-      Addr pc;
-      InstSeqNum sn;
-      bool taken;
-      bool done_exec;
-    };
-
-    std::list<BranchInfo> squashedBranches;
+    // Helpers
+    void pushCommittedOutcome(const o3::DynInstPtr &inst);
 
   public:
-    void
-    setCPU(BaseCPU *_cpu)
-    {
-        cpu = _cpu;
-    }
-
     struct BranchRecyclingCacheDynInstStats : public statistics::Group
     {
         BranchRecyclingCacheDynInstStats(statistics::Group *parent);
-        statistics::Scalar recycledCount;
-        statistics::Scalar recycledNotTaken;
+        statistics::Scalar recycledPred;
         statistics::Scalar basePred;
-        statistics::Scalar training0;
-        statistics::Scalar training1;
-        statistics::Scalar training2;
-        statistics::Scalar training3;
-        statistics::Scalar faultyRecycle;
+        statistics::Scalar RecycleBaseDiffer;
+        statistics::Scalar missPredictedFaultyRecycle;
+        statistics::Scalar missPredictedTageFault;
+        statistics::Scalar missPredictedBothPredictorsWrong;
+        statistics::Scalar missPredicts;
+        statistics::Scalar committedCount;
     } stats;
 };
 
