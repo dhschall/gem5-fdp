@@ -5375,13 +5375,16 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_DACR_NS);
     InitReg(MISCREG_SPSR_EL1)
       .allPrivileges().exceptUserMode()
+      .serializing(false)
       .mapsTo(MISCREG_SPSR_SVC); // NAM C5.2.17 SPSR_EL1
     InitReg(MISCREG_SPSR_EL12)
       .fault(EL2, defaultFaultE2H_EL2)
       .fault(EL3, defaultFaultE2H_EL3)
       .mapsTo(MISCREG_SPSR_SVC);
     InitReg(MISCREG_ELR_EL1)
-      .allPrivileges().exceptUserMode();
+      .allPrivileges()
+      .serializing(false)
+      .exceptUserMode();
     InitReg(MISCREG_ELR_EL12)
       .fault(EL2, defaultFaultE2H_EL2)
       .fault(EL3, defaultFaultE2H_EL3)
