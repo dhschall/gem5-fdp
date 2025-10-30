@@ -624,6 +624,7 @@ Rename::renameInsts(ThreadID tid)
             serializeOnNextInst[tid] = false;
         } else if (!insts_to_rename.empty()) {
             insts_to_rename.front()->setSerializeBefore();
+            insts_to_rename.front()->setChainSerializeBefore();
         }
     }
 
@@ -723,8 +724,10 @@ Rename::renameInsts(ThreadID tid)
         // instructions.
         if (inst->isSerializeBefore() && !inst->isSerializeHandled()) {
             DPRINTF(Rename, "Serialize before instruction encountered.\n");
-            DPRINTF(Serializing, "Serialize before: %s\n",
-                inst->staticInst->disassemble(inst->pcState().instAddr()));
+            if (!inst->isChainSerializeBefore()) {
+                DPRINTF(Serializing, "Serialize before: %s\n",
+                    inst->staticInst->disassemble(inst->pcState().instAddr()));
+            }
             if (!inst->isTempSerializeBefore()) {
                 stats.serializing++;
                 inst->setSerializeHandled();
@@ -1450,6 +1453,7 @@ Rename::checkSignalsAndUpdate(ThreadID tid)
 
         // Put instruction into queue here.
         serial_inst->clearSerializeBefore();
+        serial_inst->clearChainSerializeBefore();
 
         if (!skidBuffer[tid].empty()) {
             skidBuffer[tid].push_front(serial_inst);
@@ -1481,6 +1485,8 @@ Rename::serializeAfter(InstQueue &inst_list, ThreadID tid)
 
     // Set the next instruction as serializing.
     inst_list.front()->setSerializeBefore();
+    // To distinguish between static and temporary SerializeBefore.
+    inst_list.front()->setChainSerializeBefore();
 }
 
 void

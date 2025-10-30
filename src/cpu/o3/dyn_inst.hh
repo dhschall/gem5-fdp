@@ -169,6 +169,7 @@ class DynInst : public ExecContext, public RefCounted
         ThreadsyncWait,          /// Is a thread synchronization instruction
         SerializeBefore,         /// Needs to serialize on
                                  /// instructions ahead of it
+        ChainSerializeBefore,    /// Only for debugging purposes
         SerializeAfter,          /// Needs to serialize instructions behind it
         SerializeHandled,        /// Serialization has been handled
         NumStatus
@@ -668,8 +669,15 @@ class DynInst : public ExecContext, public RefCounted
     /** Temporarily sets this instruction as a serialize before instruction. */
     void setSerializeBefore() { status.set(SerializeBefore); }
 
+    /** Temporarily sets this instruction as a chain serialize before instruction. */
+    void setChainSerializeBefore() { status.set(ChainSerializeBefore); }
+
+    bool isChainSerializeBefore() { return status[ChainSerializeBefore]; }
+
     /** Clears the serializeBefore part of this instruction. */
     void clearSerializeBefore() { status.reset(SerializeBefore); }
+
+    void clearChainSerializeBefore() { status.reset(ChainSerializeBefore); }
 
     /** Checks if this serializeBefore is only temporarily set. */
     bool isTempSerializeBefore() { return status[SerializeBefore]; }
