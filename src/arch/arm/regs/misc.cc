@@ -5407,6 +5407,7 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges();
     InitReg(MISCREG_DAIF)
       .allPrivileges()
+      .serializing(false)
       .fault(EL0, faultDaif);
     InitReg(MISCREG_FPCR)
       .allPrivileges()
