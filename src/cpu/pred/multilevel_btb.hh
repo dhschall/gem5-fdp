@@ -5,6 +5,8 @@
 #include "cpu/pred/btb.hh"
 #include "cpu/pred/btb_entry.hh"
 #include "params/MultiLevelBTB.hh"
+#include <deque>
+#include <vector>
 
 namespace gem5::branch_prediction
 {
@@ -46,11 +48,37 @@ class MultiLevelBTB : public BranchTargetBuffer
     // Multi-level BTB specific statistics
     struct MultiLevelBTBStats : public statistics::Group
     {
-        MultiLevelBTBStats(statistics::Group *parent);
-        statistics::Vector l1Hits;
-        statistics::Vector l2Hits;
+        MultiLevelBTBStats(statistics::Group *parent, MultiLevelBTB *btb);
+        
+        void preDumpStats() override;
+        //For exploring the 1-history Markov prefetcher:
+        //If branch A misses in L1BTB1(hits in L2BTB), 
+        //then the immediate branch B is the successor of A if B also misses in L1BTB2 (hits in L2BTB2).
+        statistics::SparseHistogram successorCountDist;
+
+        // Spatial locality statistics
+        statistics::SparseHistogram dist1HistoryPC;
+        statistics::SparseHistogram dist1HistoryTarget;
+        statistics::SparseHistogram dist2HistoryPC;
+        statistics::SparseHistogram dist2HistoryTarget;
+
+        MultiLevelBTB *btb;
         
     } multilevelstats;
+    // key: static branch PC (L1 miss, L2 hit)
+    // value: set of successor branch PCs (also L1 miss, L2 hit)
+    std::unordered_map<Addr, std::set<Addr>> l1MissL2HitSuccessors;
+
+    struct BranchInfo {
+        Addr pc;
+        Addr target;
+    };
+    // History of L1 miss L2 hit branches per thread
+    std::vector<std::deque<BranchInfo>> l1MissL2HitHistory;
+
+    // tacking the previous branch PC for each thread.
+    std::vector<Addr> prevBranchPC;
+    friend struct MultiLevelBTBStats;
 };
 } // namespace gem5::branch_prediction
 
