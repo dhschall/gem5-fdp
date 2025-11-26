@@ -88,6 +88,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     const bool enableRecycling;
 
     // Stack with the Addr and a tuple for training aswell as entries
+    //Track statistics here
     std::unordered_map<Addr, std::tuple<int, std::vector<Entry>>> dynInstStacks;
 
     // Map dynamic instance to its static PC
