@@ -1,14 +1,19 @@
 #include "cpu/pred/br_recycling_dyn_inst.hh"
 
+#include "cpu/pred/br_recycling_dyn_inst.hh"
+
+#include <memory>
+#include <tuple>
+
 #include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/branch_type.hh"
 #include "debug/RecycledEntry.hh"
+
 namespace gem5
 {
 namespace branch_prediction
 {
-
 BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
     : ConditionalPredictor(p),
       base(p.base),
@@ -40,27 +45,25 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
 
     // Try LIFO recycled outcome
     if (enableRecycling) {
-
         auto it = dynInstStacks.find(pc);
         if (it != dynInstStacks.end()) {
-            auto &stack = it->second;
+            auto &bucket = it->second;
+            auto &stack = std::get<1>(bucket);
 
-            //    if (!stack.empty()) {
+            // Only use recycling if has been trained to do so
+            if (std::get<0>(bucket) < 0) {
+                return h->base_pred;
+            }
+
             if (!stack.empty()) {
-
                 const Entry &re = stack.back();
                 h->usedRecycle = true;
                 h->recycledTaken = re.taken;
                 h->brType = re.brType;
 
                 // Pop LIFO
-                // DPRINTF(RecycledEntry,
-                //     "BRC.lookup pc=%#llx recycled dir=%d sn=%llu
-                //     (remain=%llu)\n", (unsigned long long)pc, (int)re.taken,
-                //     (unsigned long long)re.seqNum,
-                //     (unsigned long long)(stack.size() - 1));
-
                 stack.pop_back();
+
                 stats.recycledPred++;
 
                 if (h->recycledTaken != h->base_pred) {
@@ -72,7 +75,7 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
         }
     }
 
-    // Fallback to base predictor
+    // Fallback to base predictor.
     stats.basePred++;
     return h->base_pred;
 }
@@ -90,9 +93,6 @@ BranchRecyclingCacheDynInst::branchPlaceholder(ThreadID tid, Addr pc,
     h->actualKnown = false;
     h->brType = uncond ? BranchType::DirectUncond : BranchType::DirectCond;
     bpHistory = h;
-
-    // DPRINTF(RecycledEntry, "BRC.placeholder pc=%#llx idx=%u\n",
-    //         (unsigned long long)pc, h->brpIdx);
 }
 
 void
@@ -131,19 +131,19 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
         h->actualTaken = taken;
     }
 
-    // Ensure we have a BI for base predictor
     void *bi = h ? h->tage_bi : nullptr;
     bool made_temp = false;
+
     if (!bi) {
+
         base->predict(tid, pc, true, bi);
         made_temp = true;
     }
 
-    // Forward to base predictor
     base->update(tid, pc, taken, bi, squashed, inst, target);
 
-    // STATS HANDLING
 
+    // STATS HANDLING: compute predictions and report on squashes
     const char *src = (h && h->usedRecycle) ? "recycled" : "base";
     const int recycled_pred =
         (h && h->usedRecycle) ? (int)h->recycledTaken : -1;
@@ -168,7 +168,30 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
             (unsigned long long)pc, src, base_pred_dbg, recycled_pred,
             (int)taken, (int)squashed);
 
-    // Preserve BI ownership or free temp BI
+    // Update recyclingValue
+    // +2 if recycled was correct and base was incorrect
+    // +1 if both were correct (As Recycling is quicker than using basePred)
+    // -1 if recycled was false/wrong and base was correct
+    //  0 otherwise.
+    if (h) {
+        auto it2 = dynInstStacks.find(pc);
+        if (it2 != dynInstStacks.end()) {
+            auto &recyclingValue = std::get<0>(it2->second);
+            const bool recycledCorrect =
+                (h->usedRecycle && (h->recycledTaken == taken));
+            const bool baseCorrect = (h->base_pred == taken);
+
+            if (recycledCorrect && !baseCorrect) {
+                recyclingValue += 5;
+            } else if (recycledCorrect && baseCorrect) {
+                recyclingValue += 1;
+            } else if (!recycledCorrect && baseCorrect) {
+                recyclingValue -= 1;
+            }
+        }
+    }
+
+    // Cleanup
     if (h) {
         h->tage_bi = bi;
     } else if (made_temp && bi) {
@@ -176,7 +199,6 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
         bi = nullptr;
     }
 
-    // Cleanup history if present
     if (h) {
         if (h->tage_bi) {
             delete static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
@@ -190,7 +212,7 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
 void
 BranchRecyclingCacheDynInst::squash(ThreadID tid, void *&bp_history)
 {
-    // null check
+    // Null handling
     History *h = bp_history ? static_cast<History *>(bp_history) : nullptr;
 
     if (h) {
@@ -199,6 +221,7 @@ BranchRecyclingCacheDynInst::squash(ThreadID tid, void *&bp_history)
         if (bi) {
             base->squash(tid, bi);
         }
+
         if (bi) {
             delete static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi);
             bi = nullptr;
@@ -207,6 +230,9 @@ BranchRecyclingCacheDynInst::squash(ThreadID tid, void *&bp_history)
 
         delete h;
         bp_history = nullptr;
+    } else {
+
+        return;
     }
 }
 
@@ -237,7 +263,7 @@ BranchRecyclingCacheDynInst::regProbeListeners()
         });
 }
 
-// Internal Helpers
+// === Internal helpers ===================================================
 
 void
 BranchRecyclingCacheDynInst::pushCommittedOutcome(const o3::DynInstPtr &inst)
@@ -264,43 +290,19 @@ BranchRecyclingCacheDynInst::pushCommittedOutcome(const o3::DynInstPtr &inst)
         e.brType = BranchType::DirectCond;
     }
 
-    auto &vec = dynInstStacks[pc];
+    e.hasOutcome = true;
+    auto &bucket = dynInstStacks[pc];
+    auto &vec = std::get<1>(bucket);
     vec.push_back(e);
     stats.committedCount++;
-
-    // DPRINTF(RecycledEntry,
-    //     "BRC.push pc=%#llx sn=%llu dir=%d (stack=%llu)\n",
-    //     (unsigned long long)pc,
-    //     (unsigned long long)e.seqNum,
-    //     (int)e.taken,
-    //     (unsigned long long)vec.size());
 }
 
 void
 BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
 {
-    // check if inst is valid and record
-    if (inst) {
-        // DPRINTF(RecycledEntry,
-        //         "Notify(ToCommit): PC=%#llx, sn=%llu, isLoad=%i, "
-        //         "isCondBranch=%i, isSquashed=%i, isAddrValid=%i,
-        //         addr=%llu\n", (unsigned long
-        //         long)inst->pcState().instAddr(), (unsigned long
-        //         long)inst->seqNum, inst->isLoad(), inst->isCondCtrl(),
-        //         inst->isSquashed(),
-        //         inst->effAddrValid(),
-        //         inst->isLoad() ? (unsigned long long)inst->effAddr : 0ULL);
-    }
-
-    // only recycle valid, executed, non squashed and conditional branches
-
-    if (!inst || !inst->isCondCtrl() || !inst->isExecuted())
-
-    {
+    if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
-
-    // Push committed outcome for recycling
     pushCommittedOutcome(inst);
 }
 
@@ -308,30 +310,25 @@ void
 BranchRecyclingCacheDynInst::notifySquashedInst(
     const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &inst)
 {
-    // const Addr mp_pc = mispred_inst ? mispred_inst->pcState().instAddr() :
-    // 0; DPRINTF(RecycledEntry,
-    //         "NotifySquash: PC=%#llx (sn=%llu) due to [PC=%#llx sn=%llu], "
-    //         "isCond=%i, wasExec=%i\n",
-    //         (unsigned long long)(inst ? inst->pcState().instAddr() : 0ULL),
-    //         (unsigned long long)(inst ? inst->seqNum : 0ULL),
-    //         (unsigned long long)mp_pc,
-    //         (unsigned long long)(mispred_inst ? mispred_inst->seqNum :
-    //         0ULL), (int)(inst && inst->isCondCtrl()), (int)(inst &&
-    //         inst->isExecuted()));
+    // DPRINTF(RecycledEntry,
+    //         "Notify Squashed inst: PC=%llx, sn=%llu, due to: [PC=%llx, sn=%i] "
+    //         "isLoad=%i, "
+    //         "isCondBranch=%i, isSquashed=%i, isAddrValid=%i, addr=%llu, \n",
+    //         inst->pcState().instAddr(), inst->seqNum,
+    //         mispred_inst->pcState().instAddr(), mispred_inst->seqNum,
+    //         inst->isLoad(), inst->isCondCtrl(), inst->isSquashed(),
+    //         inst->effAddrValid(), inst->isLoad() ? inst->effAddr : 0);
 
-    if (!inst) {
+    if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
 
-    // If the squashed inst is itself the mispredicted branch (same static PC),
-    // record lastMBpc for BRP hashing.
-    if (mispred_inst &&
-        mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
+ //   pushCommittedOutcome(inst);
+    if (mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
         // DPRINTF(RecycledEntry,
-        //         "BRC.squash anchor pc=%#llx sn=%llu exec=%i\n",
-        //         (unsigned long long)lastMBpc,
-        //         (unsigned long long)inst->seqNum,
-        //         (int)inst->isExecuted());
+        //         "Squashed instance for mispredicted branch: sn=%llu, "
+        //         "isExecuted=%i \n",
+        //         inst->seqNum, inst->isExecuted());
     }
 }
 

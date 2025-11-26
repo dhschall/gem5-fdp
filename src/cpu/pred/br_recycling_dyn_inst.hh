@@ -63,7 +63,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         bool valid = true;
     };
 
-    // Per lookup history
+    // Per-lookup history
     struct History
     {
         Addr pc = 0;
@@ -76,6 +76,8 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
         BranchType brType = BranchType::DirectCond;
 
+        unsigned brpIdx = 0;
+
         bool base_pred = false;
 
         void *tage_bi = nullptr;
@@ -85,10 +87,8 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     TAGE_SC_L *base;
     const bool enableRecycling;
 
-    // PC stack of entries LIFO
-    std::unordered_map<Addr, std::vector<Entry>> dynInstStacks;
-
-    // std::unordered_map<Addr, Entry> dynInstStacks;
+    // Stack with the Addr and a tuple for training aswell as entries
+    std::unordered_map<Addr, std::tuple<int, std::vector<Entry>>> dynInstStacks;
 
     // Map dynamic instance to its static PC
     std::unordered_map<InstSeqNum, Addr> seqToPc;
