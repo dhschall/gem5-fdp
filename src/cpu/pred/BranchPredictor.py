@@ -189,6 +189,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         4, "Minimum instruction size (bytes) for L1BTB prefetching stride"
     )
 
+    l1PrefetchPolicy = Param.Unsigned(
+        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,trigger next region prefetch"
+    )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"

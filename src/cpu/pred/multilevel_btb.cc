@@ -58,6 +58,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l1Latency(p.l1Latency),
       l2Latency(p.l2Latency),
       minInstSize(p.minInstSize),
+      l1PrefetchPolicy(p.l1PrefetchPolicy),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
       prevBranchPC(p.numThreads, 0)
@@ -124,6 +125,30 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         if (l1_entry->isPrefetched()) {
             multilevelstats.l1PrefetchHits++;
             l1_entry->setPrefetched(false);
+            
+            if (l1PrefetchPolicy > 2) {
+                Addr nextRegionStart = (instPC & ~127) + 128;
+                Addr endOffset = 128;
+                for (Addr offset = minInstSize; offset <= endOffset; offset += minInstSize) {
+                    Addr pfAddr = nextRegionStart + offset;
+                    BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
+                    if (l2_pf) {
+                        BTBEntry *l1_pf_check = l1btb.findEntry({pfAddr, tid});
+                        if (!l1_pf_check) {
+                            BTBEntry *l1_pf_victim = l1btb.findVictim({pfAddr, tid});
+                            if (l1_pf_victim->isPrefetched()) {
+                                multilevelstats.uselessPrefetches++;
+                                l1_pf_victim->setPrefetched(false);
+                            }
+                            l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
+                            l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
+                            l1_pf_victim->setPrefetched(true);
+                            multilevelstats.totalPrefetches++;
+                        }
+                    }
+                }
+            }
+            
         }
         
         DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
@@ -144,25 +169,33 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         l1_victim->update(*l2_entry->target, l2_entry->inst);
         
 
-        // Prefetching
-        for (Addr offset = minInstSize; offset <= 128; offset += minInstSize) {
-            Addr pfAddr = instPC + offset;
-            BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
-            if (l2_pf) {
-                BTBEntry *l1_pf_check = l1btb.findEntry({pfAddr, tid});
-                if (!l1_pf_check) {
-                    BTBEntry *l1_pf_victim = l1btb.findVictim({pfAddr, tid});
-                    if (l1_pf_victim->isPrefetched()) {
-                        multilevelstats.uselessPrefetches++;
-                        l1_pf_victim->setPrefetched(false);
+        // Prefetching from L2 to L1 BTB.
+        if (l1PrefetchPolicy > 0) {
+            Addr endOffset = 128;
+            if (l1PrefetchPolicy > 1) {
+                Addr regionEnd = (instPC & ~127) + 128;
+                endOffset = regionEnd - instPC + 128;
+            }
+            for (Addr offset = minInstSize; offset <= endOffset; offset += minInstSize) {
+                Addr pfAddr = instPC + offset;
+                BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
+                if (l2_pf) {
+                    BTBEntry *l1_pf_check = l1btb.findEntry({pfAddr, tid});
+                    if (!l1_pf_check) {
+                        BTBEntry *l1_pf_victim = l1btb.findVictim({pfAddr, tid});
+                        if (l1_pf_victim->isPrefetched()) {
+                            multilevelstats.uselessPrefetches++;
+                            l1_pf_victim->setPrefetched(false);
+                        }
+                        l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
+                        l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
+                        l1_pf_victim->setPrefetched(true);
+                        multilevelstats.totalPrefetches++;
                     }
-                    l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
-                    l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
-                    l1_pf_victim->setPrefetched(true);
-                    multilevelstats.totalPrefetches++;
                 }
             }
         }
+        
 
         if (prevBranchPC[tid] != 0) {
             l1MissL2HitSuccessors[prevBranchPC[tid]].insert(instPC);
