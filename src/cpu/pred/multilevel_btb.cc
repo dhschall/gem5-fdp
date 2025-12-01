@@ -13,6 +13,12 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist1HistoryTarget, statistics::units::Count::get(), "Distance (PC - LastTarget) for 1-history"),
       ADD_STAT(dist2HistoryPC, statistics::units::Count::get(), "Distance (PC - 2ndLastPC) for 2-history"),
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
+      ADD_STAT(l1PrefetchHits, statistics::units::Count::get(), "Number of hits on prefetched L1 entries"),
+      ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
+      ADD_STAT(uselessPrefetches, statistics::units::Count::get(), "Number of useless prefetches"),
+      ADD_STAT(totalPrefetches, statistics::units::Count::get(), "Total number of prefetches"),
+      ADD_STAT(l1PrefetchCoverage, statistics::units::Ratio::get(), "L1 Prefetch Coverage"),
+      ADD_STAT(uselessPrefetchRate, statistics::units::Ratio::get(), "Useless L1 Prefetch Rate"),
       btb(btb)
 {
     using namespace statistics;
@@ -21,6 +27,14 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     dist1HistoryTarget.init(0).flags(total | pdf);
     dist2HistoryPC.init(0).flags(total | pdf);
     dist2HistoryTarget.init(0).flags(total | pdf);
+
+    l1PrefetchHits.flags(total);
+    l1MissL2Hits.flags(total);
+    uselessPrefetches.flags(total);
+    totalPrefetches.flags(total);
+
+    l1PrefetchCoverage = l1PrefetchHits / (l1PrefetchHits + l1MissL2Hits);
+    uselessPrefetchRate = uselessPrefetches / totalPrefetches;
 }
 
 void
@@ -43,6 +57,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
             BTBEntry(genTagExtractor(p.l2IndexingPolicy))),
       l1Latency(p.l1Latency),
       l2Latency(p.l2Latency),
+      minInstSize(p.minInstSize),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
       prevBranchPC(p.numThreads, 0)
@@ -106,6 +121,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
     // lookup l1 btb firstly
     BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
     if (l1_entry != nullptr) {
+        if (l1_entry->isPrefetched()) {
+            multilevelstats.l1PrefetchHits++;
+            l1_entry->setPrefetched(false);
+        }
         
         DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
         return BTBLookupResult(l1_entry->target.get(), l1Latency, true, false);
@@ -114,10 +133,36 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
     // L1miss, lookup l2 btb
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
+        multilevelstats.l1MissL2Hits++;
         
         auto l1_victim = l1btb.findVictim({instPC, tid});
+        if (l1_victim->isPrefetched()) {
+            multilevelstats.uselessPrefetches++;
+            l1_victim->setPrefetched(false);
+        }
         l1btb.insertEntry({instPC, tid}, l1_victim);
         l1_victim->update(*l2_entry->target, l2_entry->inst);
+        
+
+        // Prefetching
+        for (Addr offset = minInstSize; offset <= 128; offset += minInstSize) {
+            Addr pfAddr = instPC + offset;
+            BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
+            if (l2_pf) {
+                BTBEntry *l1_pf_check = l1btb.findEntry({pfAddr, tid});
+                if (!l1_pf_check) {
+                    BTBEntry *l1_pf_victim = l1btb.findVictim({pfAddr, tid});
+                    if (l1_pf_victim->isPrefetched()) {
+                        multilevelstats.uselessPrefetches++;
+                        l1_pf_victim->setPrefetched(false);
+                    }
+                    l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
+                    l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
+                    l1_pf_victim->setPrefetched(true);
+                    multilevelstats.totalPrefetches++;
+                }
+            }
+        }
 
         if (prevBranchPC[tid] != 0) {
             l1MissL2HitSuccessors[prevBranchPC[tid]].insert(instPC);
@@ -128,31 +173,31 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         }
 
         // Spatial locality stats
-        auto& history = l1MissL2HitHistory[tid];
-        Addr targetAddr = l2_entry->target->instAddr();
+        // auto& history = l1MissL2HitHistory[tid];
+        // Addr targetAddr = l2_entry->target->instAddr();
         
-        if (!history.empty()) {
-            // 1-history
-            const auto& last = history.back();
-            int64_t d1 = (int64_t)instPC - (int64_t)last.pc;
-            int64_t d2 = (int64_t)instPC - (int64_t)last.target;
-            multilevelstats.dist1HistoryPC.sample(d1);
-            multilevelstats.dist1HistoryTarget.sample(d2);
+        // if (!history.empty()) {
+        //     // 1-history
+        //     const auto& last = history.back();
+        //     int64_t d1 = (int64_t)instPC - (int64_t)last.pc;
+        //     int64_t d2 = (int64_t)instPC - (int64_t)last.target;
+        //     multilevelstats.dist1HistoryPC.sample(d1);
+        //     multilevelstats.dist1HistoryTarget.sample(d2);
             
-            if (history.size() >= 2) {
-                // 2-history
-                const auto& secondLast = history[history.size() - 2];
-                int64_t d3 = (int64_t)instPC - (int64_t)secondLast.pc;
-                int64_t d4 = (int64_t)instPC - (int64_t)secondLast.target;
-                multilevelstats.dist2HistoryPC.sample(d3);
-                multilevelstats.dist2HistoryTarget.sample(d4);
-            }
-        }
+        //     if (history.size() >= 2) {
+        //         // 2-history
+        //         const auto& secondLast = history[history.size() - 2];
+        //         int64_t d3 = (int64_t)instPC - (int64_t)secondLast.pc;
+        //         int64_t d4 = (int64_t)instPC - (int64_t)secondLast.target;
+        //         multilevelstats.dist2HistoryPC.sample(d3);
+        //         multilevelstats.dist2HistoryTarget.sample(d4);
+        //     }
+        // }
         
-        history.push_back({instPC, targetAddr});
-        if (history.size() > 2) {
-            history.pop_front();
-        }
+        // history.push_back({instPC, targetAddr});
+        // if (history.size() > 2) {
+        //     history.pop_front();
+        // }
 
         DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n", instPC, l2Latency);
         return BTBLookupResult(l2_entry->target.get(), l2Latency, false, true);

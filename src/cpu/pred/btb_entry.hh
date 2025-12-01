@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1})
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -194,6 +194,7 @@ class BTBEntry : public ReplaceableEntry
         inst       = other.inst;
         extractTag = other.extractTag;
         set(target, other.target);
+        prefetched = other.prefetched;
     }
 
     /** Assignment operator */
@@ -204,6 +205,7 @@ class BTBEntry : public ReplaceableEntry
         inst       = other.inst;
         extractTag = other.extractTag;
         set(target, other.target);
+        prefetched = other.prefetched;
 
         return *this;
     }
@@ -266,6 +268,13 @@ class BTBEntry : public ReplaceableEntry
 
     /** The entry's tag. */
     KeyType tag;
+
+    /** Whether this L1 entry was prefetched and hasn't been hit yet. */
+    bool prefetched;
+
+  public:
+    bool isPrefetched() const { return prefetched; }
+    void setPrefetched(bool p) { prefetched = p; }
 };
 
 } // namespace gem5::branch_prediction

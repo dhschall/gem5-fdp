@@ -185,6 +185,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         "L2 BTB indexing policy",
     )
 
+    minInstSize = Param.Unsigned(
+        4, "Minimum instruction size (bytes) for L1BTB prefetching stride"
+    )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
