@@ -19,6 +19,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(totalPrefetches, statistics::units::Count::get(), "Total number of prefetches"),
       ADD_STAT(l1PrefetchCoverage, statistics::units::Ratio::get(), "L1 Prefetch Coverage"),
       ADD_STAT(uselessPrefetchRate, statistics::units::Ratio::get(), "Useless L1 Prefetch Rate"),
+      ADD_STAT(numBranchesPerPrefetch, statistics::units::Count::get(), "Number of branches per prefetch"),
       btb(btb)
 {
     using namespace statistics;
@@ -35,6 +36,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 
     l1PrefetchCoverage = l1PrefetchHits / (l1PrefetchHits + l1MissL2Hits);
     uselessPrefetchRate = uselessPrefetches / totalPrefetches;
+
+    numBranchesPerPrefetch.init(0, 64, 1);
 }
 
 void
@@ -59,6 +62,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l2Latency(p.l2Latency),
       minInstSize(p.minInstSize),
       l1PrefetchPolicy(p.l1PrefetchPolicy),
+      prefetchOnlyForward(p.prefetchOnlyForward),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
       prevBranchPC(p.numThreads, 0)
@@ -129,6 +133,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
             if (l1PrefetchPolicy > 2) {
                 Addr nextRegionStart = (instPC & ~127) + 128;
                 Addr endOffset = 128;
+                size_t numBranches = 0;
                 for (Addr offset = minInstSize; offset <= endOffset; offset += minInstSize) {
                     Addr pfAddr = nextRegionStart + offset;
                     BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
@@ -144,9 +149,11 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
                             l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                             l1_pf_victim->setPrefetched(true);
                             multilevelstats.totalPrefetches++;
+                            numBranches++;
                         }
                     }
                 }
+                multilevelstats.numBranchesPerPrefetch.sample(numBranches);
             }
             
         }
@@ -170,12 +177,20 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         
 
         // Prefetching from L2 to L1 BTB.
-        if (l1PrefetchPolicy > 0) {
+        bool doPrefetch = true;
+        if (prefetchOnlyForward) {
+            Addr targetAddr = l2_entry->target->instAddr();
+            if (targetAddr < instPC) {
+                doPrefetch = false;
+            }
+        }
+        if (l1PrefetchPolicy > 0 && doPrefetch) {
             Addr endOffset = 128;
             if (l1PrefetchPolicy > 1) {
                 Addr regionEnd = (instPC & ~127) + 128;
                 endOffset = regionEnd - instPC + 128;
             }
+            size_t numBranches = 0;
             for (Addr offset = minInstSize; offset <= endOffset; offset += minInstSize) {
                 Addr pfAddr = instPC + offset;
                 BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
@@ -191,9 +206,11 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
                         l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                         l1_pf_victim->setPrefetched(true);
                         multilevelstats.totalPrefetches++;
+                        numBranches++;
                     }
                 }
             }
+            multilevelstats.numBranchesPerPrefetch.sample(numBranches);
         }
         
 

@@ -46,6 +46,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const Cycles l2Latency;
     const unsigned minInstSize;
     const unsigned l1PrefetchPolicy;
+    const bool prefetchOnlyForward;
 
     // Multi-level BTB specific statistics
     struct MultiLevelBTBStats : public statistics::Group
@@ -70,6 +71,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar totalPrefetches;
         statistics::Formula l1PrefetchCoverage;
         statistics::Formula uselessPrefetchRate;
+
+        statistics::Distribution numBranchesPerPrefetch;
 
         MultiLevelBTB *btb;
         

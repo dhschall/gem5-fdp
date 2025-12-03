@@ -190,9 +190,12 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
 
     l1PrefetchPolicy = Param.Unsigned(
-        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,trigger next region prefetch"
+        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch"
     )
-
+   
+    prefetchOnlyForward = Param.Bool(
+        False, "Only prefetch on forward branches (target > PC)"
+    )
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
