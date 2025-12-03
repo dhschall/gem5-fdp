@@ -220,7 +220,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     }
 
     stats.BTBLookups++;
-    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType);
+    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType, hist->predTaken);
     const PCStateBase * btb_target = btb_res.target;
     totalLatency += btb_res.latency;
     if (btb_target) {

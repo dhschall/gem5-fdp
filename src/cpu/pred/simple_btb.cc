@@ -99,7 +99,7 @@ SimpleBTB::lookup(ThreadID tid, Addr instPC, BranchType type)
 }
 
 BTBLookupResult
-SimpleBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
+SimpleBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, bool taken)
 {
     return BTBLookupResult(lookup(tid, instPC, type), latency);
 }

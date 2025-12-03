@@ -63,7 +63,8 @@ class SimpleBTB : public BranchTargetBuffer
     const PCStateBase *lookup(ThreadID tid, Addr instPC,
                               BranchType type = BranchType::NoBranch) override;
     BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
-                                BranchType type = BranchType::NoBranch) override;
+                                BranchType type = BranchType::NoBranch,
+                                bool taken = true) override;
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;

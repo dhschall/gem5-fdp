@@ -119,7 +119,7 @@ MultiLevelBTB::lookup(ThreadID tid, Addr instPC, BranchType type)
 }
 
 BTBLookupResult
-MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
+MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, bool taken)
 {
     stats.lookups[type]++;
 
@@ -180,8 +180,12 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type)
         bool doPrefetch = true;
         if (prefetchOnlyForward) {
             Addr targetAddr = l2_entry->target->instAddr();
-            if (targetAddr < instPC) {
-                doPrefetch = false;
+            bool forward = (targetAddr > instPC);
+
+            if (type == BranchType::DirectCond || type == BranchType::IndirectCond) {
+                 doPrefetch = forward && taken;
+            } else {
+                 doPrefetch = forward;
             }
         }
         if (l1PrefetchPolicy > 0 && doPrefetch) {

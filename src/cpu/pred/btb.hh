@@ -118,7 +118,8 @@ class BranchTargetBuffer : public ClockedObject
     }
 
     virtual BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
-                            BranchType type = BranchType::NoBranch)
+                            BranchType type = BranchType::NoBranch,
+                            bool taken = true)
     {
       // Default behavior: use classic lookup and zero latency
         return BTBLookupResult(lookup(tid, instPC, type), Cycles(0));
