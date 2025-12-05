@@ -125,11 +125,17 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
 
     // lookup l1 btb firstly
     BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
+    Cycles extraLatency = Cycles(0);
     if (l1_entry != nullptr) {
         if (l1_entry->isPrefetched()) {
             multilevelstats.l1PrefetchHits++;
             l1_entry->setPrefetched(false);
             
+            Cycles delta = curCycle() - l1_entry->getTimestamp();
+            if (delta < l2Latency) {
+                extraLatency = l2Latency - delta;
+            }
+
             if (l1PrefetchPolicy > 2) {
                 Addr nextRegionStart = (instPC & ~127) + 128;
                 Addr endOffset = 128;
@@ -148,6 +154,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                             l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
                             l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                             l1_pf_victim->setPrefetched(true);
+                            l1_pf_victim->setTimestamp(curCycle());
                             multilevelstats.totalPrefetches++;
                             numBranches++;
                         }
@@ -158,8 +165,8 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
             
         }
         
-        DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency);
-        return BTBLookupResult(l1_entry->target.get(), l1Latency, true, false);
+        DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency + extraLatency);
+        return BTBLookupResult(l1_entry->target.get(), l1Latency + extraLatency, true, false);
     }
 
     // L1miss, lookup l2 btb
@@ -180,14 +187,16 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
         bool doPrefetch = true;
         if (prefetchOnlyForward) {
             Addr targetAddr = l2_entry->target->instAddr();
-            bool forward = (targetAddr > instPC);
-
+            bool isBackward = (targetAddr < instPC);
             if (type == BranchType::DirectCond || type == BranchType::IndirectCond) {
-                 doPrefetch = forward && taken;
+                if (isBackward && taken) {
+                    doPrefetch = false;
+                }
             } else {
-                 doPrefetch = forward;
+                doPrefetch = !isBackward;
             }
         }
+
         if (l1PrefetchPolicy > 0 && doPrefetch) {
             Addr endOffset = 128;
             if (l1PrefetchPolicy > 1) {
@@ -209,6 +218,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                         l1btb.insertEntry({pfAddr, tid}, l1_pf_victim);
                         l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                         l1_pf_victim->setPrefetched(true);
+                        l1_pf_victim->setTimestamp(curCycle());
                         multilevelstats.totalPrefetches++;
                         numBranches++;
                     }

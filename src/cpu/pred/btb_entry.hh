@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -195,6 +195,7 @@ class BTBEntry : public ReplaceableEntry
         extractTag = other.extractTag;
         set(target, other.target);
         prefetched = other.prefetched;
+        timestamp = other.timestamp;
     }
 
     /** Assignment operator */
@@ -206,6 +207,7 @@ class BTBEntry : public ReplaceableEntry
         extractTag = other.extractTag;
         set(target, other.target);
         prefetched = other.prefetched;
+        timestamp = other.timestamp;
 
         return *this;
     }
@@ -275,8 +277,14 @@ class BTBEntry : public ReplaceableEntry
   public:
     bool isPrefetched() const { return prefetched; }
     void setPrefetched(bool p) { prefetched = p; }
-};
 
+    Cycles getTimestamp() const { return timestamp; }
+    void setTimestamp(Cycles t) { timestamp = t; }
+
+  private:
+    /** Timestamp when the entry was prefetched. */
+    Cycles timestamp;
+};
 } // namespace gem5::branch_prediction
 /**
  * This helper generates a tag extractor function object
