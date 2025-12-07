@@ -454,7 +454,13 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void *&b)
     // record final prediction
     bi->lpBranchInfo->predTaken = pred_taken;
 
-    return predictWithDefaultLatency(pred_taken);
+    Cycles latency = defaultLatency;
+    if (bi->tageBranchInfo->provider == TAGEBase::BIMODAL_ONLY ||
+        bi->tageBranchInfo->provider == TAGEBase::BIMODAL_ALT_MATCH) {
+        latency = Cycles(0);
+    }
+
+    return Prediction{pred_taken, latency};
 }
 
 void
