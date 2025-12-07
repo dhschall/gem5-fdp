@@ -163,7 +163,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             tid, pc.instAddr(), hist->bpHistory
         );
         hist->condPred = condPred.taken;
-
+        
         if (overridingCPred) {
 
             Prediction secondaryPred = overridingCPred->lookup(
@@ -183,7 +183,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             }
         } else {
             totalLatency += condPred.latency;
-        }
+        } 
 
 
         if (hist->condPred) {
@@ -222,13 +222,34 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     stats.BTBLookups++;
     auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType, hist->predTaken);
     const PCStateBase * btb_target = btb_res.target;
-    totalLatency += btb_res.latency;
+    // Capture the latency of the conditional predictor
+    Cycles cbp_latency = totalLatency;
+    totalLatency = std::max(totalLatency, btb_res.latency);
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;
+        if (inst->isCondCtrl()) {
+            stats.condBTBHits++;
+        }
         if (isMultiLevelBTB) {
             hist->l1btbHit = btb_res.l1Hit;
             hist->l2btbHit = btb_res.l2Hit;
+            
+            if (inst->isCondCtrl()) {
+                if (btb_res.latency == Cycles(0)) {
+                    if (cbp_latency == Cycles(0)) {
+                        stats.l1btbHitBasePred++;
+                    } else if (cbp_latency == Cycles(4)) {
+                        stats.l1btbHitOverridePred++;
+                    }
+                } else if (btb_res.latency == Cycles(4)) {
+                    if (cbp_latency == Cycles(0)) {
+                        stats.l2btbHitBasePred++;
+                    } else if (cbp_latency == Cycles(4)) {
+                        stats.l2btbHitOverridePred++;
+                    }
+                }
+            }
         }
 
         if (hist->predTaken) {
@@ -832,6 +853,8 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
                "Number of BTB updates"),
       ADD_STAT(BTBHits, statistics::units::Count::get(),
                "Number of BTB hits"),
+      ADD_STAT(condBTBHits, statistics::units::Count::get(),
+               "Number of BTB hits for conditional branches"),
       ADD_STAT(BTBHitRatio, statistics::units::Ratio::get(), "BTB Hit Ratio",
                BTBHits / BTBLookups),
       ADD_STAT(BTBMispredicted, statistics::units::Count::get(),
@@ -847,11 +870,35 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(l1btbHits, statistics::units::Count::get(),
               "Number of L1 BTB hits per thread and branch type (MultiLevelBTB only)"),
       ADD_STAT(l2btbHits, statistics::units::Count::get(),
-              "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)")
+              "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)"),
+      ADD_STAT(l1btbHitBasePred, statistics::units::Count::get(),
+              "Number of L1 BTB hits with Base Prediction"),
+      ADD_STAT(l2btbHitBasePred, statistics::units::Count::get(),
+              "Number of L2 BTB hits with Base Prediction"),
+      ADD_STAT(l1btbHitOverridePred, statistics::units::Count::get(),
+              "Number of L1 BTB hits with Override Prediction"),
+      ADD_STAT(l2btbHitOverridePred, statistics::units::Count::get(),
+              "Number of L2 BTB hits with Override Prediction"),
+      ADD_STAT(l1btbHitBasePredRatio, statistics::units::Ratio::get(),
+              "Ratio of L1 BTB hits with Base Prediction",
+              l1btbHitBasePred / condBTBHits),
+      ADD_STAT(l2btbHitBasePredRatio, statistics::units::Ratio::get(),
+              "Ratio of L2 BTB hits with Base Prediction",
+              l2btbHitBasePred / condBTBHits),
+      ADD_STAT(l1btbHitOverridePredRatio, statistics::units::Ratio::get(),
+              "Ratio of L1 BTB hits with Override Prediction",
+              l1btbHitOverridePred / condBTBHits),
+      ADD_STAT(l2btbHitOverridePredRatio, statistics::units::Ratio::get(),
+              "Ratio of L2 BTB hits with Override Prediction",
+              l2btbHitOverridePred / condBTBHits)
 
 {
     using namespace statistics;
     BTBHitRatio.precision(6);
+    l1btbHitBasePredRatio.precision(6);
+    l2btbHitBasePredRatio.precision(6);
+    l1btbHitOverridePredRatio.precision(6);
+    l2btbHitOverridePredRatio.precision(6);
 
     lookups
         .init(bp->numThreads, enums::Num_BranchType)

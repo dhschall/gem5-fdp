@@ -531,6 +531,7 @@ class BPredUnit : public SimObject
         statistics::Scalar BTBLookups;
         statistics::Scalar BTBUpdates;
         statistics::Scalar BTBHits;
+        statistics::Scalar condBTBHits;
         statistics::Formula BTBHitRatio;
         statistics::Scalar BTBMispredicted;
 
@@ -543,6 +544,16 @@ class BPredUnit : public SimObject
         /** Different levels of BTB hits (multi-level BTB only)*/
         statistics::Scalar l1btbHits;
         statistics::Scalar l2btbHits;
+
+        statistics::Scalar l1btbHitBasePred;
+        statistics::Scalar l2btbHitBasePred;
+        statistics::Scalar l1btbHitOverridePred;
+        statistics::Scalar l2btbHitOverridePred;
+
+        statistics::Formula l1btbHitBasePredRatio;
+        statistics::Formula l2btbHitBasePredRatio;
+        statistics::Formula l1btbHitOverridePredRatio;
+        statistics::Formula l2btbHitOverridePredRatio;
 
     } stats;
 
