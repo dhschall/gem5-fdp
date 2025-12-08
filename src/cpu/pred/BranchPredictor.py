@@ -1264,3 +1264,9 @@ class BranchRecyclingCacheDynInst(ConditionalPredictor):
         "Base predictor",
     )
     enable_recycling = Param.Bool(True, "Enabling the recycling")
+    enable_training = Param.Bool(
+        True, "Enabling the training of recycled entries"
+    )
+    enable_strite = Param.Bool(
+        True, "Enabling the strite mechanism for recycled entries"
+    )

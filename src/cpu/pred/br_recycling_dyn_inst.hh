@@ -55,12 +55,36 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     // Branch outcome
     struct Entry
     {
+      //Attributes for recycling
         Addr pc = 0;
         bool hasOutcome = false;
         bool taken = false;
         BranchType brType = BranchType::NoBranch;
         InstSeqNum seqNum = 0;
         bool valid = true;
+
+   
+    };
+
+    struct recyclingEntry
+    {
+        //Attribtes for training
+        int trainCounter = 0;
+
+        int strideCounter = 0;
+
+        //Attributes for Statistics
+        int correctPredictionRecycling = 0;
+        int incorrectPredictionRecycling = 0;
+
+        int correctPredictionBase = 0;
+        int incorrectPredictionBase = 0;
+
+        int bothWrong = 0;
+        int bothCorrect = 0;
+
+        //Stack of entries for recycling
+        std::vector<Entry> entries;
     };
 
     // Per-lookup history
@@ -86,10 +110,12 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     // Base predictor
     TAGE_SC_L *base;
     const bool enableRecycling;
+    const bool enableTraining;
+    const bool enableStrite;
 
     // Stack with the Addr and a tuple for training aswell as entries
     //Track statistics here
-    std::unordered_map<Addr, std::tuple<int, std::vector<Entry>>> dynInstStacks;
+    std::unordered_map<Addr,  recyclingEntry> dynInstStacks;
 
     // Map dynamic instance to its static PC
     std::unordered_map<InstSeqNum, Addr> seqToPc;
@@ -105,7 +131,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
                             const o3::DynInstPtr &sq_inst);
 
     // Helpers
-    void pushCommittedOutcome(const o3::DynInstPtr &inst);
+    void pushExecutedOutcome(const o3::DynInstPtr &inst);
 
   public:
     struct BranchRecyclingCacheDynInstStats : public statistics::Group

@@ -18,6 +18,8 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
     : ConditionalPredictor(p),
       base(p.base),
       enableRecycling(p.enable_recycling),
+      enableTraining(p.enable_training),
+      enableStrite(p.enable_strite),
       dynInstStacks(),
       seqToPc(),
       cpu(nullptr),
@@ -47,22 +49,28 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
     if (enableRecycling) {
         auto it = dynInstStacks.find(pc);
         if (it != dynInstStacks.end()) {
-            auto &bucket = it->second;
-            auto &stack = std::get<1>(bucket);
+            auto &bucket = it->second.entries;
+            // auto &stack = std::get<1>(bucket);
 
             // Only use recycling if has been trained to do so
-            if (std::get<0>(bucket) < 0) {
+            if (enableTraining && it->second.trainCounter < 0) {
                 return h->base_pred;
             }
 
-            if (!stack.empty()) {
-                const Entry &re = stack.back();
+            // If strite is enabled, only uses values with a strite bigger than
+            // 3
+            if (enableStrite && it->second.strideCounter < 3) {
+                return h->base_pred;
+            }
+
+            if (!bucket.empty()) {
+                const Entry &re = bucket.back();
                 h->usedRecycle = true;
                 h->recycledTaken = re.taken;
                 h->brType = re.brType;
 
                 // Pop LIFO
-                stack.pop_back();
+                bucket.pop_back();
 
                 stats.recycledPred++;
 
@@ -142,7 +150,6 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
 
     base->update(tid, pc, taken, bi, squashed, inst, target);
 
-
     // STATS HANDLING: compute predictions and report on squashes
     const char *src = (h && h->usedRecycle) ? "recycled" : "base";
     const int recycled_pred =
@@ -156,17 +163,19 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
                 stats.missPredictedBothPredictorsWrong++;
             } else if (h->usedRecycle && recycled_pred != (int)taken) {
                 stats.missPredictedFaultyRecycle++;
+
             } else {
                 stats.missPredictedTageFault++;
             }
         }
-    }
 
-    DPRINTF(RecycledEntry,
-            "BRC.update pc=%#llx src=%s base_pred=%d recycled_pred=%d "
-            "actual=%d squashed=%d\n",
-            (unsigned long long)pc, src, base_pred_dbg, recycled_pred,
-            (int)taken, (int)squashed);
+        // PC, SRC, BASE_PRED, RECYCLED_PRED, ACTUAL, SQUASHED
+        DPRINTF(RecycledEntry, "%#llx;%s;%d;%d;%d;%d\n",
+                (unsigned long long)pc, src, base_pred_dbg, recycled_pred,
+                (int)taken, (int)squashed);
+
+        return;
+    }
 
     // Update recyclingValue
     // +2 if recycled was correct and base was incorrect
@@ -175,18 +184,38 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
     //  0 otherwise.
     if (h) {
         auto it2 = dynInstStacks.find(pc);
+
+        // if (squashed) {
+
+        //     if (h) {
+        //         if (h->base_pred == recycled_pred) {
+
+        //             it2->second.bothWrong++;
+        //         } else if (h->usedRecycle && recycled_pred != (int)taken) {
+
+        //             it2->second.incorrectPredictionRecycling++;
+        //         } else {
+
+        //             it2->second.incorrectPredictionBase++;
+        //         }
+        //     }
+        // }
+
         if (it2 != dynInstStacks.end()) {
-            auto &recyclingValue = std::get<0>(it2->second);
+            auto &recyclingValue = it2->second.trainCounter;
             const bool recycledCorrect =
                 (h->usedRecycle && (h->recycledTaken == taken));
             const bool baseCorrect = (h->base_pred == taken);
 
             if (recycledCorrect && !baseCorrect) {
-                recyclingValue += 5;
+                recyclingValue += 2;
+                it2->second.correctPredictionRecycling++;
             } else if (recycledCorrect && baseCorrect) {
                 recyclingValue += 1;
+                it2->second.bothCorrect++;
             } else if (!recycledCorrect && baseCorrect) {
                 recyclingValue -= 1;
+                it2->second.correctPredictionBase++;
             }
         }
     }
@@ -266,7 +295,7 @@ BranchRecyclingCacheDynInst::regProbeListeners()
 // === Internal helpers ===================================================
 
 void
-BranchRecyclingCacheDynInst::pushCommittedOutcome(const o3::DynInstPtr &inst)
+BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
 {
     if (!inst) {
         return;
@@ -292,8 +321,16 @@ BranchRecyclingCacheDynInst::pushCommittedOutcome(const o3::DynInstPtr &inst)
 
     e.hasOutcome = true;
     auto &bucket = dynInstStacks[pc];
-    auto &vec = std::get<1>(bucket);
-    vec.push_back(e);
+
+    // Stride counter update
+    if (bucket.entries.size() > 0 && bucket.entries.back().taken == e.taken) {
+        bucket.strideCounter++;
+    } else if (bucket.entries.size() > 0) {
+        bucket.strideCounter--;
+    }
+
+    bucket.entries.push_back(e);
+
     stats.committedCount++;
 }
 
@@ -303,7 +340,7 @@ BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
     if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
-    pushCommittedOutcome(inst);
+    pushExecutedOutcome(inst);
 }
 
 void
@@ -311,19 +348,19 @@ BranchRecyclingCacheDynInst::notifySquashedInst(
     const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &inst)
 {
     // DPRINTF(RecycledEntry,
-    //         "Notify Squashed inst: PC=%llx, sn=%llu, due to: [PC=%llx, sn=%i] "
-    //         "isLoad=%i, "
-    //         "isCondBranch=%i, isSquashed=%i, isAddrValid=%i, addr=%llu, \n",
-    //         inst->pcState().instAddr(), inst->seqNum,
-    //         mispred_inst->pcState().instAddr(), mispred_inst->seqNum,
-    //         inst->isLoad(), inst->isCondCtrl(), inst->isSquashed(),
-    //         inst->effAddrValid(), inst->isLoad() ? inst->effAddr : 0);
+    //         "Notify Squashed inst: PC=%llx, sn=%llu, due to: [PC=%llx,
+    //         sn=%i] " "isLoad=%i, " "isCondBranch=%i, isSquashed=%i,
+    //         isAddrValid=%i, addr=%llu, \n", inst->pcState().instAddr(),
+    //         inst->seqNum, mispred_inst->pcState().instAddr(),
+    //         mispred_inst->seqNum, inst->isLoad(), inst->isCondCtrl(),
+    //         inst->isSquashed(), inst->effAddrValid(), inst->isLoad() ?
+    //         inst->effAddr : 0);
 
     if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
 
- //   pushCommittedOutcome(inst);
+    //   pushCommittedOutcome(inst);
     if (mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
         // DPRINTF(RecycledEntry,
         //         "Squashed instance for mispredicted branch: sn=%llu, "
