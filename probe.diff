@@ -1,0 +1,135 @@
+diff --git /src/cpu/pred/BranchPredictor.py b/src/cpu/pred/BranchPredictor.py
+index f2515e0ba2..22fa493b70 100644
+--- /src/cpu/pred/BranchPredictor.py
++++ /src/cpu/pred/BranchPredictor.py
+@@ -1216,6 +1216,21 @@ class BranchRecyclingCache(ConditionalPredictor):
+     type = "BranchRecyclingCache"
+     cxx_class = "gem5::branch_prediction::BranchRecyclingCache"
+     cxx_header = "cpu/pred/br_recycling.hh"
++    cxx_exports = [PyBindMethod("setCPU")]
++
++    def __init__(self, **kwargs):
++        super().__init__(**kwargs)
++        self._cpu = None
++
++    def registerCpu(self, simObj):
++        if not isinstance(simObj, SimObject):
++            raise TypeError("argument must be a SimObject type")
++        self._cpu = simObj
++
++    def regProbeListeners(self):
++        if self._cpu:
++            self.getCCObject().setCPU(self._cpu.getCCObject())
++        self.getCCObject().regProbeListeners()
+ 
+     base = Param.TAGE_SC_L(
+         TAGE_SC_L_64KB(),
+diff --git /src/cpu/pred/br_recycling.cc b/src/cpu/pred/br_recycling.cc
+index 6af74ac872..e41fc8b1d9 100644
+--- /src/cpu/pred/br_recycling.cc
++++ /src/cpu/pred/br_recycling.cc
+@@ -10,6 +10,7 @@
+ #include "base/sat_counter.hh"
+ #include "base/trace.hh"
+ #include "cpu/pred/branch_type.hh"
++#include "cpu/o3/dyn_inst.hh"
+ #include "debug/Fetch.hh"
+ #include "debug/RecycledEntry.hh"
+ #include "sim/sim_exit.hh"
+@@ -39,7 +40,8 @@ BranchRecyclingCache::BranchRecyclingCache(const Params &p)
+     lastMBpc(0),
+     branchRecycleCache(),
+     recycledCount(0),
+-    recycledNotTaken(0)
++    recycledNotTaken(0),
++    cpu(nullptr)
+ {
+     // // First initialize the base predictor
+     // base->tage->init();
+@@ -339,5 +341,36 @@ BranchRecyclingCache::dumpFinalDebugCounters()
+          (unsigned long long)recycledNotTaken);
+ }
+ 
++
++
++void
++BranchRecyclingCache::regProbeListeners()
++{
++    ConditionalPredictor::regProbeListeners();
++
++    if (cpu == nullptr) {
++        warn("BranchRecyclingCache: No CPU to listen from registered\n");
++        return;
++    }
++    typedef ProbeListenerArgFunc<o3::DynInstPtr> InstListener;
++    listener = cpu->getProbeManager()->connect<InstListener>(
++        "ToCommit",
++        [this](const o3::DynInstPtr &inst) {
++            notifyExecutedInst(inst);
++        });
++}
++
++void
++BranchRecyclingCache::notifyExecutedInst(const o3::DynInstPtr &inst)
++{
++    DPRINTF(RecycledEntry,
++            "Notify: PC=%llx, sn=%llu, isLoad=%i, isCondBranch=%i, isSquashed=%i, isAddrValid=%i, addr=%llu\n",
++            inst->pcState().instAddr(), inst->seqNum,
++            inst->isLoad(), inst->isCondCtrl(),
++            inst->isSquashed(), inst->effAddrValid(),
++            inst->isLoad() ? inst->effAddr : 0
++        );
++}
++
+ } // namespace branch_prediction
+ } // namespace gem5
+diff --git /src/cpu/pred/br_recycling.hh b/src/cpu/pred/br_recycling.hh
+index 2ecc91fde9..c0eb58d5cc 100644
+--- /src/cpu/pred/br_recycling.hh
++++ /src/cpu/pred/br_recycling.hh
+@@ -8,11 +8,16 @@
+ #include <vector>
+ 
+ #include "base/sat_counter.hh"
++#include "cpu/base.hh"
++#include "sim/probe/probe.hh"
+ #include "cpu/pred/branch_type.hh"
+ #include "cpu/pred/conditional.hh"
+ #include "cpu/pred/tage_sc_l.hh"
++#include "cpu/o3/dyn_inst_ptr.hh"
++
+ #include "params/BranchRecyclingCache.hh"
+ 
++
+ namespace gem5
+ {
+ namespace branch_prediction
+@@ -39,6 +44,7 @@ class BranchRecyclingCache : public ConditionalPredictor
+ 
+     void squash(ThreadID tid, void * &bp_history) override;
+ 
++    void regProbeListeners() override;
+   private:
+     //struct for capturing wrong paths
+     struct Entry
+@@ -93,6 +99,20 @@ class BranchRecyclingCache : public ConditionalPredictor
+     uint64_t recycledNotTaken = 0;
+ 
+     void dumpFinalDebugCounters();
++
++
++    /** Probe listener for exec finish event */
++    ProbeListenerPtr<> listener;
++
++    /** Pointer to the CPU object that contains the FTQ */
++    BaseCPU *cpu;
++
++    void notifyExecutedInst(const o3::DynInstPtr &inst);
++
++    public:
++    void setCPU(BaseCPU * _cpu) {
++      cpu = _cpu;
++    }
+ };
+ 
+ } // namespace branch_prediction
