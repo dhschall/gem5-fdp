@@ -45,6 +45,8 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     void regProbeListeners() override;
 
+    void dump(const std::string& filename);
+
     void
     setCPU(BaseCPU *_cpu)
     {
@@ -132,6 +134,14 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     // Helpers
     void pushExecutedOutcome(const o3::DynInstPtr &inst);
+
+    struct branch_info
+    {
+      int exec = 0;
+      int taken = 0;
+      int mispred = 0;
+    };
+    std::unordered_map<Addr,branch_info> branchStats;
 
   public:
     struct BranchRecyclingCacheDynInstStats : public statistics::Group

@@ -6,6 +6,7 @@
 #include <tuple>
 
 #include "base/trace.hh"
+#include "base/output.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/branch_type.hh"
 #include "debug/RecycledEntry.hh"
@@ -176,6 +177,10 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
 
         return;
     }
+
+    auto& bs = branchStats[pc];
+    bs.exec++;
+    bs.taken += taken ? 1 : 0;
 
     // Update recyclingValue
     // +2 if recycled was correct and base was incorrect
@@ -367,6 +372,30 @@ BranchRecyclingCacheDynInst::notifySquashedInst(
         //         "isExecuted=%i \n",
         //         inst->seqNum, inst->isExecuted());
     }
+}
+
+
+void
+BranchRecyclingCacheDynInst::dump(const std::string& filename)
+{
+    DPRINTF(RecycledEntry, "Dump branch statistics to %s\n", filename);
+
+    std::ofstream fileStream(simout.resolve(filename), std::ios::out);
+    if (!fileStream.good())
+        panic("Could not open %s for writing\n", filename);
+
+    ccprintf(fileStream,"pc,exec,taken,mispred\n");
+
+    // TAGE tables
+    for (auto& bi : branchStats) {
+        ccprintf(fileStream,"%llu,%i,%i,%i\n",
+                 bi.first,
+                 bi.second.exec,
+                 bi.second.taken,
+                 bi.second.mispred
+        );
+    }
+    fileStream.close();
 }
 
 BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInstStats::

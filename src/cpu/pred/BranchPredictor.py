@@ -1243,7 +1243,10 @@ class BranchRecyclingCacheDynInst(ConditionalPredictor):
     type = "BranchRecyclingCacheDynInst"
     cxx_class = "gem5::branch_prediction::BranchRecyclingCacheDynInst"
     cxx_header = "cpu/pred/br_recycling_dyn_inst.hh"
-    cxx_exports = [PyBindMethod("setCPU")]
+    cxx_exports = [
+        PyBindMethod("setCPU"),
+        PyBindMethod("dump"),
+    ]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
