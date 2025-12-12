@@ -268,6 +268,8 @@ class LoopPredictor : public SimObject
         return loopUseCounter;
     }
 
+    bool isSpeculationEnabled() const { return useSpeculation; }
+
     /**
      * Initialize the loop predictor
      */

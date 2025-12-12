@@ -20,6 +20,12 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(l1PrefetchCoverage, statistics::units::Ratio::get(), "L1 Prefetch Coverage"),
       ADD_STAT(uselessPrefetchRate, statistics::units::Ratio::get(), "Useless L1 Prefetch Rate"),
       ADD_STAT(numBranchesPerPrefetch, statistics::units::Count::get(), "Number of branches per prefetch"),
+      ADD_STAT(prefetchDistCount, statistics::units::Count::get(), "Number of prefetches per distance"),
+      ADD_STAT(prefetchDistUsed, statistics::units::Count::get(), "Number of useful prefetches per distance"),
+      ADD_STAT(prefetchUsefulness, statistics::units::Ratio::get(), "Usefulness ratio per distance"),
+      ADD_STAT(predMatches, statistics::units::Count::get(), "Number of prediction matches for prefetched entries"),
+      ADD_STAT(predChecks, statistics::units::Count::get(), "Number of prediction checks for prefetched entries"),
+      ADD_STAT(predMatchRatio, statistics::units::Ratio::get(), "Prediction match ratio for prefetched entries"),
       btb(btb)
 {
     using namespace statistics;
@@ -33,6 +39,14 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     l1MissL2Hits.flags(total);
     uselessPrefetches.flags(total);
     totalPrefetches.flags(total);
+    prefetchDistCount.init(16);
+    prefetchDistUsed.init(16);
+    prefetchUsefulness = prefetchDistUsed / prefetchDistCount;
+    prefetchUsefulness.precision(3);
+    predMatches.flags(total);
+    predChecks.flags(total);
+
+    predMatchRatio = predMatches / predChecks;
 
     l1PrefetchCoverage = l1PrefetchHits / (l1PrefetchHits + l1MissL2Hits);
     uselessPrefetchRate = uselessPrefetches / totalPrefetches;
@@ -126,9 +140,14 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     // lookup l1 btb firstly
     BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
     Cycles extraLatency = Cycles(0);
+    bool isPrefetchHit = false;
     if (l1_entry != nullptr) {
         if (l1_entry->isPrefetched()) {
+            isPrefetchHit = true;
             multilevelstats.l1PrefetchHits++;
+            if (l1_entry->getPrefetchDistance() < 16) {
+                multilevelstats.prefetchDistUsed[l1_entry->getPrefetchDistance()]++;
+            }
             l1_entry->setPrefetched(false);
             
             Cycles delta = curCycle() - l1_entry->getTimestamp();
@@ -155,6 +174,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                             l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                             l1_pf_victim->setPrefetched(true);
                             l1_pf_victim->setTimestamp(curCycle());
+                            if (numBranches < 16) {
+                                multilevelstats.prefetchDistCount[numBranches]++;
+                                l1_pf_victim->setPrefetchDistance(numBranches);
+                            }
                             multilevelstats.totalPrefetches++;
                             numBranches++;
                         }
@@ -166,7 +189,18 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
         }
         
         DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n", instPC, l1Latency + extraLatency);
-        return BTBLookupResult(l1_entry->target.get(), l1Latency + extraLatency, true, false);
+        
+        bool predMatch = false;
+        if (isPrefetchHit && cPred) {
+            // Check if the stored prediction matches the current prediction (taken)
+            multilevelstats.predChecks++;
+            if (l1_entry->getPredTaken() == taken) {
+                predMatch = true;
+                multilevelstats.predMatches++;
+            }
+        }
+
+        return BTBLookupResult(l1_entry->target.get(), l1Latency + extraLatency, true, false, isPrefetchHit, predMatch);
     }
 
     // L1miss, lookup l2 btb
@@ -219,6 +253,17 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                         l1_pf_victim->update(*l2_pf->target, l2_pf->inst);
                         l1_pf_victim->setPrefetched(true);
                         l1_pf_victim->setTimestamp(curCycle());
+                        if (numBranches < 16) {
+                                multilevelstats.prefetchDistCount[numBranches]++;
+                                l1_pf_victim->setPrefetchDistance(numBranches);
+                        }
+                        
+                        // Use predictNoUpdate if available
+                        if (cPred && l2_pf->inst && l2_pf->inst->isCondCtrl()) {
+                            bool pred = cPred->predictNoUpdate(tid, pfAddr, true);
+                            l1_pf_victim->setPredTaken(pred);
+                        }
+
                         multilevelstats.totalPrefetches++;
                         numBranches++;
                     }

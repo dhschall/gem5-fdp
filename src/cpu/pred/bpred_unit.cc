@@ -69,6 +69,9 @@ BPredUnit::BPredUnit(const Params &params)
       stats(this)
 {
     isMultiLevelBTB = (dynamic_cast<const MultiLevelBTB*>(btb) != nullptr);
+    if (isMultiLevelBTB) {
+        static_cast<MultiLevelBTB*>(btb)->setBranchPredictor(cPred);
+    }
 }
 
 
@@ -224,6 +227,10 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     const PCStateBase * btb_target = btb_res.target;
     // Capture the latency of the conditional predictor
     Cycles cbp_latency = totalLatency;
+    if (btb_res.prefetchHit && inst->isCondCtrl()) {
+        cbp_latency = Cycles(0);
+        totalLatency = Cycles(0);
+    }
     totalLatency = std::max(totalLatency, btb_res.latency);
     if (btb_target) {
         stats.BTBHits++;

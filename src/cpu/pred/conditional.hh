@@ -81,6 +81,8 @@ class ConditionalPredictor : public ClockedObject
      */
     virtual Prediction lookup(ThreadID tid, Addr pc, void * &bp_history) = 0;
 
+    virtual bool predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch) { panic("Not Implemented"); }
+
     /**
      * Ones done with the prediction this function updates the
      * path and global history. All branches call this function

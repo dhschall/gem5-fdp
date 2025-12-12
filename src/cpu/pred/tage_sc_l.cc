@@ -415,6 +415,7 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
         pred_taken = loopPredictor->loopPredict(tid, pc, cond_branch,
                                                 bi->lpBranchInfo, pred_taken,
                                                 instShiftAmt);
+    bool bim_pred = tage->getBimodePred(pc, bi->tageBranchInfo); // <-- Get bimodal predicton here
 
     if (bi->lpBranchInfo->loopPredUsed) {
         bi->tageBranchInfo->provider = LOOP;
@@ -455,12 +456,78 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
     bi->lpBranchInfo->predTaken = pred_taken;
 
     Cycles latency = staticLatency;
-    if (bi->tageBranchInfo->provider == TAGEBase::BIMODAL_ONLY ||
-        bi->tageBranchInfo->provider == TAGEBase::BIMODAL_ALT_MATCH) {
+    if (bim_pred == pred_taken) {
         latency = Cycles(0);
     }
 
     return Prediction{pred_taken, latency};
+}
+
+bool
+TAGE_SC_L::predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch)
+{
+    TageSCLBranchInfo *bi = new TageSCLBranchInfo(*tage,
+                                                  *statisticalCorrector,
+                                                  *loopPredictor,
+                                                  pc, cond_branch);
+
+    bool pred_taken = tage->tagePredict(tid, pc, cond_branch,
+                                        bi->tageBranchInfo);
+    
+    // Use getLoop directly instead of loopPredict to avoid side effects
+    // loopPredict calls specLoopUpdate which modifies state
+    bi->lpBranchInfo->loopPred = loopPredictor->getLoop(pc, bi->lpBranchInfo, 
+                                                        loopPredictor->isSpeculationEnabled(), 
+                                                        instShiftAmt);
+    
+    if ((loopPredictor->getLoopUseCounter() >= 0) && bi->lpBranchInfo->loopPredValid) {
+        pred_taken = bi->lpBranchInfo->loopPred;
+        bi->lpBranchInfo->loopPredUsed = true;
+    }
+
+    // We do NOT call specLoopUpdate here
+
+    bool bim_pred = tage->getBimodePred(pc, bi->tageBranchInfo);
+
+    if (bi->lpBranchInfo->loopPredUsed) {
+        bi->tageBranchInfo->provider = LOOP;
+    }
+
+    TAGE_SC_L_TAGE::BranchInfo* tage_scl_bi =
+        static_cast<TAGE_SC_L_TAGE::BranchInfo *>(bi->tageBranchInfo);
+
+    // Copy the confidences computed by TAGE
+    bi->scBranchInfo->lowConf = tage_scl_bi->lowConf;
+    bi->scBranchInfo->highConf = tage_scl_bi->highConf;
+    bi->scBranchInfo->altConf = tage_scl_bi->altConf;
+    bi->scBranchInfo->medConf = tage_scl_bi->medConf;
+
+    if (statisticalCorrector) {
+        bool use_tage_ctr = bi->tageBranchInfo->hitBank > 0;
+        int8_t tage_ctr = use_tage_ctr ?
+            tage->getCtr(tage_scl_bi->hitBank, tage_scl_bi->hitBankIndex) : 0;
+        bool bias = (bi->tageBranchInfo->longestMatchPred !=
+                     bi->tageBranchInfo->altTaken);
+
+        pred_taken = statisticalCorrector->scPredict(tid, pc, cond_branch,
+                                                     bi->scBranchInfo,
+                                                     pred_taken, bias,
+                                                     use_tage_ctr, tage_ctr,
+                                                     tage->getTageCtrBits(),
+                                                     bi->tageBranchInfo->
+                                                                    hitBank,
+                                                     bi->tageBranchInfo->
+                                                                    altBank);
+
+        if (bi->scBranchInfo->usedScPred) {
+            bi->tageBranchInfo->provider = SC;
+        }
+    }
+
+    // Cleanup to avoid memory leaks since this is a side-effect free call
+    delete bi;
+
+    return pred_taken;
 }
 
 void

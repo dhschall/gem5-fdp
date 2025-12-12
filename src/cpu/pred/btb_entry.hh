@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -196,6 +196,8 @@ class BTBEntry : public ReplaceableEntry
         set(target, other.target);
         prefetched = other.prefetched;
         timestamp = other.timestamp;
+        prefetchDistance = other.prefetchDistance;
+        predTaken = other.predTaken;
     }
 
     /** Assignment operator */
@@ -208,6 +210,8 @@ class BTBEntry : public ReplaceableEntry
         set(target, other.target);
         prefetched = other.prefetched;
         timestamp = other.timestamp;
+        prefetchDistance = other.prefetchDistance;
+        predTaken = other.predTaken;
 
         return *this;
     }
@@ -281,9 +285,22 @@ class BTBEntry : public ReplaceableEntry
     Cycles getTimestamp() const { return timestamp; }
     void setTimestamp(Cycles t) { timestamp = t; }
 
+    uint8_t getPrefetchDistance() const { return prefetchDistance; }
+    void setPrefetchDistance(uint8_t d) { prefetchDistance = d; }
+
   private:
     /** Timestamp when the entry was prefetched. */
     Cycles timestamp;
+
+    /** The distance (index) of this branch within the prefetched block. */
+    uint8_t prefetchDistance;
+
+    /** Prediction result stored during prefetch. */
+    bool predTaken;
+
+  public:
+    bool getPredTaken() const { return predTaken; }
+    void setPredTaken(bool p) { predTaken = p; }
 };
 } // namespace gem5::branch_prediction
 /**

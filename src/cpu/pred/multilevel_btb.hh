@@ -32,9 +32,12 @@ class MultiLevelBTB : public BranchTargetBuffer
                 StaticInstPtr inst = nullptr) override;
     
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
-   
 
+    void setBranchPredictor(ConditionalPredictor *cp) { cPred = cp; }
+   
   private:
+    ConditionalPredictor *cPred = nullptr;
+
     BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
     
     BTBEntry *findL2Entry(Addr instPC, ThreadID tid);
@@ -74,6 +77,14 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Formula uselessPrefetchRate;
 
         statistics::Distribution numBranchesPerPrefetch;
+        // For TAGE prediction
+        statistics::Scalar predMatches;
+        statistics::Scalar predChecks;
+        statistics::Formula predMatchRatio;
+
+        statistics::Vector prefetchDistCount;
+        statistics::Vector prefetchDistUsed;
+        statistics::Formula prefetchUsefulness;
 
         MultiLevelBTB *btb;
         
