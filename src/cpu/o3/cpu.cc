@@ -343,6 +343,7 @@ CPU::regProbePoints()
     rename.regProbePoints();
     iew.regProbePoints();
     commit.regProbePoints();
+    rob.regProbePoints();
 }
 
 CPU::CPUStats::CPUStats(CPU *cpu)

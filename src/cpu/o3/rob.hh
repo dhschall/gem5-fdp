@@ -52,6 +52,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/reg_class.hh"
 #include "enums/SMTQueuePolicy.hh"
+#include "sim/probe/probe.hh"
 
 namespace gem5
 {
@@ -95,6 +96,11 @@ class ROB
      *  @param params The cpu params including several ROB-specific parameters.
      */
     ROB(CPU *_cpu, const BaseO3CPUParams &params);
+
+    /** Registers probes. */
+    void regProbePoints();
+
+    ProbePointArg<std::pair<DynInstPtr,DynInstPtr>> *ppBranchDep;
 
     std::string name() const;
 
@@ -328,6 +334,9 @@ class ROB
 
     /** Number of active threads. */
     ThreadID numThreads;
+
+    std::unordered_map<RegIndex, DynInstPtr> regDep;
+    void analyzeDependency(DynInstPtr inst);
 
 
     struct ROBStats : public statistics::Group

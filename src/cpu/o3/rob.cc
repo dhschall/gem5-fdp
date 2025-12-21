@@ -101,6 +101,13 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
 }
 
 void
+ROB::regProbePoints()
+{
+    ppBranchDep = new ProbePointArg<std::pair<DynInstPtr, DynInstPtr>>(
+            cpu->getProbeManager(), "BranchDependency");
+}
+
+void
 ROB::resetState()
 {
     for (ThreadID tid = 0; tid  < MaxThreads; tid++) {
@@ -250,6 +257,8 @@ ROB::retireHead(ThreadID tid)
     head_inst->clearInROB();
     head_inst->setCommitted();
 
+    analyzeDependency(head_inst);
+
     //Update "Global" Head of ROB
     updateHead();
 
@@ -257,6 +266,64 @@ ROB::retireHead(ThreadID tid)
     // retired is the only instruction in the ROB; otherwise the tail
     // iterator will become invalidated.
     cpu->removeFrontInst(head_inst);
+}
+
+void
+ROB::analyzeDependency(DynInstPtr inst)
+{
+    if (inst->isSquashed())
+        return;
+
+    // if (inst->numDestRegs() != 1)
+    //     return;
+
+    if (inst->isLoad()) {
+        // Start tracking the dependencies from a load to a
+        // conditional branch.
+        PhysRegIdPtr dest_reg = inst->renamedDestIdx(0);
+        regDep[dest_reg->flatIndex()] = inst;
+        DPRINTF(ROB, "Start dep chain [PC=%llx, sn=%llu]\n",
+                inst->pcState().instAddr(), inst->seqNum);
+        return;
+    }
+
+    // Check for conditional branches if it depends on a load
+    if (inst->isCondCtrl()) {
+        for (int idx = 0; idx < inst->numSrcRegs(); idx++) {
+            PhysRegIdPtr src_reg = inst->renamedSrcIdx(idx);
+
+            auto it = regDep.find(src_reg->flatIndex());
+            if (it != regDep.end()) {
+                DPRINTF(ROB, "Branch with dep chain [PC=%llx, sn=%llu]\n",
+                        inst->pcState().instAddr(), inst->seqNum);
+                ppBranchDep->notify(std::make_pair(inst, it->second));
+                regDep.erase(it);
+            }
+        }
+    }
+
+
+    std::list<DynInstPtr> dependencies;
+    for (int idx = 0; idx < inst->numSrcRegs(); idx++) {
+        PhysRegIdPtr src_reg = inst->renamedSrcIdx(idx);
+
+        auto it = regDep.find(src_reg->flatIndex());
+        if (it != regDep.end()) {
+            dependencies.push_back(it->second);
+            DPRINTF(ROB, "Dep src chain RegIdx=%i [PC=%llx, sn=%llu]\n",
+                src_reg->flatIndex(), inst->pcState().instAddr(), inst->seqNum);
+        }
+    }
+
+    if (dependencies.size() == 1) {
+        // For all other instructions its the destination register
+        for (int idx = 0; idx < inst->numDestRegs(); idx++) {
+            PhysRegIdPtr dest_reg = inst->renamedDestIdx(idx);
+            regDep[dest_reg->flatIndex()] = dependencies.front();
+            DPRINTF(ROB, "Dep dest chain RegIdx=%i [PC=%llx, sn=%llu]\n",
+                dest_reg->flatIndex(), inst->pcState().instAddr(), inst->seqNum);
+        }
+    }
 }
 
 bool

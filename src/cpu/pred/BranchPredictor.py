@@ -1238,7 +1238,7 @@ class BranchRecyclingCache(ConditionalPredictor):
     )
     enable_recycling = Param.Bool(True, "Enabling the recycling")
 
-    
+
 class BranchRecyclingCacheDynInst(ConditionalPredictor):
     type = "BranchRecyclingCacheDynInst"
     cxx_class = "gem5::branch_prediction::BranchRecyclingCacheDynInst"
@@ -1270,6 +1270,9 @@ class BranchRecyclingCacheDynInst(ConditionalPredictor):
     enable_training = Param.Bool(
         True, "Enabling the training of recycled entries"
     )
-    enable_strite = Param.Bool(
-        True, "Enabling the strite mechanism for recycled entries"
+    enable_strite_value = Param.Bool(
+        True, "Enabling the strite mechanism for recycled entries based on value"
+    )
+    enable_strite_pc = Param.Bool(
+        True, "Enabling the strite mechanism for recycled entries based on PC"
     )

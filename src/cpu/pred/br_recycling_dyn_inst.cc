@@ -5,8 +5,8 @@
 #include <memory>
 #include <tuple>
 
-#include "base/trace.hh"
 #include "base/output.hh"
+#include "base/trace.hh"
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/pred/branch_type.hh"
 #include "debug/RecycledEntry.hh"
@@ -20,7 +20,8 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
       base(p.base),
       enableRecycling(p.enable_recycling),
       enableTraining(p.enable_training),
-      enableStrite(p.enable_strite),
+      enableStriteValue(p.enable_strite_value),
+      enableStritePC(p.enable_strite_pc),
       dynInstStacks(),
       seqToPc(),
       cpu(nullptr),
@@ -51,16 +52,33 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
         auto it = dynInstStacks.find(pc);
         if (it != dynInstStacks.end()) {
             auto &bucket = it->second.entries;
-            // auto &stack = std::get<1>(bucket);
 
-            // Only use recycling if has been trained to do so
-            if (enableTraining && it->second.trainCounter < 0) {
-                return h->base_pred;
+            // // Only use recycling if has been trained to do so
+            // if (enableTraining && it->second.trainCounter < 0) {
+            //     return h->base_pred;
+            // }
+
+            // // If striteValue is enabled, only uses values with a strite
+            // bigger
+            // // than
+            // // 3
+            // if (enableStriteValue && it->second.striteCounterValue < 3) {
+            //     return h->base_pred;
+            // }
+            // // If stritePC is enabled, only uses values with a strite bigger
+            // // than 3
+            // if (enableStritePC && it->second.striteCounterPC < 3) {
+            //     return h->base_pred;
+            // }
+            if (pc == 4283004) {
+                DPRINTF(RecycledEntry,
+                        "BRC.lookup pc=%#llx - skipping recycle due to "
+                        "DynAddrStriteCounter=%i\n",
+                        (unsigned long long)pc,
+                        it->second.striteCounterDynAddr);
             }
+            if (it->second.striteCounterDynAddr < 3) {
 
-            // If strite is enabled, only uses values with a strite bigger than
-            // 3
-            if (enableStrite && it->second.strideCounter < 3) {
                 return h->base_pred;
             }
 
@@ -69,6 +87,12 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
                 h->usedRecycle = true;
                 h->recycledTaken = re.taken;
                 h->brType = re.brType;
+
+                // DPRINTF(RecycledEntry,
+                //         "BRC.lookup pc=%#llx base_pred=%d recycled_pred=%d "
+                //         "use from: sn:%llu\n",
+                //         (unsigned long long)pc, h->base_pred,
+                //         h->recycledTaken, re.seqNum);
 
                 // Pop LIFO
                 bucket.pop_back();
@@ -152,13 +176,17 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
     base->update(tid, pc, taken, bi, squashed, inst, target);
 
     // STATS HANDLING: compute predictions and report on squashes
-    const char *src = (h && h->usedRecycle) ? "recycled" : "base";
+    // const char *src = (h && h->usedRecycle) ? "recycled" : "base";
     const int recycled_pred =
         (h && h->usedRecycle) ? (int)h->recycledTaken : -1;
-    const int base_pred_dbg = h ? (int)h->base_pred : -1;
+    //    const int base_pred_dbg = h ? (int)h->base_pred : -1;
 
     if (squashed) {
         stats.missPredicts++;
+
+        auto &bs = branchStats[pc];
+        bs.mispred++;
+
         if (h) {
             if (h->base_pred == recycled_pred) {
                 stats.missPredictedBothPredictorsWrong++;
@@ -170,15 +198,10 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
             }
         }
 
-        // PC, SRC, BASE_PRED, RECYCLED_PRED, ACTUAL, SQUASHED
-        DPRINTF(RecycledEntry, "%#llx;%s;%d;%d;%d;%d\n",
-                (unsigned long long)pc, src, base_pred_dbg, recycled_pred,
-                (int)taken, (int)squashed);
-
         return;
     }
 
-    auto& bs = branchStats[pc];
+    auto &bs = branchStats[pc];
     bs.exec++;
     bs.taken += taken ? 1 : 0;
 
@@ -288,12 +311,18 @@ BranchRecyclingCacheDynInst::regProbeListeners()
         [this](const o3::DynInstPtr &inst) { notifyExecutedInst(inst); });
 
     // Listener for squash notifications (mispred anchor + squashed inst)
-    using SquashListener =
+    using PairListener =
         ProbeListenerArgFunc<std::pair<o3::DynInstPtr, o3::DynInstPtr>>;
-    slistener = cpu->getProbeManager()->connect<SquashListener>(
+    slistener = cpu->getProbeManager()->connect<PairListener>(
         "SquashInst",
         [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
             notifySquashedInst(p.first, p.second);
+        });
+    // Listener for dependency notifications
+    blistener = cpu->getProbeManager()->connect<PairListener>(
+        "BranchDependency",
+        [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
+            notifyDependentInst(p.first, p.second);
         });
 }
 
@@ -324,18 +353,30 @@ BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
         e.brType = BranchType::DirectCond;
     }
 
+    // DPRINTF(RecycledEntry, "BRC.record pc=%#llx sn:%llu, taken=%i\n",
+    //         (unsigned long long)e.pc, e.seqNum, e.taken);
+
     e.hasOutcome = true;
     auto &bucket = dynInstStacks[pc];
 
-    // Stride counter update
+    // Stride value counter update
     if (bucket.entries.size() > 0 && bucket.entries.back().taken == e.taken) {
-        bucket.strideCounter++;
+        bucket.striteCounterValue++;
     } else if (bucket.entries.size() > 0) {
-        bucket.strideCounter--;
+        bucket.striteCounterValue--;
+    }
+
+    // Stride PC counter update
+    if (bucket.entries.size() > 0 &&
+        ((bucket.entries.back().pc == e.pc) ||
+         (bucket.entries.back().pc == e.pc + 4))) {
+        bucket.striteCounterPC++;
+    } else if (bucket.entries.size() > 0) {
+        bucket.striteCounterPC--;
     }
 
     bucket.entries.push_back(e);
-
+    lastPC = e.pc;
     stats.committedCount++;
 }
 
@@ -345,7 +386,82 @@ BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
     if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
-    pushExecutedOutcome(inst);
+    // pushExecutedOutcome(inst);
+}
+
+void
+BranchRecyclingCacheDynInst::notifyDependentInst(
+    const o3::DynInstPtr &branch_inst, const o3::DynInstPtr &load_inst)
+{
+
+    if (!branch_inst || branch_inst->isSquashed() ||
+        !branch_inst->isCondCtrl()) {
+        return;
+    }
+
+    // Check if notification is duplicate
+    if (branch_inst->seqNum == lastSeqNum) {
+        return;
+    } else {
+        lastSeqNum = branch_inst->seqNum;
+    }
+
+    const Addr pc = branch_inst->pcState().instAddr();
+
+    Entry e;
+    e.pc = pc;
+    e.seqNum = branch_inst->seqNum;
+
+    const auto &pcs = branch_inst->pcState();
+    e.taken = pcs.branching();
+
+    if (branch_inst->isIndirectCtrl()) {
+        e.brType = branch_inst->isUncondCtrl() ? BranchType::IndirectUncond
+                                               : BranchType::IndirectCond;
+    } else if (branch_inst->isUncondCtrl()) {
+        e.brType = BranchType::DirectUncond;
+    } else {
+        e.brType = BranchType::DirectCond;
+    }
+
+    e.hasOutcome = true;
+    auto &bucket = dynInstStacks[pc];
+
+    // Stride DynAddr counter update
+    int currentDynAddrOffset = load_inst->effAddr - bucket.lastDynAddr;
+
+    if (bucket.lastDynAddrOffset == currentDynAddrOffset) {
+        bucket.striteCounterDynAddr++;
+
+        // DPRINTF(RecycledEntry,
+        //     " BRC.notifyDependentInst pc=%#llx, "
+        //     " DynAddrStride=%i, StrideCounterDynAddr=%i\n",
+        //     (unsigned long long)e.pc,
+        //     currentDynAddrOffset, bucket.striteCounterDynAddr);
+    } else if (bucket.striteCounterDynAddr > 0) {
+        bucket.striteCounterDynAddr--;
+        return;
+    }
+
+    if (branch_inst->pcState().instAddr() == 4283004) {
+        DPRINTF(
+            RecycledEntry,
+            "Notify dependent load inst: Branch [PC=%llx, sn=%llu, Taken = "
+            "%i, CurrentStrite = %i] -> load "
+            "[PC=%llx, sn=%i, Addr=%llu, Taken=%i] \n",
+            branch_inst->pcState().instAddr(), branch_inst->seqNum,
+            branch_inst->pcState().branching(), bucket.striteCounterDynAddr,
+            load_inst->pcState().instAddr(), load_inst->seqNum,
+            load_inst->effAddr, load_inst->pcState().branching());
+    }
+
+    bucket.lastDynAddr = load_inst->effAddr;
+    bucket.lastDynAddrOffset = currentDynAddrOffset;
+
+    bucket.entries.push_back(e);
+    lastPC = e.pc;
+
+    //   pushCommittedOutcome(inst);
 }
 
 void
@@ -374,26 +490,22 @@ BranchRecyclingCacheDynInst::notifySquashedInst(
     }
 }
 
-
 void
-BranchRecyclingCacheDynInst::dump(const std::string& filename)
+BranchRecyclingCacheDynInst::dump(const std::string &filename)
 {
-    DPRINTF(RecycledEntry, "Dump branch statistics to %s\n", filename);
+    // DPRINTF(RecycledEntry, "Dump branch statistics to %s\n", filename);
 
     std::ofstream fileStream(simout.resolve(filename), std::ios::out);
-    if (!fileStream.good())
+    if (!fileStream.good()) {
         panic("Could not open %s for writing\n", filename);
+    }
 
-    ccprintf(fileStream,"pc,exec,taken,mispred\n");
+    ccprintf(fileStream, "pc;exec;taken;mispred\n");
 
     // TAGE tables
-    for (auto& bi : branchStats) {
-        ccprintf(fileStream,"%llu,%i,%i,%i\n",
-                 bi.first,
-                 bi.second.exec,
-                 bi.second.taken,
-                 bi.second.mispred
-        );
+    for (auto &bi : branchStats) {
+        ccprintf(fileStream, "%llu;%i;%i;%i\n", bi.first, bi.second.exec,
+                 bi.second.taken, bi.second.mispred);
     }
     fileStream.close();
 }

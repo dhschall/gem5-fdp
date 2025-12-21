@@ -65,7 +65,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         InstSeqNum seqNum = 0;
         bool valid = true;
 
-   
+
     };
 
     struct recyclingEntry
@@ -73,7 +73,13 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         //Attribtes for training
         int trainCounter = 0;
 
-        int strideCounter = 0;
+        int striteCounterValue = 0;
+        int striteCounterPC = 0;
+
+        //Attributes for StriteDynInst
+        Addr lastDynAddr = 0;
+        int lastDynAddrOffset = 0;
+        int striteCounterDynAddr = 0;
 
         //Attributes for Statistics
         int correctPredictionRecycling = 0;
@@ -109,11 +115,20 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         void *tage_bi = nullptr;
     };
 
+    //Attributes for StritePC
+    Addr lastPC = 0;
+    int stritePCCounter = 0;
+
+    //Attributes for StriteDynAddr
+
+    InstSeqNum lastSeqNum = 0;
+
     // Base predictor
     TAGE_SC_L *base;
     const bool enableRecycling;
     const bool enableTraining;
-    const bool enableStrite;
+    const bool enableStriteValue;
+    const bool enableStritePC;
 
     // Stack with the Addr and a tuple for training aswell as entries
     //Track statistics here
@@ -125,12 +140,15 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     // Probes
     ProbeListenerPtr<> listener;  // ToCommit
     ProbeListenerPtr<> slistener; // SquashInst
+    ProbeListenerPtr<> blistener; // SquashInst
     BaseCPU *cpu;
 
     // Probe handlers
     void notifyExecutedInst(const o3::DynInstPtr &inst);
     void notifySquashedInst(const o3::DynInstPtr &mispred_inst,
                             const o3::DynInstPtr &sq_inst);
+    void notifyDependentInst(const o3::DynInstPtr &branch_i,
+                            const o3::DynInstPtr &load_i);
 
     // Helpers
     void pushExecutedOutcome(const o3::DynInstPtr &inst);
