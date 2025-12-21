@@ -1,0 +1,289 @@
+diff --git a/src/cpu/o3/cpu.cc b/src/cpu/o3/cpu.cc
+index c22cc5e39f..250b1cfd18 100644
+--- a/src/cpu/o3/cpu.cc
++++ b/src/cpu/o3/cpu.cc
+@@ -343,6 +343,7 @@ CPU::regProbePoints()
+     rename.regProbePoints();
+     iew.regProbePoints();
+     commit.regProbePoints();
++    rob.regProbePoints();
+ }
+ 
+ CPU::CPUStats::CPUStats(CPU *cpu)
+diff --git a/src/cpu/o3/rob.cc b/src/cpu/o3/rob.cc
+index 3719ce0f65..60a1414805 100644
+--- a/src/cpu/o3/rob.cc
++++ b/src/cpu/o3/rob.cc
+@@ -100,6 +100,13 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
+     resetState();
+ }
+ 
++void
++ROB::regProbePoints()
++{
++    ppBranchDep = new ProbePointArg<std::pair<DynInstPtr, DynInstPtr>>(
++            cpu->getProbeManager(), "BranchDependency");
++}
++
+ void
+ ROB::resetState()
+ {
+@@ -250,6 +257,8 @@ ROB::retireHead(ThreadID tid)
+     head_inst->clearInROB();
+     head_inst->setCommitted();
+ 
++    analyzeDependency(head_inst);
++
+     //Update "Global" Head of ROB
+     updateHead();
+ 
+@@ -259,6 +268,64 @@ ROB::retireHead(ThreadID tid)
+     cpu->removeFrontInst(head_inst);
+ }
+ 
++void
++ROB::analyzeDependency(DynInstPtr inst)
++{
++    if (inst->isSquashed())
++        return;
++
++    // if (inst->numDestRegs() != 1)
++    //     return;
++
++    if (inst->isLoad()) {
++        // Start tracking the dependencies from a load to a
++        // conditional branch.
++        PhysRegIdPtr dest_reg = inst->renamedDestIdx(0);
++        regDep[dest_reg->flatIndex()] = inst;
++        DPRINTF(ROB, "Start dep chain [PC=%llx, sn=%llu]\n",
++                inst->pcState().instAddr(), inst->seqNum);
++        return;
++    }
++
++    // Check for conditional branches if it depends on a load
++    if (inst->isCondCtrl()) {
++        for (int idx = 0; idx < inst->numSrcRegs(); idx++) {
++            PhysRegIdPtr src_reg = inst->renamedSrcIdx(idx);
++
++            auto it = regDep.find(src_reg->flatIndex());
++            if (it != regDep.end()) {
++                DPRINTF(ROB, "Branch with dep chain [PC=%llx, sn=%llu]\n",
++                        inst->pcState().instAddr(), inst->seqNum);
++                ppBranchDep->notify(std::make_pair(inst, it->second));
++                regDep.erase(it);
++            }
++        }
++    }
++
++
++    std::list<DynInstPtr> dependencies;
++    for (int idx = 0; idx < inst->numSrcRegs(); idx++) {
++        PhysRegIdPtr src_reg = inst->renamedSrcIdx(idx);
++
++        auto it = regDep.find(src_reg->flatIndex());
++        if (it != regDep.end()) {
++            dependencies.push_back(it->second);
++            DPRINTF(ROB, "Dep src chain RegIdx=%i [PC=%llx, sn=%llu]\n",
++                src_reg->flatIndex(), inst->pcState().instAddr(), inst->seqNum);
++        }
++    }
++
++    if (dependencies.size() == 1) {
++        // For all other instructions its the destination register
++        for (int idx = 0; idx < inst->numDestRegs(); idx++) {
++            PhysRegIdPtr dest_reg = inst->renamedDestIdx(idx);
++            regDep[dest_reg->flatIndex()] = dependencies.front();
++            DPRINTF(ROB, "Dep dest chain RegIdx=%i [PC=%llx, sn=%llu]\n",
++                dest_reg->flatIndex(), inst->pcState().instAddr(), inst->seqNum);
++        }
++    }
++}
++
+ bool
+ ROB::isHeadReady(ThreadID tid)
+ {
+diff --git a/src/cpu/o3/rob.hh b/src/cpu/o3/rob.hh
+index b3aa5b3ebb..26ef63a854 100644
+--- a/src/cpu/o3/rob.hh
++++ b/src/cpu/o3/rob.hh
+@@ -52,6 +52,7 @@
+ #include "cpu/o3/limits.hh"
+ #include "cpu/reg_class.hh"
+ #include "enums/SMTQueuePolicy.hh"
++#include "sim/probe/probe.hh"
+ 
+ namespace gem5
+ {
+@@ -96,6 +97,11 @@ class ROB
+      */
+     ROB(CPU *_cpu, const BaseO3CPUParams &params);
+ 
++    /** Registers probes. */
++    void regProbePoints();
++
++    ProbePointArg<std::pair<DynInstPtr,DynInstPtr>> *ppBranchDep;
++
+     std::string name() const;
+ 
+     /** Sets pointer to the list of active threads.
+@@ -329,6 +335,9 @@ class ROB
+     /** Number of active threads. */
+     ThreadID numThreads;
+ 
++    std::unordered_map<RegIndex, DynInstPtr> regDep;
++    void analyzeDependency(DynInstPtr inst);
++
+ 
+     struct ROBStats : public statistics::Group
+     {
+diff --git a/src/cpu/pred/BranchPredictor.py b/src/cpu/pred/BranchPredictor.py
+index 30e43d5c23..1e67526778 100644
+--- a/src/cpu/pred/BranchPredictor.py
++++ b/src/cpu/pred/BranchPredictor.py
+@@ -1238,7 +1238,7 @@ class BranchRecyclingCache(ConditionalPredictor):
+     )
+     enable_recycling = Param.Bool(True, "Enabling the recycling")
+ 
+-    
++
+ class BranchRecyclingCacheDynInst(ConditionalPredictor):
+     type = "BranchRecyclingCacheDynInst"
+     cxx_class = "gem5::branch_prediction::BranchRecyclingCacheDynInst"
+diff --git a/src/cpu/pred/br_recycling_dyn_inst.cc b/src/cpu/pred/br_recycling_dyn_inst.cc
+index 97c1da76b5..bb1f4482f0 100644
+--- a/src/cpu/pred/br_recycling_dyn_inst.cc
++++ b/src/cpu/pred/br_recycling_dyn_inst.cc
+@@ -53,11 +53,18 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
+             auto &bucket = it->second.entries;
+             // auto &stack = std::get<1>(bucket);
+ 
++            // // Only use recycling if has been trained to do so
++            // if (std::get<0>(bucket) < 0) {
++            //     return h->base_pred;
++            // }
++
++
+             // Only use recycling if has been trained to do so
+             if (enableTraining && it->second.trainCounter < 0) {
+                 return h->base_pred;
+             }
+ 
++
+             // If strite is enabled, only uses values with a strite bigger than
+             // 3
+             if (enableStrite && it->second.strideCounter < 3) {
+@@ -70,6 +77,10 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
+                 h->recycledTaken = re.taken;
+                 h->brType = re.brType;
+ 
++                DPRINTF(RecycledEntry,
++                        "BRC.lookup pc=%#llx base_pred=%d recycled_pred=%d use from: sn:%llu\n",
++                        (unsigned long long)pc, h->base_pred, h->recycledTaken, re.seqNum);
++
+                 // Pop LIFO
+                 bucket.pop_back();
+ 
+@@ -288,15 +299,23 @@ BranchRecyclingCacheDynInst::regProbeListeners()
+         [this](const o3::DynInstPtr &inst) { notifyExecutedInst(inst); });
+ 
+     // Listener for squash notifications (mispred anchor + squashed inst)
+-    using SquashListener =
++    using PairListener =
+         ProbeListenerArgFunc<std::pair<o3::DynInstPtr, o3::DynInstPtr>>;
+-    slistener = cpu->getProbeManager()->connect<SquashListener>(
++    slistener = cpu->getProbeManager()->connect<PairListener>(
+         "SquashInst",
+         [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
+             notifySquashedInst(p.first, p.second);
+         });
++    // Listener for dependency notifications
++    blistener = cpu->getProbeManager()->connect<PairListener>(
++        "BranchDependency",
++        [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
++            notifyDependentInst(p.first, p.second);
++        });
+ }
+ 
++
++
+ // === Internal helpers ===================================================
+ 
+ void
+@@ -324,6 +343,10 @@ BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
+         e.brType = BranchType::DirectCond;
+     }
+ 
++    DPRINTF(RecycledEntry,
++            "BRC.record pc=%#llx sn:%llu, taken=%i\n",
++            (unsigned long long)e.pc, e.seqNum, e.taken);
++
+     e.hasOutcome = true;
+     auto &bucket = dynInstStacks[pc];
+ 
+@@ -348,6 +371,28 @@ BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
+     pushExecutedOutcome(inst);
+ }
+ 
++void
++BranchRecyclingCacheDynInst::notifyDependentInst(
++    const o3::DynInstPtr &branch_inst, const o3::DynInstPtr &load_inst)
++{
++    DPRINTF(RecycledEntry,
++            "Notify dependent load inst: Branch [PC=%llx, sn=%llu] -> load [PC=%llx, sn=%i, Addr=%llu] \n",
++            branch_inst->pcState().instAddr(), branch_inst->seqNum,
++            load_inst->pcState().instAddr(), load_inst->seqNum, load_inst->effAddr);
++
++    if (!branch_inst || branch_inst->isSquashed() || !branch_inst->isCondCtrl()) {
++        return;
++    }
++
++    // //   pushCommittedOutcome(inst);
++    // if (mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
++    //     // DPRINTF(RecycledEntry,
++    //     //         "Squashed instance for mispredicted branch: sn=%llu, "
++    //     //         "isExecuted=%i \n",
++    //     //         inst->seqNum, inst->isExecuted());
++    // }
++}
++
+ void
+ BranchRecyclingCacheDynInst::notifySquashedInst(
+     const o3::DynInstPtr &mispred_inst, const o3::DynInstPtr &inst)
+@@ -422,5 +467,8 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInstStats::
+                "Number of committed branches to dynInstStack")
+ {}
+ 
++
++
++
+ } // namespace branch_prediction
+ } // namespace gem5
+diff --git a/src/cpu/pred/br_recycling_dyn_inst.hh b/src/cpu/pred/br_recycling_dyn_inst.hh
+index b502b86308..affe7f2d14 100644
+--- a/src/cpu/pred/br_recycling_dyn_inst.hh
++++ b/src/cpu/pred/br_recycling_dyn_inst.hh
+@@ -65,7 +65,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
+         InstSeqNum seqNum = 0;
+         bool valid = true;
+ 
+-   
++
+     };
+ 
+     struct recyclingEntry
+@@ -125,12 +125,15 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
+     // Probes
+     ProbeListenerPtr<> listener;  // ToCommit
+     ProbeListenerPtr<> slistener; // SquashInst
++    ProbeListenerPtr<> blistener; // SquashInst
+     BaseCPU *cpu;
+ 
+     // Probe handlers
+     void notifyExecutedInst(const o3::DynInstPtr &inst);
+     void notifySquashedInst(const o3::DynInstPtr &mispred_inst,
+                             const o3::DynInstPtr &sq_inst);
++    void notifyDependentInst(const o3::DynInstPtr &branch_i,
++                            const o3::DynInstPtr &load_i);
+ 
+     // Helpers
+     void pushExecutedOutcome(const o3::DynInstPtr &inst);
