@@ -20,8 +20,7 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
       base(p.base),
       enableRecycling(p.enable_recycling),
       enableTraining(p.enable_training),
-      enableStriteValue(p.enable_strite_value),
-      enableStritePC(p.enable_strite_pc),
+      enableStrite(p.enable_strite),
       dynInstStacks(),
       seqToPc(),
       cpu(nullptr),
@@ -47,64 +46,60 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
     h->actualKnown = false;
     h->brType = BranchType::DirectCond;
 
+    if (!enableRecycling && !enableStrite) {
+        stats.basePred++;
+        return h->base_pred;
+    }
+
     // Try LIFO recycled outcome
-    if (enableRecycling) {
-        auto it = dynInstStacks.find(pc);
-        if (it != dynInstStacks.end()) {
-            auto &bucket = it->second.entries;
 
-            // // Only use recycling if has been trained to do so
-            // if (enableTraining && it->second.trainCounter < 0) {
-            //     return h->base_pred;
-            // }
+    auto it = dynInstStacks.find(pc);
+    if (it != dynInstStacks.end()) {
+        auto &bucket = it->second.entries;
 
-            // // If striteValue is enabled, only uses values with a strite
-            // bigger
-            // // than
-            // // 3
-            // if (enableStriteValue && it->second.striteCounterValue < 3) {
-            //     return h->base_pred;
-            // }
-            // // If stritePC is enabled, only uses values with a strite bigger
-            // // than 3
-            // if (enableStritePC && it->second.striteCounterPC < 3) {
-            //     return h->base_pred;
-            // }
+        // Only use recycling if has been trained to do so
+        if (enableTraining && it->second.trainCounter < 0) {
+            return h->base_pred;
+        }
+
+        // Stride-based filtering
+        if (enableStrite && it->second.striteCounterDynAddr < 3) {
+
+            return h->base_pred;
+        }
+
+        if (!bucket.empty()) {
+            const Entry &re = bucket.back();
+            h->usedRecycle = true;
+            h->recycledTaken = re.taken;
+            h->brType = re.brType;
+
+            // DEBUGGING
             if (pc == 4283004) {
                 DPRINTF(RecycledEntry,
-                        "BRC.lookup pc=%#llx - skipping recycle due to "
-                        "DynAddrStriteCounter=%i\n",
+                        "BRC.lookup pc=%#llx, DynAddrStriteCounter=%i, "
+                        "BucketSize=%i, recycledValue=%d, TageValue=%d\n",
                         (unsigned long long)pc,
-                        it->second.striteCounterDynAddr);
-            }
-            if (it->second.striteCounterDynAddr < 3) {
-
-                return h->base_pred;
+                        it->second.striteCounterDynAddr, bucket.size(),
+                        h->recycledTaken, h->base_pred);
             }
 
-            if (!bucket.empty()) {
-                const Entry &re = bucket.back();
-                h->usedRecycle = true;
-                h->recycledTaken = re.taken;
-                h->brType = re.brType;
+            // DPRINTF(RecycledEntry,
+            //         "BRC.lookup pc=%#llx base_pred=%d recycled_pred=%d "
+            //         "use from: sn:%llu\n",
+            //         (unsigned long long)pc, h->base_pred,
+            //         h->recycledTaken, re.seqNum);
 
-                // DPRINTF(RecycledEntry,
-                //         "BRC.lookup pc=%#llx base_pred=%d recycled_pred=%d "
-                //         "use from: sn:%llu\n",
-                //         (unsigned long long)pc, h->base_pred,
-                //         h->recycledTaken, re.seqNum);
+            // Pop LIFO
+            bucket.pop_back();
 
-                // Pop LIFO
-                bucket.pop_back();
+            stats.recycledPred++;
 
-                stats.recycledPred++;
-
-                if (h->recycledTaken != h->base_pred) {
-                    stats.RecycleBaseDiffer++;
-                }
-
-                return h->recycledTaken;
+            if (h->recycledTaken != h->base_pred) {
+                stats.RecycleBaseDiffer++;
             }
+
+            return h->recycledTaken;
         }
     }
 
@@ -359,24 +354,7 @@ BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
     e.hasOutcome = true;
     auto &bucket = dynInstStacks[pc];
 
-    // Stride value counter update
-    if (bucket.entries.size() > 0 && bucket.entries.back().taken == e.taken) {
-        bucket.striteCounterValue++;
-    } else if (bucket.entries.size() > 0) {
-        bucket.striteCounterValue--;
-    }
-
-    // Stride PC counter update
-    if (bucket.entries.size() > 0 &&
-        ((bucket.entries.back().pc == e.pc) ||
-         (bucket.entries.back().pc == e.pc + 4))) {
-        bucket.striteCounterPC++;
-    } else if (bucket.entries.size() > 0) {
-        bucket.striteCounterPC--;
-    }
-
     bucket.entries.push_back(e);
-    lastPC = e.pc;
     stats.committedCount++;
 }
 
@@ -386,13 +364,19 @@ BranchRecyclingCacheDynInst::notifyExecutedInst(const o3::DynInstPtr &inst)
     if (!inst || inst->isSquashed() || !inst->isCondCtrl()) {
         return;
     }
-    // pushExecutedOutcome(inst);
+    if (enableRecycling) {
+        pushExecutedOutcome(inst);
+    }
 }
 
 void
 BranchRecyclingCacheDynInst::notifyDependentInst(
     const o3::DynInstPtr &branch_inst, const o3::DynInstPtr &load_inst)
 {
+
+    if (branch_inst->pcState().instAddr() != 4283004) {
+        return;
+    }
 
     if (!branch_inst || branch_inst->isSquashed() ||
         !branch_inst->isCondCtrl()) {
@@ -443,9 +427,7 @@ BranchRecyclingCacheDynInst::notifyDependentInst(
         return;
     }
 
-    if (branch_inst->pcState().instAddr() == 4283004) {
-        DPRINTF(
-            RecycledEntry,
+    DPRINTF(RecycledEntry,
             "Notify dependent load inst: Branch [PC=%llx, sn=%llu, Taken = "
             "%i, CurrentStrite = %i] -> load "
             "[PC=%llx, sn=%i, Addr=%llu, Taken=%i] \n",
@@ -453,15 +435,11 @@ BranchRecyclingCacheDynInst::notifyDependentInst(
             branch_inst->pcState().branching(), bucket.striteCounterDynAddr,
             load_inst->pcState().instAddr(), load_inst->seqNum,
             load_inst->effAddr, load_inst->pcState().branching());
-    }
 
     bucket.lastDynAddr = load_inst->effAddr;
     bucket.lastDynAddrOffset = currentDynAddrOffset;
 
     bucket.entries.push_back(e);
-    lastPC = e.pc;
-
-    //   pushCommittedOutcome(inst);
 }
 
 void

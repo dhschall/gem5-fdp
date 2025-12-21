@@ -73,9 +73,6 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         //Attribtes for training
         int trainCounter = 0;
 
-        int striteCounterValue = 0;
-        int striteCounterPC = 0;
-
         //Attributes for StriteDynInst
         Addr lastDynAddr = 0;
         int lastDynAddrOffset = 0;
@@ -115,9 +112,6 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         void *tage_bi = nullptr;
     };
 
-    //Attributes for StritePC
-    Addr lastPC = 0;
-    int stritePCCounter = 0;
 
     //Attributes for StriteDynAddr
 
@@ -127,8 +121,8 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     TAGE_SC_L *base;
     const bool enableRecycling;
     const bool enableTraining;
-    const bool enableStriteValue;
-    const bool enableStritePC;
+    const bool enableStrite;
+
 
     // Stack with the Addr and a tuple for training aswell as entries
     //Track statistics here
