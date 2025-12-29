@@ -2,6 +2,7 @@
 #define __CPU_PRED_MULTILEVEL_BTB_HH__
 
 #include "base/cache/associative_cache.hh"
+#include "cpu/pred/conditional.hh"
 #include "cpu/pred/btb.hh"
 #include "cpu/pred/btb_entry.hh"
 #include "params/MultiLevelBTB.hh"
@@ -38,11 +39,9 @@ class MultiLevelBTB : public BranchTargetBuffer
   private:
     ConditionalPredictor *cPred = nullptr;
 
-    BTBEntry *findL1Entry(Addr instPC, ThreadID tid);
-    
-    BTBEntry *findL2Entry(Addr instPC, ThreadID tid);
-
     AssociativeCache<BTBEntry> l1btb;
+    /* Prefetch Buffer */
+    AssociativeCache<BTBEntry> pBuffer;
     
     AssociativeCache<BTBEntry> l2btb;
     
@@ -69,22 +68,34 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::SparseHistogram dist2HistoryPC;
         statistics::SparseHistogram dist2HistoryTarget;
 
-        statistics::Scalar l1PrefetchHits;
         statistics::Scalar l1MissL2Hits;
         statistics::Scalar uselessPrefetches;
         statistics::Scalar totalPrefetches;
-        statistics::Formula l1PrefetchCoverage;
-        statistics::Formula uselessPrefetchRate;
+        
+        // Unified prefetch coverage (for policy 4: pBuffer hits + L1 reuse)
+        statistics::Scalar prefetchHits;            // pBuffer hit + L1 reuse (both are useful)
+        statistics::Formula prefetchCoverage;       // prefetchHits / (prefetchHits + totalPrefetches)
+        
+        // Separate useless rates for pBuffer and L1 (policy 4)
+        statistics::Formula pBufferUselessRate;     // uselessPrefetches / totalPrefetches
+        
+        statistics::Scalar l1InstalledEvicted;   // L1 evictions of pBuffer-installed entries without reuse
+        statistics::Scalar l1Installed;             // count of entries installed from pBuffer to L1
+        statistics::Formula l1UselessInstalledRate;  // l1InstalledEvicted / l1Installed
 
         statistics::Distribution numBranchesPerPrefetch;
-        // For TAGE prediction
-        statistics::Scalar predMatches;
-        statistics::Scalar predChecks;
-        statistics::Formula predMatchRatio;
 
         statistics::Vector prefetchDistCount;
         statistics::Vector prefetchDistUsed;
         statistics::Formula prefetchUsefulness;
+        // For TAGE prediction
+        // statistics::Scalar predMatches;
+        // statistics::Scalar predChecks;
+        statistics::Vector predMatches;
+        statistics::Vector predChecks;
+        statistics::Formula predMatchRatio;
+
+        
 
         MultiLevelBTB *btb;
         

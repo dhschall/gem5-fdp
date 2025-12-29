@@ -487,7 +487,7 @@ TAGE_SC_L::predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch)
 
     // We do NOT call specLoopUpdate here
 
-    bool bim_pred = tage->getBimodePred(pc, bi->tageBranchInfo);
+    // bool bim_pred = tage->getBimodePred(pc, bi->tageBranchInfo);
 
     if (bi->lpBranchInfo->loopPredUsed) {
         bi->tageBranchInfo->provider = LOOP;

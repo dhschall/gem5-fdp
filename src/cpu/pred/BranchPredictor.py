@@ -167,6 +167,19 @@ class MultiLevelBTB(BranchTargetBuffer):
         ),
         "L1 BTB indexing policy",
     )
+    pBufferSize = Param.Unsigned(8, "Capacity of prefetch buffer")
+    pBufferReplPolicy = Param.BaseReplacementPolicy(
+        FIFORP(), "replacement policy of prefetch buffer"
+    )
+    pBufferIndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=1,
+            num_entries=Parent.pBufferSize,
+            set_shift=Parent.instShiftAmt,
+            numThreads=1,
+        ),
+        "Indexing policy of prefetch buffer"
+    )
 
     # L2 BTB configuration
     l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
@@ -190,7 +203,7 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
 
     l1PrefetchPolicy = Param.Unsigned(
-        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch"
+        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch, 4=FIFO pBuffer"
     )
    
     prefetchOnlyForward = Param.Bool(

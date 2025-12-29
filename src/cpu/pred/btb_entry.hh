@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -198,6 +198,7 @@ class BTBEntry : public ReplaceableEntry
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
+        fromPBuffer = other.fromPBuffer;
     }
 
     /** Assignment operator */
@@ -212,6 +213,7 @@ class BTBEntry : public ReplaceableEntry
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
+        fromPBuffer = other.fromPBuffer;
 
         return *this;
     }
@@ -301,6 +303,14 @@ class BTBEntry : public ReplaceableEntry
   public:
     bool getPredTaken() const { return predTaken; }
     void setPredTaken(bool p) { predTaken = p; }
+
+    /** Whether this L1 entry was installed from pBuffer (for L1 reuse tracking). */
+    bool isFromPBuffer() const { return fromPBuffer; }
+    void setFromPBuffer(bool p) { fromPBuffer = p; }
+
+  private:
+    /** Flag to track if this entry was installed from prefetch buffer */
+    bool fromPBuffer;
 };
 } // namespace gem5::branch_prediction
 /**
