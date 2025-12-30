@@ -318,10 +318,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                                      multilevelstats.prefetchDistCount[numBranches]++;
                                      pB_victim->setPrefetchDistance(numBranches);
                                  }
-                                 if (cPred && l2_pf->inst && l2_pf->inst->isCondCtrl()) {
-                                     bool pred = cPred->predictNoUpdate(tid, pfAddr, true);
-                                     pB_victim->setPredTaken(pred);
-                                 }
+                                //  if (cPred && l2_pf->inst && l2_pf->inst->isCondCtrl()) {
+                                //      bool pred = cPred->predictNoUpdate(tid, pfAddr, true);
+                                //      pB_victim->setPredTaken(pred);
+                                //  }
                         } else {
                             BTBEntry *l1_pf_victim = l1btb.findVictim({pfAddr, tid});
                             if (l1_pf_victim->isPrefetched()) {
@@ -338,10 +338,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
                             }
                             
                             // Use predictNoUpdate if available
-                            if (cPred && l2_pf->inst && l2_pf->inst->isCondCtrl()) {
-                                bool pred = cPred->predictNoUpdate(tid, pfAddr, true);
-                                l1_pf_victim->setPredTaken(pred);
-                            }
+                            // if (cPred && l2_pf->inst && l2_pf->inst->isCondCtrl()) {
+                            //     bool pred = cPred->predictNoUpdate(tid, pfAddr, true);
+                            //     l1_pf_victim->setPredTaken(pred);
+                            // }
                         }
                     }
                 }
@@ -401,6 +401,10 @@ MultiLevelBTB::getInst(ThreadID tid, Addr instPC)
     BTBEntry *l1_entry = l1btb.findEntry({instPC, tid});
     if (l1_entry) {
         return l1_entry->inst;
+    }
+    BTBEntry *pB_entry = pBuffer.findEntry({instPC, tid});
+    if (pB_entry) {
+        return pB_entry->inst;
     }
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
     if (l2_entry) {

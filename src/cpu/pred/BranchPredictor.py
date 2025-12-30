@@ -173,7 +173,7 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
     pBufferIndexingPolicy = Param.BTBIndexingPolicy(
         BTBSetAssociative(
-            assoc=1,
+            assoc=Parent.pBufferSize,
             num_entries=Parent.pBufferSize,
             set_shift=Parent.instShiftAmt,
             numThreads=1,
