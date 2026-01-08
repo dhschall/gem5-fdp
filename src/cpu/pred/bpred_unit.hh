@@ -278,7 +278,8 @@ class BPredUnit : public SimObject
               call(inst->isCall()), uncond(!inst->isCondCtrl()),
               predTaken(false), actuallyTaken(false), condPred(false),
               overridden(false),
-              btbHit(false), l1btbHit(false), l2btbHit(false), targetProvider(TargetProvider::NoTarget),
+              btbHit(false), l1btbHit(false), l2btbHit(false), pBufferHit(false),
+              targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
               indirectHistory(nullptr), rasHistory(nullptr)
@@ -341,6 +342,9 @@ class BPredUnit : public SimObject
 
         /** Was L2 BTB hit at prediction time (multi-level BTB only)*/
         bool l2btbHit;
+
+        /** Was pBuffer hit at prediction time (multi-level BTB Policy 4 only)*/
+        bool pBufferHit;
 
         /** Which component provided the target */
         TargetProvider targetProvider;
@@ -544,6 +548,7 @@ class BPredUnit : public SimObject
         /** Different levels of BTB hits (multi-level BTB only)*/
         statistics::Scalar l1btbHits;
         statistics::Scalar l2btbHits;
+        statistics::Scalar pBufferHits;
 
         statistics::Scalar l1btbHitBasePred;
         statistics::Scalar l2btbHitBasePred;

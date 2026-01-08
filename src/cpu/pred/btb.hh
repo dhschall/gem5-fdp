@@ -60,12 +60,20 @@ struct BTBLookupResult
   const PCStateBase* target;
   Cycles latency;
   bool l1Hit;
+  bool pBufferHit;    // Hit specifically in pBuffer (Policy 4)
   bool l2Hit;
-  bool prefetchHit;
+  bool prefetchHit;   // Hit on a prefetched entry (either in L1 or pBuffer)
   bool predMatch;
       
-  BTBLookupResult(const PCStateBase* _target = nullptr, Cycles _latency = Cycles(0), bool _l1Hit = false, bool _l2Hit = false, bool _prefetchHit = false, bool _predMatch = false)
-      : target(_target), latency(_latency), l1Hit(_l1Hit), l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch) {}
+  BTBLookupResult(const PCStateBase* _target = nullptr,
+                  Cycles _latency = Cycles(0),
+                  bool _l1Hit = false,
+                  bool _pBufferHit = false,
+                  bool _l2Hit = false,
+                  bool _prefetchHit = false,
+                  bool _predMatch = false)
+      : target(_target), latency(_latency), l1Hit(_l1Hit), pBufferHit(_pBufferHit),
+        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch) {}
 };
 
 class BranchTargetBuffer : public ClockedObject

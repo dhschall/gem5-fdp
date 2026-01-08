@@ -241,6 +241,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
         if (isMultiLevelBTB) {
             hist->l1btbHit = btb_res.l1Hit;
             hist->l2btbHit = btb_res.l2Hit;
+            hist->pBufferHit = btb_res.pBufferHit;
             
             if (inst->isCondCtrl()) {
                 if (btb_res.latency == Cycles(0)) {
@@ -500,7 +501,9 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
     if (hist->actuallyTaken && !updateBTBAtSquash) { updateBTB(tid, hist); }
 
     if (isMultiLevelBTB && hist->btbHit) {
-        if (hist->l1btbHit) {
+        if (hist->pBufferHit) {
+            stats.pBufferHits++;
+        } else if (hist->l1btbHit) {
             stats.l1btbHits++;
         } else if (hist->l2btbHit) {
             stats.l2btbHits++;
@@ -878,6 +881,8 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Number of L1 BTB hits per thread and branch type (MultiLevelBTB only)"),
       ADD_STAT(l2btbHits, statistics::units::Count::get(),
               "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)"),
+      ADD_STAT(pBufferHits, statistics::units::Count::get(),
+              "Number of pBuffer hits (MultiLevelBTB Policy 4 only)"),
       ADD_STAT(l1btbHitBasePred, statistics::units::Count::get(),
               "Number of L1 BTB hits with Base Prediction"),
       ADD_STAT(l2btbHitBasePred, statistics::units::Count::get(),

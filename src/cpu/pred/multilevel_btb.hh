@@ -114,6 +114,29 @@ class MultiLevelBTB : public BranchTargetBuffer
     // tacking the previous branch PC for each thread.
     std::vector<Addr> prevBranchPC;
     friend struct MultiLevelBTBStats;
+
+    /**
+     * Handle L1 BTB hit.
+     * Handles prefetched entry hits, Policy 3 next-region prefetching,
+     * and prediction match checking.
+     */
+    BTBLookupResult handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
+                                bool taken);
+
+    /**
+     * Handle pBuffer hit (Policy 4 only).
+     * Promotes entry from pBuffer to L1 and tracks statistics.
+     */
+    BTBLookupResult handlePBufferHit(ThreadID tid, Addr instPC,
+                                     BTBEntry *pB_entry, bool taken);
+
+    /**
+     * Handle L2 BTB hit.
+     * Inserts entry into L1, performs prefetching based on policy,
+     * and tracks successor relationships.
+     */
+    BTBLookupResult handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
+                                BranchType type, bool taken);
 };
 } // namespace gem5::branch_prediction
 
