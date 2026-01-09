@@ -308,15 +308,15 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     // Check prediction match for prefetched entries
     // -------------------------------------------------------------------------
     bool predMatch = false;
-    if (isPrefetchHit && cPred) {
-        multilevelstats.predChecks[prefetchDistance]++;
-        if (l1_entry->getPredTaken() == taken) {
-            if (prefetchDistance == 0) {
-                predMatch = true;
-            }
-            multilevelstats.predMatches[prefetchDistance]++;
-        }
-    }
+    // if (isPrefetchHit && cPred) {
+    //     multilevelstats.predChecks[prefetchDistance]++;
+    //     if (l1_entry->getPredTaken() == taken) {
+    //         if (prefetchDistance == 0) {
+    //             predMatch = true;
+    //         }
+    //         multilevelstats.predMatches[prefetchDistance]++;
+    //     }
+    // }
 
     return BTBLookupResult(l1_entry->target.get(), l1Latency + extraLatency,
                            true, false, false, isPrefetchHit, predMatch);
@@ -365,24 +365,27 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     l1_victim->setPredTaken(pB_entry->getPredTaken());
     l1_victim->setPrefetched(false);
 
+    // This entry is now useless since it has been promoted to L1
+    pBuffer.invalidate(pB_entry);
+
     multilevelstats.l1Installed++;
 
     // -------------------------------------------------------------------------
     // Check prediction match
     // -------------------------------------------------------------------------
     bool predMatch = false;
-    if (cPred) {
-        multilevelstats.predChecks[prefetchDistance]++;
-        if (pB_entry->getPredTaken() == taken) {
-            if (prefetchDistance == 0) {
-                predMatch = true;
-            }
-            multilevelstats.predMatches[prefetchDistance]++;
-        }
-    }
+    // if (cPred) {
+    //     multilevelstats.predChecks[prefetchDistance]++;
+    //     if (pB_entry->getPredTaken() == taken) {
+    //         if (prefetchDistance == 0) {
+    //             predMatch = true;
+    //         }
+    //         multilevelstats.predMatches[prefetchDistance]++;
+    //     }
+    // }
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
-    return BTBLookupResult(pB_entry->target.get(), l1Latency,
+    return BTBLookupResult(l1_victim->target.get(), l1Latency,
                            false, true, false, true, predMatch);
 }
 
