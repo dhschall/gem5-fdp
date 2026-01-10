@@ -100,9 +100,10 @@ class MultiLevelBTB : public BranchTargetBuffer
         MultiLevelBTB *btb;
         
     } multilevelstats;
-    // key: static branch PC (L1 miss, L2 hit)
-    // value: set of successor branch PCs (also L1 miss, L2 hit)
-    std::unordered_map<Addr, std::set<Addr>> l1MissL2HitSuccessors;
+    // Markov prefetcher data structure
+    // key: branch PC (L1 miss, L2 hit)
+    // value: map of successor PC -> access frequency
+    std::unordered_map<Addr, std::unordered_map<Addr, uint64_t>> markovSuccessors;
 
     struct BranchInfo {
         Addr pc;
@@ -137,6 +138,14 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     BTBLookupResult handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
                                 BranchType type, bool taken);
+
+    /**
+     * Prefetch the most frequent successor of given PC (Policy 5/6).
+     * @param tid Thread ID
+     * @param pc Current branch PC
+     * @param toL1 If true, prefetch to L1; otherwise prefetch to pBuffer
+     */
+    void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1);
 };
 } // namespace gem5::branch_prediction
 

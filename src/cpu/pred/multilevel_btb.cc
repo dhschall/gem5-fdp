@@ -53,7 +53,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     predMatchRatio = predMatches / predChecks;
 
     // Unified prefetch coverage formula
-    prefetchCoverage = prefetchHits / (prefetchHits + totalPrefetches);
+    prefetchCoverage = prefetchHits / (prefetchHits + l1MissL2Hits);
     prefetchCoverage.precision(3);
     
     // pBuffer useless rate
@@ -72,7 +72,7 @@ MultiLevelBTB::MultiLevelBTBStats::preDumpStats()
 {
     statistics::Group::preDumpStats();
     
-    for (const auto& pair : btb->l1MissL2HitSuccessors) {
+    for (const auto& pair : btb->markovSuccessors) {
         size_t count = pair.second.size();
         successorCountDist.sample(count);
     }
@@ -153,9 +153,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     }
 
     // ==========================================================================
-    // Step 2: pBuffer lookup (Policy 4 only)
+    // Step 2: pBuffer lookup (Policy 4 and 6 - both use pBuffer)
     // ==========================================================================
-    if (l1PrefetchPolicy == 4) {
+    if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
             return handlePBufferHit(tid, instPC, pB_entry, taken);
@@ -240,25 +240,25 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         isPrefetchHit = true;
         multilevelstats.prefetchHits++;
 
-        // Track prefetch distance statistics
-        if (l1_entry->getPrefetchDistance() < 16) {
+        // Track prefetch distance statistics (only for spatial prefetch policies 1-4)
+        if (l1PrefetchPolicy <= 4 && l1_entry->getPrefetchDistance() < 16) {
             prefetchDistance = l1_entry->getPrefetchDistance();
             multilevelstats.prefetchDistUsed[prefetchDistance]++;
         }
         l1_entry->setPrefetched(false);
 
         // Compute extra latency if prefetch hasn't fully completed
-        Cycles delta = curCycle() - l1_entry->getTimestamp();
-        if (delta < l2Latency) {
-            extraLatency = l2Latency - delta;
-        }
+        // Cycles delta = curCycle() - l1_entry->getTimestamp();
+        // if (delta < l2Latency) {
+        //     extraLatency = l2Latency - delta;
+        // }
 
         // ---------------------------------------------------------------------
         // Policy 3 (NextRegionOnL1Hit): Prefetch next region on L1 prefetch hit
         // Condition: l1PrefetchPolicy > 2 && l1PrefetchPolicy != 4
         //            which means l1PrefetchPolicy == 3
         // ---------------------------------------------------------------------
-        if (l1PrefetchPolicy > 2 && l1PrefetchPolicy != 4) {
+        if (l1PrefetchPolicy == 3) {
             Addr nextRegionStart = (instPC & ~127) + 128;
             Addr endOffset = 128;
             size_t numBranches = 0;
@@ -292,6 +292,14 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
                 }
             }
             multilevelstats.numBranchesPerPrefetch.sample(numBranches);
+        }
+
+        // ---------------------------------------------------------------------
+        // Policy 5 (Markov to L1): Continue prefetch chain on L1 prefetch hit
+        // Prefetch the most frequent successor to L1
+        // ---------------------------------------------------------------------
+        if (l1PrefetchPolicy == 5) {
+            prefetchMarkovSuccessor(tid, instPC, true);  // true = prefetch to L1
         }
 
     // -------------------------------------------------------------------------
@@ -343,8 +351,9 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         pB_entry->setPrefetched(false);
     }
 
+    // Track prefetch distance statistics (only for Policy 4, not Policy 6)
     uint8_t prefetchDistance = pB_entry->getPrefetchDistance();
-    if (prefetchDistance < 16) {
+    if (l1PrefetchPolicy == 4 && prefetchDistance < 16) {
         multilevelstats.prefetchDistUsed[prefetchDistance]++;
     }
 
@@ -361,7 +370,10 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(*pB_entry->target, pB_entry->inst);
     l1_victim->setFromPBuffer(true);  // Mark for reuse tracking
-    l1_victim->setPrefetchDistance(prefetchDistance);
+    // Only set prefetch distance for Policy 4 (spatial prefetch)
+    if (l1PrefetchPolicy == 4) {
+        l1_victim->setPrefetchDistance(prefetchDistance);
+    }
     l1_victim->setPredTaken(pB_entry->getPredTaken());
     l1_victim->setPrefetched(false);
 
@@ -383,6 +395,14 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     //         multilevelstats.predMatches[prefetchDistance]++;
     //     }
     // }
+
+    // -------------------------------------------------------------------------
+    // Policy 6 (Markov to pBuffer): Continue prefetch chain on pBuffer hit
+    // Prefetch the most frequent successor to pBuffer
+    // -------------------------------------------------------------------------
+    if (l1PrefetchPolicy == 6) {
+        prefetchMarkovSuccessor(tid, instPC, false);  // false = prefetch to pBuffer
+    }
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
     return BTBLookupResult(l1_victim->target.get(), l1Latency,
@@ -437,9 +457,9 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     }
 
     // -------------------------------------------------------------------------
-    // Perform prefetching based on policy
+    // Perform prefetching based on policy (Policy 1-4 only, not 5/6)
     // -------------------------------------------------------------------------
-    if (l1PrefetchPolicy > 0 && doPrefetch) {
+    if (l1PrefetchPolicy > 0 && l1PrefetchPolicy <= 4 && doPrefetch) {
         Addr endOffset = 128;
 
         // Policy 2/3: Extend to end of region + 128 bytes
@@ -496,14 +516,20 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     }
 
     // -------------------------------------------------------------------------
-    // Track successor relationships for Markov prefetcher exploration
+    // Markov prefetcher: Learn successor relationships with frequency
     // -------------------------------------------------------------------------
     if (prevBranchPC[tid] != 0) {
-        l1MissL2HitSuccessors[prevBranchPC[tid]].insert(instPC);
+        markovSuccessors[prevBranchPC[tid]][instPC]++;  // Increment frequency
     }
     prevBranchPC[tid] = instPC;
-    if (l1MissL2HitSuccessors.find(instPC) == l1MissL2HitSuccessors.end()) {
-        l1MissL2HitSuccessors[instPC] = std::set<Addr>();
+
+    // -------------------------------------------------------------------------
+    // Policy 5/6: Markov-based prefetching on L2 hit
+    // -------------------------------------------------------------------------
+    if (l1PrefetchPolicy == 5) {
+        prefetchMarkovSuccessor(tid, instPC, true);   // Prefetch to L1
+    } else if (l1PrefetchPolicy == 6) {
+        prefetchMarkovSuccessor(tid, instPC, false);  // Prefetch to pBuffer
     }
 
     // -------------------------------------------------------------------------
@@ -538,6 +564,71 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l2Latency);
     return BTBLookupResult(l2_entry->target.get(), l2Latency, false, false, true);
+}
+
+//=============================================================================
+// prefetchMarkovSuccessor: Prefetch the most frequent successor (Policy 5/6)
+//
+// This function finds the most frequently accessed successor of the given PC
+// and prefetches it to L1 (Policy 5) or pBuffer (Policy 6).
+//=============================================================================
+void
+MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1)
+{
+    auto it = markovSuccessors.find(pc);
+    if (it == markovSuccessors.end() || it->second.empty()) {
+        return;  // No successor data for this PC
+    }
+
+    // Find the successor with highest frequency
+    Addr bestSuccessor = 0;
+    uint64_t maxFreq = 0;
+    for (const auto& [succ, freq] : it->second) {
+        if (freq > maxFreq) {
+            maxFreq = freq;
+            bestSuccessor = succ;
+        }
+    }
+
+    if (bestSuccessor == 0) {
+        return;
+    }
+
+    // Check if already in L1
+    if (l1btb.findEntry({bestSuccessor, tid})) {
+        return;
+    }
+
+    // Find in L2
+    BTBEntry *l2_entry = l2btb.findEntry({bestSuccessor, tid});
+    if (!l2_entry) {
+        return;
+    }
+
+    multilevelstats.totalPrefetches++;
+
+    if (toL1) {
+        // Policy 5: Prefetch to L1
+        BTBEntry *l1_victim = l1btb.findVictim({bestSuccessor, tid});
+        if (l1_victim->isPrefetched()) {
+            multilevelstats.uselessPrefetches++;
+            l1_victim->setPrefetched(false);
+        }
+        l1btb.insertEntry({bestSuccessor, tid}, l1_victim);
+        l1_victim->update(*l2_entry->target, l2_entry->inst);
+        l1_victim->setPrefetched(true);
+        // l1_victim->setTimestamp(curCycle());
+    } else {
+        // Policy 6: Prefetch to pBuffer
+        BTBEntry *pB_victim = pBuffer.findVictim({bestSuccessor, tid});
+        if (pB_victim->isPrefetched()) {
+            multilevelstats.uselessPrefetches++;
+        }
+        pBuffer.insertEntry({bestSuccessor, tid}, pB_victim);
+        pB_victim->update(*l2_entry->target, l2_entry->inst);
+        pB_victim->setPrefetched(true);
+        // pB_victim->setTimestamp(curCycle());
+    }
 }
 
 } // namespace gem5::branch_prediction
