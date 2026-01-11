@@ -73,6 +73,13 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         //Attribtes for training
         int trainCounter = 0;
 
+
+        //Attributes for training2
+        int execs = 0;
+        int mispredictsTage = 0;
+        int mispredictsRecycle = 0;
+        bool useRecycle = false;
+
         //Attributes for StriteDynInst
         Addr lastDynAddr = 0;
         int lastDynAddrOffset = 0;
@@ -121,7 +128,9 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     TAGE_SC_L *base;
     const bool enableRecycling;
     const bool enableTraining;
+    const bool enableTraining2;
     const bool enableStrite;
+    
 
 
     // Stack with the Addr and a tuple for training aswell as entries
@@ -152,6 +161,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
       int exec = 0;
       int taken = 0;
       int mispred = 0;
+      int biggestStrite = 0;
     };
     std::unordered_map<Addr,branch_info> branchStats;
 
