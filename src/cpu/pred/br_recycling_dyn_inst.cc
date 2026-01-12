@@ -20,10 +20,8 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
       base(p.base),
       enableRecycling(p.enable_recycling),
       enableTraining(p.enable_training),
-      enableTraining2(p.enable_training2),
       enableStrite(p.enable_strite),
       dynInstStacks(),
-      seqToPc(),
       cpu(nullptr),
       stats(this)
 {
@@ -47,7 +45,7 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
     h->actualKnown = false;
     h->brType = BranchType::DirectCond;
 
-    if (!enableRecycling && !enableStrite && !enableTraining2) {
+    if (!enableRecycling && !enableStrite && !enableTraining) {
         stats.basePred++;
         return h->base_pred;
     }
@@ -57,19 +55,13 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
     if (it != dynInstStacks.end()) {
         auto &entries = it->second.entries;
 
-        // Only use recycling if has been trained to do so
-        if (enableTraining && it->second.trainCounter < 0) {
-            if (!entries.empty()) {
-                entries.pop_back();
-            }
-            return h->base_pred;
-        }
 
-        // Recycling2: only if trained to use recycling
-        if (enableTraining2 && it->second.useRecycle == false) {
+        // Recycling: only if trained to use recycling
+        if (enableTraining && it->second.useRecycle == false) {
             if (!entries.empty()) {
                 entries.pop_back();
             }
+            DPRINTF(RecycledEntry, "Used base prediction for pc %#x\n", pc);
             return h->base_pred;
         }
 
@@ -95,13 +87,14 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
             if (h->recycledTaken != h->base_pred) {
                 stats.RecycleBaseDiffer++;
             }
-
+              DPRINTF(RecycledEntry, "Used recycled prediction for pc %#x\n", pc);
             return h->recycledTaken;
         }
     }
 
     // Fallback to base predictor.
     stats.basePred++;
+    DPRINTF(RecycledEntry, "Used base prediction for pc %#x\n", pc);
     return h->base_pred;
 }
 
@@ -166,39 +159,25 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
 
     base->update(tid, pc, taken, bi, squashed, inst, target);
 
-    // Per-PC stats (always count execution)
+    // Per-PC stats
     auto &bs = branchStats[pc];
     bs.exec++;
     bs.taken += taken ? 1 : 0;
 
-    // Bucket (only if it exists)
+    // Bucket
     auto it_bucket = dynInstStacks.find(pc);
     if (it_bucket != dynInstStacks.end()) {
         auto &bucket = it_bucket->second;
         bucket.execs++;
 
-        // Training / correctness bookkeeping (only if we have history)
-        if (h) {
-            const bool recycledCorrect =
-                (h->usedRecycle && (h->recycledTaken == taken));
-            const bool baseCorrect = (h->base_pred == taken);
-
-            if (recycledCorrect && !baseCorrect) {
-                bucket.trainCounter += 2;
-                bucket.correctPredictionRecycling++;
-            } else if (recycledCorrect && baseCorrect) {
-                bucket.trainCounter += 1;
-                bucket.bothCorrect++;
-            } else if (!recycledCorrect && baseCorrect) {
-                bucket.trainCounter -= 1;
-                bucket.correctPredictionBase++;
-            }
-        }
 
         // Mispredict handling
         if (squashed) {
             bs.mispred++;
             stats.missPredicts++;
+
+            //
+            bucket.execs++;
 
             if (h) {
                 const int recycled_pred =
@@ -217,24 +196,26 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
                 }
 
                 // Periodically decide whether to use recycling
-                if (bucket.execs % 100 == 0) {
-                    if (bucket.mispredictsRecycle < bucket.mispredictsTage) {
+                if (bucket.execs == 100) {
+                    
+                    if (bucket.mispredictsRecycle <= bucket.mispredictsTage) {
                         bucket.useRecycle = true;
-                    } else if (bucket.mispredictsRecycle >
-                               bucket.mispredictsTage) {
+                    } else {
                         bucket.useRecycle = false;
                     }
+
+                    //reset counters
                     bucket.mispredictsTage = 0;
                     bucket.mispredictsRecycle = 0;
+                    bucket.execs = 0;
                 }
             } else {
-                // No history => attribute to base
+                // No history -> attribute to base
                 stats.missPredictedTageFault++;
-                bucket.mispredictsTage++;
             }
         }
     } else {
-        // No bucket exists; still count global mispredict stats
+        // No bucket exists still count global mispredict stats
         if (squashed) {
             bs.mispred++;
             stats.missPredicts++;
@@ -250,7 +231,7 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
         bi = nullptr;
     }
 
-    // Free history (gem5 predictors typically allocate per-branch history)
+    // Free history 
     if (h) {
         if (h->tage_bi) {
             delete static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
@@ -342,8 +323,6 @@ BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
     } else {
         e.brType = BranchType::DirectCond;
     }
-
-    e.hasOutcome = true;
     auto &bucket = dynInstStacks[pc];
 
     bucket.entries.push_back(e);
@@ -365,15 +344,14 @@ void
 BranchRecyclingCacheDynInst::notifyDependentInst(
     const o3::DynInstPtr &branch_inst, const o3::DynInstPtr &load_inst)
 {
+
+    //check validity of instruction
     if (!branch_inst || branch_inst->isSquashed() ||
-        !branch_inst->isCondCtrl()) {
+        !branch_inst->isCondCtrl() || branch_inst->seqNum == lastSeqNum) {
         return;
     }
 
-    // Check if notification is duplicate
-    if (branch_inst->seqNum == lastSeqNum) {
-        return;
-    }
+
     lastSeqNum = branch_inst->seqNum;
 
     const Addr pc = branch_inst->pcState().instAddr();
@@ -383,29 +361,21 @@ BranchRecyclingCacheDynInst::notifyDependentInst(
     int currentDynAddrOffset = load_inst->effAddr - bucket.lastDynAddr;
 
     if (bucket.lastDynAddrOffset == currentDynAddrOffset) {
+        //update strite
         bucket.striteCounterDynAddr++;
 
+        //UPDATE FOR STATS
         if (bucket.striteCounterDynAddr > branchStats[pc].biggestStrite) {
             branchStats[pc].biggestStrite = bucket.striteCounterDynAddr;
         }
+
+
     } else if (bucket.striteCounterDynAddr > 0) {
         bucket.striteCounterDynAddr = 0;
         return;
     }
 
-    DPRINTF(
-        RecycledEntry,
-        "Notify dependent load inst: Branch [PC=%llx, sn=%llu, Taken=%i, "
-        "CurrentStrite=%i] -> load [PC=%llx, sn=%llu, Addr=%llu, Taken=%i]\n",
-        (unsigned long long)branch_inst->pcState().instAddr(),
-        (unsigned long long)branch_inst->seqNum,
-        (int)branch_inst->pcState().branching(),
-        (int)bucket.striteCounterDynAddr,
-        (unsigned long long)load_inst->pcState().instAddr(),
-        (unsigned long long)load_inst->seqNum,
-        (unsigned long long)load_inst->effAddr,
-        (int)load_inst->pcState().branching());
-
+    //update info of last addr.
     bucket.lastDynAddr = load_inst->effAddr;
     bucket.lastDynAddrOffset = currentDynAddrOffset;
 }

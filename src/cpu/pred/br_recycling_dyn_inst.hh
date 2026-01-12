@@ -59,7 +59,6 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     {
       //Attributes for recycling
         Addr pc = 0;
-        bool hasOutcome = false;
         bool taken = false;
         BranchType brType = BranchType::NoBranch;
         InstSeqNum seqNum = 0;
@@ -70,11 +69,8 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     struct recyclingEntry
     {
-        //Attribtes for training
-        int trainCounter = 0;
-
-
-        //Attributes for training2
+       
+        //Attributes for training
         int execs = 0;
         int mispredictsTage = 0;
         int mispredictsRecycle = 0;
@@ -84,16 +80,6 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         Addr lastDynAddr = 0;
         int lastDynAddrOffset = 0;
         int striteCounterDynAddr = 0;
-
-        //Attributes for Statistics
-        int correctPredictionRecycling = 0;
-        int incorrectPredictionRecycling = 0;
-
-        int correctPredictionBase = 0;
-        int incorrectPredictionBase = 0;
-
-        int bothWrong = 0;
-        int bothCorrect = 0;
 
         //Stack of entries for recycling
         std::vector<Entry> entries;
@@ -112,24 +98,20 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
         BranchType brType = BranchType::DirectCond;
 
-        unsigned brpIdx = 0;
-
         bool base_pred = false;
 
         void *tage_bi = nullptr;
     };
 
 
-    //Attributes for StriteDynAddr
-
-    InstSeqNum lastSeqNum = 0;
-
     // Base predictor
     TAGE_SC_L *base;
     const bool enableRecycling;
     const bool enableTraining;
-    const bool enableTraining2;
     const bool enableStrite;
+
+    //Attributes for Strite Mechanism
+     InstSeqNum lastSeqNum = 0;
     
 
 
@@ -137,8 +119,9 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     //Track statistics here
     std::unordered_map<Addr,  recyclingEntry> dynInstStacks;
 
-    // Map dynamic instance to its static PC
-    std::unordered_map<InstSeqNum, Addr> seqToPc;
+    //Associative Cache 
+
+    AssociativeCache<recyclingEntry> associativeCache;
 
     // Probes
     ProbeListenerPtr<> listener;  // ToCommit
