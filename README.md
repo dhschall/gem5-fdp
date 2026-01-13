@@ -1,5 +1,9 @@
 # Fetch Directed Instruction Prefetching for gem5
 
+> [!IMPORTANT]
+> The decoupled front-end was merged into the mainline gem5 since Sep. 2025 and available from version [v25.1.0.0](https://github.com/gem5/gem5/releases/tag/v25.1.0.0).
+> Please refer to the mainline gem5 for future updates.
+
 This is the development repository for **Fetch Directed Instruction Prefetching
 (FDP)** in gem5 also known as **decoupled front-end**. FDP was originally
 published in [MICRO'99](https://web.eecs.umich.edu/~taustin/papers/MICRO32-fdp.pdf).
