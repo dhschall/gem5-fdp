@@ -279,6 +279,7 @@ class BPredUnit : public SimObject
               predTaken(false), actuallyTaken(false), condPred(false),
               overridden(false),
               btbHit(false), l1btbHit(false), l2btbHit(false), pBufferHit(false),
+              prefetchHit(false),
               targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
@@ -345,6 +346,9 @@ class BPredUnit : public SimObject
 
         /** Was pBuffer hit at prediction time (multi-level BTB Policy 4 only)*/
         bool pBufferHit;
+
+        /** Was prefetch hit (either L1 or pBuffer prefetched entry) */
+        bool prefetchHit;
 
         /** Which component provided the target */
         TargetProvider targetProvider;
@@ -549,6 +553,7 @@ class BPredUnit : public SimObject
         statistics::Scalar l1btbHits;
         statistics::Scalar l2btbHits;
         statistics::Scalar pBufferHits;
+        statistics::Scalar committedPrefetchHits;
 
         statistics::Scalar l1btbHitBasePred;
         statistics::Scalar l2btbHitBasePred;
