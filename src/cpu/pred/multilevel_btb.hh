@@ -61,6 +61,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         //If branch A misses in L1BTB1(hits in L2BTB), 
         //then the immediate branch B is the successor of A if B also misses in L1BTB2 (hits in L2BTB2).
         statistics::SparseHistogram successorCountDist;
+        statistics::SparseHistogram markovDist;
 
         // Spatial locality statistics
         statistics::SparseHistogram dist1HistoryPC;

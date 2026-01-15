@@ -9,6 +9,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     : statistics::Group(parent),
       ADD_STAT(successorCountDist, statistics::units::Count::get(),
                "Distribution of successor counts for L1 miss L2 hit branches"),
+      ADD_STAT(markovDist, statistics::units::Count::get(),
+               "Distribution of Markov successor distances"),        
       ADD_STAT(dist1HistoryPC, statistics::units::Count::get(), "Distance (PC - LastPC) for 1-history"),
       ADD_STAT(dist1HistoryTarget, statistics::units::Count::get(), "Distance (PC - LastTarget) for 1-history"),
       ADD_STAT(dist2HistoryPC, statistics::units::Count::get(), "Distance (PC - 2ndLastPC) for 2-history"),
@@ -35,6 +37,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 {
     using namespace statistics;
     successorCountDist.init(0).flags(total | pdf);
+    markovDist.init(0).flags(total | pdf);
     dist1HistoryPC.init(0).flags(total | pdf);
     dist1HistoryTarget.init(0).flags(total | pdf);
     dist2HistoryPC.init(0).flags(total | pdf);
@@ -248,10 +251,10 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         l1_entry->setPrefetched(false);
 
         // Compute extra latency if prefetch hasn't fully completed
-        // Cycles delta = curCycle() - l1_entry->getTimestamp();
-        // if (delta < l2Latency) {
-        //     extraLatency = l2Latency - delta;
-        // }
+        Cycles delta = curCycle() - l1_entry->getTimestamp();
+        if (delta < l2Latency) {
+            extraLatency = l2Latency - delta;
+        }
 
         // ---------------------------------------------------------------------
         // Policy 3 (NextRegionOnL1Hit): Prefetch next region on L1 prefetch hit
@@ -346,9 +349,14 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // -------------------------------------------------------------------------
     // Update prefetch statistics
     // -------------------------------------------------------------------------
+    Cycles extraLatency = Cycles(0);
     if (pB_entry->isPrefetched()) {
         multilevelstats.prefetchHits++;
         pB_entry->setPrefetched(false);
+        Cycles delta = curCycle() - pB_entry->getTimestamp();
+        if (delta < l2Latency) {
+            extraLatency = l2Latency - delta;
+        }
     }
 
     // Track prefetch distance statistics (only for Policy 4, not Policy 6)
@@ -405,7 +413,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     }
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
-    return BTBLookupResult(l1_victim->target.get(), l1Latency,
+    return BTBLookupResult(l1_victim->target.get(), l1Latency + extraLatency,
                            false, true, false, true, predMatch);
 }
 
@@ -598,7 +606,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1)
     if (l1btb.findEntry({bestSuccessor, tid})) {
         return;
     }
-
+    multilevelstats.markovDist.sample(bestSuccessor - pc);
     // Find in L2
     BTBEntry *l2_entry = l2btb.findEntry({bestSuccessor, tid});
     if (!l2_entry) {
@@ -617,7 +625,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1)
         l1btb.insertEntry({bestSuccessor, tid}, l1_victim);
         l1_victim->update(*l2_entry->target, l2_entry->inst);
         l1_victim->setPrefetched(true);
-        // l1_victim->setTimestamp(curCycle());
+        l1_victim->setTimestamp(curCycle());
     } else {
         // Policy 6: Prefetch to pBuffer
         BTBEntry *pB_victim = pBuffer.findVictim({bestSuccessor, tid});
@@ -627,7 +635,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1)
         pBuffer.insertEntry({bestSuccessor, tid}, pB_victim);
         pB_victim->update(*l2_entry->target, l2_entry->inst);
         pB_victim->setPrefetched(true);
-        // pB_victim->setTimestamp(curCycle());
+        pB_victim->setTimestamp(curCycle());
     }
 }
 
