@@ -69,7 +69,7 @@ TAGE_EMILIO::predict(ThreadID tid, Addr pc, bool cond_branch, void* &b)
     return tage.get_prediction(id, pc);
 }
 
-bool
+Prediction
 TAGE_EMILIO::lookup(ThreadID tid, Addr pc, void* &bp_history)
 {
     DPRINTF(Tage, "TAGE lookup: %lx %p\n", pc, bp_history);
@@ -77,7 +77,7 @@ TAGE_EMILIO::lookup(ThreadID tid, Addr pc, void* &bp_history)
 
     DPRINTF(Tage, "Lookup branch: %lx; predict:%d; bp_history:%p\n", pc, retval, bp_history);
 
-    return retval;
+    return predictWithDefaultLatency(retval);
 }
 
 // Changed: the ConditionalPredictor interface now passes the StaticInstPtr

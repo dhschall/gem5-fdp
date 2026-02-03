@@ -43,7 +43,7 @@ class TAGE_EMILIO: public ConditionalPredictor
     TAGE_EMILIO(const TAGE_EMILIOParams &params);
 
     // ConditionalPredictor interface.
-    bool lookup(ThreadID tid, Addr pc, void* &bp_history) override;
+    Prediction lookup(ThreadID tid, Addr pc, void* &bp_history) override;
 
     // Changed: new ConditionalPredictor interface adds a StaticInstPtr
     // parameter so the predictor can inspect the instruction if needed.

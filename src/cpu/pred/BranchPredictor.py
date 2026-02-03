@@ -165,7 +165,7 @@ class AssociativeBTB(BranchTargetBuffer):
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
 
-class ConditionalPredictor(SimObject):
+class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"
     cxx_header = "cpu/pred/conditional.hh"
@@ -174,6 +174,9 @@ class ConditionalPredictor(SimObject):
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     instShiftAmt = Param.Unsigned(
         Parent.instShiftAmt, "Number of bits to shift instructions by"
+    )
+    defaultLatency = Param.Cycles(
+        0, "Default latency of the predictor (in cycles)"
     )
     speculativeHistUpdate = Param.Bool(
         Parent.speculativeHistUpdate,
@@ -275,6 +278,10 @@ class BranchPredictor(SimObject):
     )
     conditionalBranchPred = Param.ConditionalPredictor(
         "Conditional branch predictor"
+    )
+    overridingBranchPred = Param.ConditionalPredictor(
+        NULL,
+        "Secondary, overriding predictor which corrects the primary predictor",
     )
     indirectBranchPred = Param.IndirectPredictor(
         SimpleIndirectPredictor(),
