@@ -2,6 +2,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/BTB.hh"
+#include <algorithm>
 
 namespace gem5::branch_prediction
 {
@@ -79,6 +80,8 @@ MultiLevelBTB::MultiLevelBTBStats::preDumpStats()
         size_t count = pair.second.size();
         successorCountDist.sample(count);
     }
+    btb->markovSuccessors.clear();
+    std::fill(btb->prevBranchPC.begin(), btb->prevBranchPC.end(), 0);
 }
 
 MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
@@ -156,9 +159,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     }
 
     // ==========================================================================
-    // Step 2: pBuffer lookup (Policy 4 and 6 - both use pBuffer)
+    // Step 2: pBuffer lookup (Policy 4, 6, 7, 8, 9, and 10 - all use pBuffer)
     // ==========================================================================
-    if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6) {
+    if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || 
+        l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
             return handlePBufferHit(tid, instPC, pB_entry, taken);
@@ -302,7 +306,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         // Prefetch the most frequent successor to L1
         // ---------------------------------------------------------------------
         if (l1PrefetchPolicy == 5) {
-            prefetchMarkovSuccessor(tid, instPC, true);  // true = prefetch to L1
+            prefetchMarkovSuccessor(tid, instPC, true, 1);  // Prefetch 1 to L1
         }
 
     // -------------------------------------------------------------------------
@@ -333,15 +337,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
                            true, false, false, isPrefetchHit, predMatch);
 }
 
-//=============================================================================
-// handlePBufferHit: Handle pBuffer hit (Policy 4 only)
-//
-// This function handles pBuffer hits:
-// - Updates prefetch hit statistics
-// - Promotes entry from pBuffer to L1
-// - Tracks L1 victim eviction for pBuffer-installed entries
-// - Checks prediction match
-//=============================================================================
+
 BTBLookupResult
 MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
                                 BTBEntry *pB_entry, bool taken)
@@ -405,11 +401,15 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // }
 
     // -------------------------------------------------------------------------
-    // Policy 6 (Markov to pBuffer): Continue prefetch chain on pBuffer hit
-    // Prefetch the most frequent successor to pBuffer
+    // Policy 6/7/8/9/10 (Markov to pBuffer): Continue prefetch chain on pBuffer hit
+    // Prefetch the most frequent successor(s) to pBuffer
     // -------------------------------------------------------------------------
-    if (l1PrefetchPolicy == 6) {
-        prefetchMarkovSuccessor(tid, instPC, false);  // false = prefetch to pBuffer
+    if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8) {
+        prefetchMarkovSuccessor(tid, instPC, false, 1);  // Prefetch 1 successor
+    } else if (l1PrefetchPolicy == 9) {
+        prefetchMarkovSuccessor(tid, instPC, false, 2);  // Prefetch 2 successors
+    } else if (l1PrefetchPolicy == 10) {
+        prefetchMarkovSuccessor(tid, instPC, false, 3);  // Prefetch 3 successors
     }
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
@@ -525,19 +525,28 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
     // -------------------------------------------------------------------------
     // Markov prefetcher: Learn successor relationships with frequency
+    // Policy 6: Train on all branches (speculative - at lookup time)
+    // Policy 7/8: Don't train here (train only on commit for committed branches)
     // -------------------------------------------------------------------------
-    if (prevBranchPC[tid] != 0) {
-        markovSuccessors[prevBranchPC[tid]][instPC]++;  // Increment frequency
+    if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 5) {
+        // Policy 6: Train on all branches (speculative)
+        if (prevBranchPC[tid] != 0) {
+            markovSuccessors[prevBranchPC[tid]][instPC]++;  // Increment frequency
+        }
+        prevBranchPC[tid] = instPC;
     }
-    prevBranchPC[tid] = instPC;
 
     // -------------------------------------------------------------------------
-    // Policy 5/6: Markov-based prefetching on L2 hit
+    // Policy 5/6/7/8/9/10: Markov-based prefetching on L2 hit
     // -------------------------------------------------------------------------
     if (l1PrefetchPolicy == 5) {
-        prefetchMarkovSuccessor(tid, instPC, true);   // Prefetch to L1
-    } else if (l1PrefetchPolicy == 6) {
-        prefetchMarkovSuccessor(tid, instPC, false);  // Prefetch to pBuffer
+        prefetchMarkovSuccessor(tid, instPC, true, 1);   // Prefetch 1 to L1
+    } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8) {
+        prefetchMarkovSuccessor(tid, instPC, false, 1);  // Prefetch 1 to pBuffer
+    } else if (l1PrefetchPolicy == 9) {
+        prefetchMarkovSuccessor(tid, instPC, false, 2);  // Prefetch 2 to pBuffer
+    } else if (l1PrefetchPolicy == 10) {
+        prefetchMarkovSuccessor(tid, instPC, false, 3);  // Prefetch 3 to pBuffer
     }
 
     // -------------------------------------------------------------------------
@@ -574,69 +583,92 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     return BTBLookupResult(l2_entry->target.get(), l2Latency, false, false, true);
 }
 
-//=============================================================================
-// prefetchMarkovSuccessor: Prefetch the most frequent successor (Policy 5/6)
-//
-// This function finds the most frequently accessed successor of the given PC
-// and prefetches it to L1 (Policy 5) or pBuffer (Policy 6).
-//=============================================================================
 void
-MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1)
+MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigned numSuccessors)
 {
     auto it = markovSuccessors.find(pc);
     if (it == markovSuccessors.end() || it->second.empty()) {
         return;  // No successor data for this PC
     }
 
-    // Find the successor with highest frequency
-    Addr bestSuccessor = 0;
-    uint64_t maxFreq = 0;
+    // Build a vector of (successor, frequency) pairs and sort by frequency
+    std::vector<std::pair<Addr, uint64_t>> successors;
     for (const auto& [succ, freq] : it->second) {
-        if (freq > maxFreq) {
-            maxFreq = freq;
-            bestSuccessor = succ;
-        }
+        successors.push_back({succ, freq});
     }
+    
+    // Sort by frequency (descending)
+    std::sort(successors.begin(), successors.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    // Prefetch top N successors
+    unsigned prefetched = 0;
+    for (const auto& [successor, freq] : successors) {
+        if (prefetched >= numSuccessors) {
+            break;
+        }
+        
+        if (successor == 0) {
+            continue;
+        }
 
-    if (bestSuccessor == 0) {
+        // Check if already in L1
+        if (l1btb.findEntry({successor, tid})) {
+            continue;
+        }
+        // Find in L2
+        BTBEntry *l2_entry = l2btb.findEntry({successor, tid});
+        if (!l2_entry) {
+            continue;
+        }
+        
+        multilevelstats.markovDist.sample(successor - pc);
+        multilevelstats.totalPrefetches++;
+
+        if (toL1) {
+            // Policy 5: Prefetch to L1
+            BTBEntry *l1_victim = l1btb.findVictim({successor, tid});
+            if (l1_victim->isPrefetched()) {
+                multilevelstats.uselessPrefetches++;
+                l1_victim->setPrefetched(false);
+            }
+            l1btb.insertEntry({successor, tid}, l1_victim);
+            l1_victim->update(*l2_entry->target, l2_entry->inst);
+            l1_victim->setPrefetched(true);
+            l1_victim->setTimestamp(curCycle());
+        } else {
+            // Policy 6/7/8/9/10: Prefetch to pBuffer
+            BTBEntry *pB_victim = pBuffer.findVictim({successor, tid});
+            if (pB_victim->isPrefetched()) {
+                multilevelstats.uselessPrefetches++;
+            }
+            pBuffer.insertEntry({successor, tid}, pB_victim);
+            pB_victim->update(*l2_entry->target, l2_entry->inst);
+            pB_victim->setPrefetched(true);
+            pB_victim->setTimestamp(curCycle());
+        }
+        
+        prefetched++;
+    }
+}
+
+// trainMarkovOnCommit: Train Markov predictor on committed branches (Policy 7/8/9/10)
+void
+MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit)
+{
+    if (l1PrefetchPolicy != 7 && l1PrefetchPolicy != 8 && 
+        l1PrefetchPolicy != 9 && l1PrefetchPolicy != 10) {
         return;
     }
 
-    // Check if already in L1
-    if (l1btb.findEntry({bestSuccessor, tid})) {
-        return;
-    }
-    multilevelstats.markovDist.sample(bestSuccessor - pc);
-    // Find in L2
-    BTBEntry *l2_entry = l2btb.findEntry({bestSuccessor, tid});
-    if (!l2_entry) {
+    if(l1PrefetchPolicy == 7 && !wasL2Hit) {
         return;
     }
 
-    multilevelstats.totalPrefetches++;
-
-    if (toL1) {
-        // Policy 5: Prefetch to L1
-        BTBEntry *l1_victim = l1btb.findVictim({bestSuccessor, tid});
-        if (l1_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches++;
-            l1_victim->setPrefetched(false);
-        }
-        l1btb.insertEntry({bestSuccessor, tid}, l1_victim);
-        l1_victim->update(*l2_entry->target, l2_entry->inst);
-        l1_victim->setPrefetched(true);
-        l1_victim->setTimestamp(curCycle());
-    } else {
-        // Policy 6: Prefetch to pBuffer
-        BTBEntry *pB_victim = pBuffer.findVictim({bestSuccessor, tid});
-        if (pB_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches++;
-        }
-        pBuffer.insertEntry({bestSuccessor, tid}, pB_victim);
-        pB_victim->update(*l2_entry->target, l2_entry->inst);
-        pB_victim->setPrefetched(true);
-        pB_victim->setTimestamp(curCycle());
+    if (prevBranchPC[tid] != 0) {
+        markovSuccessors[prevBranchPC[tid]][pc]++; 
     }
+    prevBranchPC[tid] = pc;
 }
 
 } // namespace gem5::branch_prediction

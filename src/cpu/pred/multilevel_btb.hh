@@ -35,6 +35,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
 
     void setBranchPredictor(ConditionalPredictor *cp) { cPred = cp; }
+
+    void trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit);
    
   private:
     ConditionalPredictor *cPred = nullptr;
@@ -141,12 +143,12 @@ class MultiLevelBTB : public BranchTargetBuffer
                                 BranchType type, bool taken);
 
     /**
-     * Prefetch the most frequent successor of given PC (Policy 5/6).
-     * @param tid Thread ID
-     * @param pc Current branch PC
-     * @param toL1 If true, prefetch to L1; otherwise prefetch to pBuffer
+     * Prefetch the most frequent successors of given PC (Policy 5/6/7/8/9/10).
+     * @param numSuccessors Number of top successors to prefetch (default 1)
      */
-    void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1);
+    void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigned numSuccessors = 1);
+
+    
 };
 } // namespace gem5::branch_prediction
 

@@ -515,6 +515,12 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
             stats.committedPrefetchHits++;
         }
     }
+
+    // Train Markov predictor for committed branches (Policy 7 only)
+    if (isMultiLevelBTB) {
+        static_cast<MultiLevelBTB*>(btb)->trainMarkovOnCommit(
+            tid, hist->pc, hist->l2btbHit);
+    }
 }
 
 
