@@ -490,6 +490,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
             // Policy 4: Prefetch to pBuffer
             if (l1PrefetchPolicy == 4) {
+                if (pBuffer.findEntry({pfAddr, tid})) continue;
                 BTBEntry *pB_victim = pBuffer.findVictim({pfAddr, tid});
                 if (pB_victim->isPrefetched()) {
                     multilevelstats.uselessPrefetches++;
@@ -622,7 +623,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigne
             continue;
         }
         
-        multilevelstats.markovDist.sample(successor - pc);
+        // multilevelstats.markovDist.sample(successor - pc);
         multilevelstats.totalPrefetches++;
 
         if (toL1) {
@@ -638,6 +639,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigne
             l1_victim->setTimestamp(curCycle());
         } else {
             // Policy 6/7/8/9/10: Prefetch to pBuffer
+            if (pBuffer.findEntry({successor, tid})) continue; 
             BTBEntry *pB_victim = pBuffer.findVictim({successor, tid});
             if (pB_victim->isPrefetched()) {
                 multilevelstats.uselessPrefetches++;
