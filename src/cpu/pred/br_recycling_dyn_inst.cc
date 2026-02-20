@@ -15,17 +15,99 @@ namespace gem5
 namespace branch_prediction
 {
 
+BranchRecyclingCacheDynInst::BucketNode *
+BranchRecyclingCacheDynInst::BucketCache::find(Addr pc)
+{
+    auto it = BRC.find(pc);
+    if (it == BRC.end()) {
+        return nullptr;
+    }
+    touch(it->second);
+    return &it->second;
+}
+
+void
+BranchRecyclingCacheDynInst::BucketCache::evictBucket()
+{
+    if (BRC.empty()) {
+        return;
+    }
+
+    // LFU mechanism use oldest as tie breaker
+    Addr evict_bucket_key = 0;
+    bool evict_found = false;
+
+    uint64_t best_freq = std::numeric_limits<uint64_t>::max();
+    uint64_t best_stamp = std::numeric_limits<uint64_t>::max();
+
+    for (auto &bucket : BRC) {
+        const Addr key = bucket.first;
+        const BucketNode &n = bucket.second;
+
+        if (!evict_found || (n.freq < best_freq) ||
+            (n.freq == best_freq && n.stamp < best_stamp)) {
+            evict_found = true;
+            evict_bucket_key = key;
+            best_freq = n.freq;
+            best_stamp = n.stamp;
+        }
+    }
+
+    BRC.erase(evict_bucket_key);
+}
+
+BranchRecyclingCacheDynInst::BucketNode *
+BranchRecyclingCacheDynInst::BucketCache::getOrAllocBucket(Addr pc)
+{
+    // return found entry
+    if (auto *n = find(pc)) {
+        return n;
+    }
+
+    // If full, evict
+    if (BRC.size() >= maxBuckets) {
+        evictBucket();
+    }
+
+    // Insert new node
+    auto [it, inserted] = BRC.emplace(pc, BucketNode{});
+    auto &node = it->second;
+    node.bucket.reset();
+    node.freq = 0;
+    node.stamp = 0;
+
+    touch(node);
+    return &node;
+}
+
 BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInst(const Params &p)
     : ConditionalPredictor(p),
       base(p.base),
       enableRecycling(p.enable_recycling),
       enableTraining(p.enable_training),
-      enableStrite(p.enable_strite),
-      dynInstStacks(),
+      enableStride(p.enable_stride),
+      bucketCache(p.bucket_count),
+      bucketSize(p.bucket_size),
+      trainingInterval(p.training_interval),
+      strideConfidenceThreshold(p.stride_confidence_threshold),
       cpu(nullptr),
       stats(this)
 {
     base->init();
+}
+
+BranchRecyclingCacheDynInst::RecyclingBucket *
+BranchRecyclingCacheDynInst::findBucket(Addr pc)
+{
+    auto *n = bucketCache.find(pc);
+    return n ? &n->bucket : nullptr;
+}
+
+BranchRecyclingCacheDynInst::RecyclingBucket *
+BranchRecyclingCacheDynInst::getOrAllocBucket(Addr pc)
+{
+    auto *n = bucketCache.getOrAllocBucket(pc);
+    return &n->bucket;
 }
 
 bool
@@ -45,54 +127,50 @@ BranchRecyclingCacheDynInst::lookup(ThreadID tid, Addr pc, void *&bp_history)
     h->actualKnown = false;
     h->brType = BranchType::DirectCond;
 
-    if (!enableRecycling && !enableStrite && !enableTraining) {
+    if (!enableRecycling && !enableStride && !enableTraining) {
         stats.basePred++;
         return h->base_pred;
     }
 
-    // Try LIFO recycled outcome
-    auto it = dynInstStacks.find(pc);
-    if (it != dynInstStacks.end()) {
-        auto &entries = it->second.entries;
+    // check if entry exists
+    RecyclingBucket *bucket = findBucket(pc);
+    if (bucket) {
 
-
-        // Recycling: only if trained to use recycling
-        if (enableTraining && it->second.useRecycle == false) {
-            if (!entries.empty()) {
-                entries.pop_back();
-            }
+        // recycling mechanism
+        if (enableTraining && bucket->useRecycle == false) {
+            Entry tmp;
+            (void)bucket->popFifo(tmp); // drop oldest to keep aligned
             DPRINTF(RecycledEntry, "Used base prediction for pc %#x\n", pc);
             return h->base_pred;
         }
 
-        // Stride-based filtering
-        if (enableStrite && it->second.striteCounterDynAddr < 50) {
-            if (!entries.empty()) {
-                entries.pop_back();
-            }
+        // stride detection
+        if (enableStride &&
+            bucket->strideCounterDynAddr < strideConfidenceThreshold) {
+            Entry tmp;
+            (void)bucket->popFifo(tmp); // drop oldest to keep aligned
             return h->base_pred;
         }
 
-        if (!entries.empty()) {
-            const Entry &re = entries.back();
+        Entry recycledEntry;
+        if (bucket->popFifo(recycledEntry)) {
             h->usedRecycle = true;
-            h->recycledTaken = re.taken;
-            h->brType = re.brType;
-
-            // Pop LIFO
-            entries.pop_back();
+            h->recycledTaken = recycledEntry.taken;
+            h->brType = recycledEntry.brType;
 
             stats.recycledPred++;
 
             if (h->recycledTaken != h->base_pred) {
                 stats.RecycleBaseDiffer++;
             }
-              DPRINTF(RecycledEntry, "Used recycled prediction for pc %#x\n", pc);
+
+            DPRINTF(RecycledEntry, "Used recycled prediction for pc %#x\n",
+                    pc);
             return h->recycledTaken;
         }
     }
 
-    // Fallback to base predictor.
+    // Fallback to base predictor
     stats.basePred++;
     DPRINTF(RecycledEntry, "Used base prediction for pc %#x\n", pc);
     return h->base_pred;
@@ -148,7 +226,6 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
         h->actualTaken = taken;
     }
 
-    // Make sure we have base predictor info to update it
     void *bi = h ? h->tage_bi : nullptr;
     bool made_temp = false;
 
@@ -159,79 +236,70 @@ BranchRecyclingCacheDynInst::update(ThreadID tid, Addr pc, bool taken,
 
     base->update(tid, pc, taken, bi, squashed, inst, target);
 
-    // Per-PC stats
+    // Per PC stats
     auto &bs = branchStats[pc];
     bs.exec++;
     bs.taken += taken ? 1 : 0;
+    RecyclingBucket *bucket = findBucket(pc);
 
-    // Bucket
-    auto it_bucket = dynInstStacks.find(pc);
-    if (it_bucket != dynInstStacks.end()) {
-        auto &bucket = it_bucket->second;
-        bucket.execs++;
-
-
-        // Mispredict handling
+    if (bucket) {
+        // mispredict stats update
         if (squashed) {
             bs.mispred++;
             stats.missPredicts++;
 
-            //
-            bucket.execs++;
+            bucket->execs++;
 
             if (h) {
                 const int recycled_pred =
                     (h->usedRecycle) ? (int)h->recycledTaken : -1;
 
                 if (h->usedRecycle && h->base_pred == recycled_pred) {
-                    stats.missPredictedBothPredictorsWrong++;
-                    bucket.mispredictsTage++;
-                    bucket.mispredictsRecycle++;
+                    stats.misPredictedBothPredictorsWrong++;
+                    bucket->mispredictsTage++;
+                    bucket->mispredictsRecycle++;
                 } else if (h->usedRecycle && recycled_pred != (int)taken) {
-                    stats.missPredictedFaultyRecycle++;
-                    bucket.mispredictsRecycle++;
+                    stats.misPredictedFaultyRecycle++;
+                    bucket->mispredictsRecycle++;
+                    bucket->trainingMetric--;
                 } else {
                     stats.missPredictedTageFault++;
-                    bucket.mispredictsTage++;
+                    bucket->mispredictsTage++;
+                    bucket->trainingMetric++;
                 }
 
-                // Periodically decide whether to use recycling
-                if (bucket.execs == 100) {
-                    
-                    if (bucket.mispredictsRecycle <= bucket.mispredictsTage) {
-                        bucket.useRecycle = true;
-                    } else {
-                        bucket.useRecycle = false;
-                    }
+                // Training interval
+                if (bucket->execs == trainingInterval) {
+                    bucket->useRecycle = (bucket->mispredictsRecycle <=
+                                          bucket->mispredictsTage);
+                    // For evaluation purposes two metrics were used, can be
+                    // summarized for storage reduction to:
+                    //   bucket->useRecycle = (bucket->trainingMetric >= 0);
 
-                    //reset counters
-                    bucket.mispredictsTage = 0;
-                    bucket.mispredictsRecycle = 0;
-                    bucket.execs = 0;
+                    bucket->mispredictsTage = 0;
+                    bucket->mispredictsRecycle = 0;
+                    bucket->execs = 0;
                 }
             } else {
-                // No history -> attribute to base
                 stats.missPredictedTageFault++;
             }
         }
     } else {
-        // No bucket exists still count global mispredict stats
         if (squashed) {
             bs.mispred++;
             stats.missPredicts++;
         }
     }
 
-    // Cleanup predictor info objects
+    // Cleanup
     if (h) {
-        // keep it attached for deletion below
         h->tage_bi = bi;
     } else if (made_temp && bi) {
         delete static_cast<TAGE_SC_L::TageSCLBranchInfo *>(bi);
         bi = nullptr;
     }
 
-    // Free history 
+    // Free history
     if (h) {
         if (h->tage_bi) {
             delete static_cast<TAGE_SC_L::TageSCLBranchInfo *>(h->tage_bi);
@@ -274,13 +342,11 @@ BranchRecyclingCacheDynInst::regProbeListeners()
         return;
     }
 
-    // Listener for instructions reaching ToCommit
     using InstListener = ProbeListenerArgFunc<o3::DynInstPtr>;
     listener = cpu->getProbeManager()->connect<InstListener>(
         "ToCommit",
         [this](const o3::DynInstPtr &inst) { notifyExecutedInst(inst); });
 
-    // Listener for squash notifications (mispred anchor + squashed inst)
     using PairListener =
         ProbeListenerArgFunc<std::pair<o3::DynInstPtr, o3::DynInstPtr>>;
     slistener = cpu->getProbeManager()->connect<PairListener>(
@@ -289,7 +355,6 @@ BranchRecyclingCacheDynInst::regProbeListeners()
             notifySquashedInst(p.first, p.second);
         });
 
-    // Listener for dependency notifications
     blistener = cpu->getProbeManager()->connect<PairListener>(
         "BranchDependency",
         [this](const std::pair<o3::DynInstPtr, o3::DynInstPtr> p) {
@@ -297,7 +362,7 @@ BranchRecyclingCacheDynInst::regProbeListeners()
         });
 }
 
-// === Internal helpers ===================================================
+// Internal Heloers
 
 void
 BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
@@ -323,9 +388,10 @@ BranchRecyclingCacheDynInst::pushExecutedOutcome(const o3::DynInstPtr &inst)
     } else {
         e.brType = BranchType::DirectCond;
     }
-    auto &bucket = dynInstStacks[pc];
 
-    bucket.entries.push_back(e);
+    RecyclingBucket *bucket = getOrAllocBucket(pc);
+    bucket->pushFifoCapped(e, bucketSize);
+
     stats.committedCount++;
 }
 
@@ -344,40 +410,32 @@ void
 BranchRecyclingCacheDynInst::notifyDependentInst(
     const o3::DynInstPtr &branch_inst, const o3::DynInstPtr &load_inst)
 {
-
-    //check validity of instruction
     if (!branch_inst || branch_inst->isSquashed() ||
         !branch_inst->isCondCtrl() || branch_inst->seqNum == lastSeqNum) {
         return;
     }
 
-
     lastSeqNum = branch_inst->seqNum;
 
     const Addr pc = branch_inst->pcState().instAddr();
-    auto &bucket = dynInstStacks[pc];
 
-    // Stride DynAddr counter update
-    int currentDynAddrOffset = load_inst->effAddr - bucket.lastDynAddr;
+    RecyclingBucket *bucket = getOrAllocBucket(pc);
 
-    if (bucket.lastDynAddrOffset == currentDynAddrOffset) {
-        //update strite
-        bucket.striteCounterDynAddr++;
+    const int currentDynAddrOffset = load_inst->effAddr - bucket->lastDynAddr;
 
-        //UPDATE FOR STATS
-        if (bucket.striteCounterDynAddr > branchStats[pc].biggestStrite) {
-            branchStats[pc].biggestStrite = bucket.striteCounterDynAddr;
+    if (bucket->lastDynAddrOffset == currentDynAddrOffset) {
+        bucket->strideCounterDynAddr++;
+
+        if (bucket->strideCounterDynAddr > branchStats[pc].biggestStride) {
+            branchStats[pc].biggestStride = bucket->strideCounterDynAddr;
         }
-
-
-    } else if (bucket.striteCounterDynAddr > 0) {
-        bucket.striteCounterDynAddr = 0;
+    } else if (bucket->strideCounterDynAddr > 0) {
+        bucket->strideCounterDynAddr = 0;
         return;
     }
 
-    //update info of last addr.
-    bucket.lastDynAddr = load_inst->effAddr;
-    bucket.lastDynAddrOffset = currentDynAddrOffset;
+    bucket->lastDynAddr = load_inst->effAddr;
+    bucket->lastDynAddrOffset = currentDynAddrOffset;
 }
 
 void
@@ -389,9 +447,7 @@ BranchRecyclingCacheDynInst::notifySquashedInst(
     }
 
     if (mispred_inst &&
-        mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {
-        // debug if needed
-    }
+        mispred_inst->pcState().instAddr() == inst->pcState().instAddr()) {}
 }
 
 void
@@ -402,12 +458,12 @@ BranchRecyclingCacheDynInst::dump(const std::string &filename)
         panic("Could not open %s for writing\n", filename);
     }
 
-    ccprintf(fileStream, "pc;exec;taken;mispred\n");
+    ccprintf(fileStream, "pc;exec;taken;mispred;biggestStride\n");
 
     for (auto &bi : branchStats) {
         ccprintf(fileStream, "%llu;%i;%i;%i;%i\n",
                  (unsigned long long)bi.first, bi.second.exec, bi.second.taken,
-                 bi.second.mispred, bi.second.biggestStrite);
+                 bi.second.mispred, bi.second.biggestStride);
     }
 
     fileStream.close();
@@ -422,19 +478,19 @@ BranchRecyclingCacheDynInst::BranchRecyclingCacheDynInstStats::
                "Number of times the base predictor was used"),
       ADD_STAT(RecycleBaseDiffer, statistics::units::Count::get(),
                "Number of times only the recycled prediction was correct"),
-      ADD_STAT(missPredictedFaultyRecycle, statistics::units::Count::get(),
+      ADD_STAT(misPredictedFaultyRecycle, statistics::units::Count::get(),
                "Number of times a faulty recycle caused a misprediction"),
       ADD_STAT(
           missPredictedTageFault, statistics::units::Count::get(),
           "Number of times a TAGE predictor fault caused a misprediction"),
-      ADD_STAT(missPredictedBothPredictorsWrong,
+      ADD_STAT(misPredictedBothPredictorsWrong,
                statistics::units::Count::get(),
                "Number of times both predictors were wrong causing a "
                "misprediction"),
       ADD_STAT(missPredicts, statistics::units::Count::get(),
                "Number of times a misprediction occurred"),
       ADD_STAT(committedCount, statistics::units::Count::get(),
-               "Number of committed branches to dynInstStack")
+               "Number of committed branches to bucketCache")
 {}
 
 } // namespace branch_prediction

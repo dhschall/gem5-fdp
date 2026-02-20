@@ -2,6 +2,8 @@
 #define __CPU_PRED_BR_RECYCLING_DYN_INST_HH__
 
 #include <cstdint>
+#include <deque>
+#include <limits>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -45,7 +47,7 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
 
     void regProbeListeners() override;
 
-    void dump(const std::string& filename);
+    void dump(const std::string &filename);
 
     void
     setCPU(BaseCPU *_cpu)
@@ -54,35 +56,67 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     }
 
   private:
-    // Branch outcome
+    // Branch outcome stored in per-PC bucket
     struct Entry
     {
-      //Attributes for recycling
         Addr pc = 0;
         bool taken = false;
         BranchType brType = BranchType::NoBranch;
         InstSeqNum seqNum = 0;
         bool valid = true;
-
-
     };
 
-    struct recyclingEntry
+    struct RecyclingBucket
     {
-       
-        //Attributes for training
+        // Training
         int execs = 0;
         int mispredictsTage = 0;
         int mispredictsRecycle = 0;
+        int trainingMetric = 0;
         bool useRecycle = false;
 
-        //Attributes for StriteDynInst
+        // Stride DynAddr
         Addr lastDynAddr = 0;
         int lastDynAddrOffset = 0;
-        int striteCounterDynAddr = 0;
+        int strideCounterDynAddr = 0;
 
-        //Stack of entries for recycling
-        std::vector<Entry> entries;
+        // FIFO queue of outcomes
+        std::deque<Entry> FIFO_queue;
+
+        void
+        reset()
+        {
+            execs = 0;
+            mispredictsTage = 0;
+            mispredictsRecycle = 0;
+            useRecycle = false;
+
+            lastDynAddr = 0;
+            lastDynAddrOffset = 0;
+            strideCounterDynAddr = 0;
+
+            FIFO_queue.clear();
+        }
+
+        void
+        pushFifoCapped(const Entry &e, size_t bucketSize)
+        {
+            if (FIFO_queue.size() >= bucketSize) {
+                FIFO_queue.pop_front(); // drop oldest
+            }
+            FIFO_queue.push_back(e); // add newest
+        }
+
+        bool
+        popFifo(Entry &out)
+        {
+            if (FIFO_queue.empty()) {
+                return false;
+            }
+            out = FIFO_queue.front(); // oldest
+            FIFO_queue.pop_front();
+            return true;
+        }
     };
 
     // Per-lookup history
@@ -99,34 +133,68 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         BranchType brType = BranchType::DirectCond;
 
         bool base_pred = false;
-
         void *tage_bi = nullptr;
     };
 
+    struct BucketNode
+    {
+        RecyclingBucket bucket;
+        uint64_t freq = 0;  // LFU count
+        uint64_t stamp = 0; // increasing counter for tie braker
+    };
+
+    class BucketCache
+    {
+      public:
+        explicit BucketCache(size_t max_buckets) : maxBuckets(max_buckets) {}
+
+        BucketNode *find(Addr pc);
+        BucketNode *getOrAllocBucket(Addr pc);
+
+        size_t
+        size() const
+        {
+            return BRC.size();
+        }
+
+      private:
+        size_t maxBuckets;
+        uint64_t globalStamp = 0;
+
+        std::unordered_map<Addr, BucketNode> BRC;
+
+        void
+        touch(BucketNode &n)
+        {
+            n.freq++;
+            n.stamp = ++globalStamp;
+        }
+
+        void evictBucket();
+    };
 
     // Base predictor
     TAGE_SC_L *base;
     const bool enableRecycling;
+
+    // Stride helper
+    InstSeqNum lastSeqNum = 0;
+
+    // Configurable Parameters 1
     const bool enableTraining;
-    const bool enableStrite;
+    const bool enableStride;
 
-    //Attributes for Strite Mechanism
-     InstSeqNum lastSeqNum = 0;
-    
+    // Wrapper with evict functions for BRC
+    BucketCache bucketCache;
 
-
-    // Stack with the Addr and a tuple for training aswell as entries
-    //Track statistics here
-    std::unordered_map<Addr,  recyclingEntry> dynInstStacks;
-
-    //Associative Cache 
-
-    AssociativeCache<recyclingEntry> associativeCache;
-
+    // Configurable Parameters 2
+    const int bucketSize;
+    const int trainingInterval;
+    const int strideConfidenceThreshold;
     // Probes
     ProbeListenerPtr<> listener;  // ToCommit
     ProbeListenerPtr<> slistener; // SquashInst
-    ProbeListenerPtr<> blistener; // SquashInst
+    ProbeListenerPtr<> blistener; // BranchDependency
     BaseCPU *cpu;
 
     // Probe handlers
@@ -134,19 +202,24 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
     void notifySquashedInst(const o3::DynInstPtr &mispred_inst,
                             const o3::DynInstPtr &sq_inst);
     void notifyDependentInst(const o3::DynInstPtr &branch_i,
-                            const o3::DynInstPtr &load_i);
+                             const o3::DynInstPtr &load_i);
 
     // Helpers
     void pushExecutedOutcome(const o3::DynInstPtr &inst);
 
+    // Bucket helpers
+    RecyclingBucket *findBucket(Addr pc);
+    RecyclingBucket *getOrAllocBucket(Addr pc);
+
+    // Per-PC stats
     struct branch_info
     {
-      int exec = 0;
-      int taken = 0;
-      int mispred = 0;
-      int biggestStrite = 0;
+        int exec = 0;
+        int taken = 0;
+        int mispred = 0;
+        int biggestStride = 0;
     };
-    std::unordered_map<Addr,branch_info> branchStats;
+    std::unordered_map<Addr, branch_info> branchStats;
 
   public:
     struct BranchRecyclingCacheDynInstStats : public statistics::Group
@@ -155,9 +228,9 @@ class BranchRecyclingCacheDynInst : public ConditionalPredictor
         statistics::Scalar recycledPred;
         statistics::Scalar basePred;
         statistics::Scalar RecycleBaseDiffer;
-        statistics::Scalar missPredictedFaultyRecycle;
+        statistics::Scalar misPredictedFaultyRecycle;
         statistics::Scalar missPredictedTageFault;
-        statistics::Scalar missPredictedBothPredictorsWrong;
+        statistics::Scalar misPredictedBothPredictorsWrong;
         statistics::Scalar missPredicts;
         statistics::Scalar committedCount;
     } stats;

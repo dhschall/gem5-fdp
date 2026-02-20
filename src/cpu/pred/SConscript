@@ -60,7 +60,7 @@ SimObject('BranchPredictor.py',
     'MultiperspectivePerceptronTAGE', 'MPP_StatisticalCorrector_64KB',
     'MultiperspectivePerceptronTAGE64KB', 'MPP_TAGE_8KB',
     'MPP_LoopPredictor_8KB', 'MPP_StatisticalCorrector_8KB',
-    'MultiperspectivePerceptronTAGE8KB', 'BranchRecyclingCache', 'BranchRecyclingCacheDynInst',],
+    'MultiperspectivePerceptronTAGE8KB', 'BranchRecyclingCache', 'BranchRecyclingCacheDynInst', 'BranchRecyclingCacheDynInstOld'],
     enums=['BranchType', 'TargetProvider'])
 
 Source('bpred_unit.cc')
@@ -91,6 +91,7 @@ Source('simple_btb.cc')
 #New files for branch recycling
 Source('br_recycling.cc')
 Source('br_recycling_dyn_inst.cc')
+Source('br_recycling_dyn_inst_old.cc')
 
 DebugFlag('Indirect')
 DebugFlag('BTB')

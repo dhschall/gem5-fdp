@@ -1270,7 +1270,49 @@ class BranchRecyclingCacheDynInst(ConditionalPredictor):
     enable_training = Param.Bool(
         True, "Enabling the training of recycled entries"
     )
-    enable_strite = Param.Bool(
-        True, "Enabling the strite mechanism for recycled entries based on the DynInst"
+    enable_stride = Param.Bool(
+        True, "Enabling the stride mechanism for recycled entries based on the DynInst"
     )
-  
+    bucket_count = Param.Unsigned(80, "Number of buckets in the recycling cache")
+    bucket_size = Param.Unsigned(32, "Number of entries per bucket")
+    training_interval = Param.Unsigned(100, "Cycle to train for recycled entries")
+    stride_confidence_threshold = Param.Unsigned(50, "Confidence threshold for stride prediction")
+
+
+
+
+class BranchRecyclingCacheDynInstOld(ConditionalPredictor):
+    type = "BranchRecyclingCacheDynInstOld"
+    cxx_class = "gem5::branch_prediction::BranchRecyclingCacheDynInstOld"
+    cxx_header = "cpu/pred/br_recycling_dyn_inst_old.hh"
+    cxx_exports = [
+        PyBindMethod("setCPU"),
+        PyBindMethod("dump"),
+    ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cpu = None
+
+    def registerCpu(self, simObj):
+        if not isinstance(simObj, SimObject):
+            raise TypeError("argument must be a SimObject type")
+        self._cpu = simObj
+
+    def regProbeListeners(self):
+        if self._cpu:
+            self.getCCObject().setCPU(self._cpu.getCCObject())
+        self.getCCObject().regProbeListeners()
+
+    base = Param.TAGE_SC_L(
+        TAGE_SC_L_64KB(),
+        "Base predictor",
+    )
+    enable_recycling = Param.Bool(True, "Enabling the recycling")
+    enable_training = Param.Bool(
+        True, "Enabling the training of recycled entries"
+    )
+    enable_stride = Param.Bool(
+        True, "Enabling the stride mechanism for recycled entries based on the DynInst"
+    )
+   
