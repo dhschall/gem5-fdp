@@ -98,7 +98,14 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Vector predChecks;
         statistics::Formula predMatchRatio;
 
-        
+        // Policy 11: Shadow Statistics (indexed by BranchType)
+        statistics::Vector shadowOverlaps;    // Hit in BOTH Real and Shadow
+        statistics::Vector spatialOnlyHits;   // Hit in Real, Miss in Shadow
+        statistics::Vector markovOnlyHits;    // Miss in Real, Hit in Shadow
+        statistics::Vector uniMisses;         // Miss in BOTH, but Hit in L2
+        // Breakdown of markovOnlyHits by predecessor's BranchType
+        // Index 0 (NoBranch) = demand fill from L2, not prefetched
+        statistics::Vector markovOnlyHitsByPredType;
 
         MultiLevelBTB *btb;
         
@@ -117,6 +124,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     // tacking the previous branch PC for each thread.
     std::vector<Addr> prevBranchPC;
+    // Shadow previous branch PC for Policy 11 training
+    std::vector<Addr> shadowPrevBranchPC;
     friend struct MultiLevelBTBStats;
 
     /**
@@ -148,7 +157,16 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigned numSuccessors = 1);
 
-    
+    // Policy 11: Shadow structures to simulate Markov prefetcher behavior alongside Spatial
+    AssociativeCache<BTBEntry> shadowL1BTB;
+    AssociativeCache<BTBEntry> shadowPBuffer;
+
+    void performShadowLookup(ThreadID tid, Addr instPC, BranchType type);
+
+    void handleShadowL2Hit(ThreadID tid, Addr instPC, BTBEntry* l2_entry, BranchType type);
+
+    void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
+
 };
 } // namespace gem5::branch_prediction
 

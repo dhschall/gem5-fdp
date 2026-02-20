@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -199,6 +199,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
         fromPBuffer = other.fromPBuffer;
+        markovPredType = other.markovPredType;
     }
 
     /** Assignment operator */
@@ -214,6 +215,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
         fromPBuffer = other.fromPBuffer;
+        markovPredType = other.markovPredType;
 
         return *this;
     }
@@ -308,9 +310,17 @@ class BTBEntry : public ReplaceableEntry
     bool isFromPBuffer() const { return fromPBuffer; }
     void setFromPBuffer(bool p) { fromPBuffer = p; }
 
+    /** Markov predecessor branch type for shadow prefetch tracking (Policy 11).
+     *  -1 = no predecessor (demand fill from L2, not prefetched). */
+    int8_t getMarkovPredType() const { return markovPredType; }
+    void setMarkovPredType(int8_t t) { markovPredType = t; }
+
   private:
     /** Flag to track if this entry was installed from prefetch buffer */
     bool fromPBuffer;
+
+    /** Predecessor branch type that triggered this Markov prefetch */
+    int8_t markovPredType;
 };
 } // namespace gem5::branch_prediction
 /**

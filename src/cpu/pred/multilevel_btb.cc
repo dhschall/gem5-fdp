@@ -34,6 +34,11 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(predMatches, statistics::units::Count::get(), "Number of prediction matches for prefetched entries"),
       ADD_STAT(predChecks, statistics::units::Count::get(), "Number of prediction checks for prefetched entries"),
       ADD_STAT(predMatchRatio, statistics::units::Ratio::get(), "Prediction match ratio for prefetched entries"),
+      ADD_STAT(shadowOverlaps, statistics::units::Count::get(), "Hit in BOTH Real and Shadow"),
+      ADD_STAT(spatialOnlyHits, statistics::units::Count::get(), "Hit in Real, Miss in Shadow"),
+      ADD_STAT(markovOnlyHits, statistics::units::Count::get(), "Miss in Real, Hit in Shadow"),
+      ADD_STAT(uniMisses, statistics::units::Count::get(), "Miss in BOTH, but Hit in L2"),
+      ADD_STAT(markovOnlyHitsByPredType, statistics::units::Count::get(), "Markov only hits broken down by predecessor type"),
       btb(btb)
 {
     using namespace statistics;
@@ -56,6 +61,20 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 
     predMatchRatio = predMatches / predChecks;
 
+    // Policy 11 Shadow Stats
+    shadowOverlaps.init(enums::Num_BranchType).flags(total | pdf);
+    spatialOnlyHits.init(enums::Num_BranchType).flags(total | pdf);
+    markovOnlyHits.init(enums::Num_BranchType).flags(total | pdf);
+    uniMisses.init(enums::Num_BranchType).flags(total | pdf);
+    
+    markovOnlyHitsByPredType.init(enums::Num_BranchType).flags(total | pdf);
+    for (int i = 0; i < enums::Num_BranchType; i++) {
+        shadowOverlaps.subname(i, enums::BranchTypeStrings[i]);
+        spatialOnlyHits.subname(i, enums::BranchTypeStrings[i]);
+        markovOnlyHits.subname(i, enums::BranchTypeStrings[i]);
+        uniMisses.subname(i, enums::BranchTypeStrings[i]);
+        markovOnlyHitsByPredType.subname(i, enums::BranchTypeStrings[i]);
+    }
     // Unified prefetch coverage formula
     prefetchCoverage = prefetchHits / (prefetchHits + l1MissL2Hits);
     prefetchCoverage.precision(3);
@@ -82,6 +101,7 @@ MultiLevelBTB::MultiLevelBTBStats::preDumpStats()
     }
     btb->markovSuccessors.clear();
     std::fill(btb->prevBranchPC.begin(), btb->prevBranchPC.end(), 0);
+    std::fill(btb->shadowPrevBranchPC.begin(), btb->shadowPrevBranchPC.end(), 0);
 }
 
 MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
@@ -99,7 +119,11 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchOnlyForward(p.prefetchOnlyForward),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
-      prevBranchPC(p.numThreads, 0)
+      prevBranchPC(p.numThreads, 0),
+      shadowPrevBranchPC(p.numThreads, 0),
+      shadowL1BTB("shadowL1BTB", p.l1NumEntries, p.l1Associativity,
+            p.l1ReplPolicy, p.l1IndexingPolicy, BTBEntry(genTagExtractor(p.l1IndexingPolicy))),
+      shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy)))
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
@@ -115,6 +139,8 @@ MultiLevelBTB::memInvalidate()
     l1btb.clear();
     l2btb.clear();
     pBuffer.clear();
+    shadowL1BTB.clear();
+    shadowPBuffer.clear();
 }
 
 bool
@@ -150,6 +176,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
 {
     stats.lookups[type]++;
 
+    if (l1PrefetchPolicy == 11) {
+        performShadowLookup(tid, instPC, type);
+    }
+
     // ==========================================================================
     // Step 1: L1 BTB lookup
     // ==========================================================================
@@ -162,7 +192,8 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     // Step 2: pBuffer lookup (Policy 4, 6, 7, 8, 9, and 10 - all use pBuffer)
     // ==========================================================================
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || 
-        l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10) {
+        l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10 ||
+        l1PrefetchPolicy == 11) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
             return handlePBufferHit(tid, instPC, pB_entry, taken);
@@ -248,7 +279,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         multilevelstats.prefetchHits++;
 
         // Track prefetch distance statistics (only for spatial prefetch policies 1-4)
-        if (l1PrefetchPolicy <= 4 && l1_entry->getPrefetchDistance() < 16) {
+        if ((l1PrefetchPolicy <= 4 || l1PrefetchPolicy == 11) && l1_entry->getPrefetchDistance() < 16) {
             prefetchDistance = l1_entry->getPrefetchDistance();
             multilevelstats.prefetchDistUsed[prefetchDistance]++;
         }
@@ -357,7 +388,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
 
     // Track prefetch distance statistics (only for Policy 4, not Policy 6)
     uint8_t prefetchDistance = pB_entry->getPrefetchDistance();
-    if (l1PrefetchPolicy == 4 && prefetchDistance < 16) {
+    if ((l1PrefetchPolicy == 4 || l1PrefetchPolicy == 11) && prefetchDistance < 16) {
         multilevelstats.prefetchDistUsed[prefetchDistance]++;
     }
 
@@ -375,7 +406,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     l1_victim->update(*pB_entry->target, pB_entry->inst);
     l1_victim->setFromPBuffer(true);  // Mark for reuse tracking
     // Only set prefetch distance for Policy 4 (spatial prefetch)
-    if (l1PrefetchPolicy == 4) {
+    if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 11) {
         l1_victim->setPrefetchDistance(prefetchDistance);
     }
     l1_victim->setPredTaken(pB_entry->getPredTaken());
@@ -467,11 +498,11 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // -------------------------------------------------------------------------
     // Perform prefetching based on policy (Policy 1-4 only, not 5/6)
     // -------------------------------------------------------------------------
-    if (l1PrefetchPolicy > 0 && l1PrefetchPolicy <= 4 && doPrefetch) {
+    if (((l1PrefetchPolicy > 0 && l1PrefetchPolicy <= 4) || l1PrefetchPolicy == 11) && doPrefetch) {
         Addr endOffset = 128;
 
         // Policy 2/3: Extend to end of region + 128 bytes
-        if (l1PrefetchPolicy > 1 && l1PrefetchPolicy != 4) {
+        if (l1PrefetchPolicy > 1 && l1PrefetchPolicy != 4 && l1PrefetchPolicy != 11) {
             Addr regionEnd = (instPC & ~127) + 128;
             endOffset = regionEnd - instPC + 128;
         }
@@ -489,7 +520,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
             numBranches++;
 
             // Policy 4: Prefetch to pBuffer
-            if (l1PrefetchPolicy == 4) {
+            if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 11) {
                 if (pBuffer.findEntry({pfAddr, tid})) continue;
                 BTBEntry *pB_victim = pBuffer.findVictim({pfAddr, tid});
                 if (pB_victim->isPrefetched()) {
@@ -526,6 +557,9 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
     // -------------------------------------------------------------------------
     // Markov prefetcher: Learn successor relationships with frequency
+    // Policy 6: Train on all branches (speculative - at lookup time)
+    // Policy 7/8: Don't train here (train only on commit for committed branches)
+    // -------------------------------------------------------------------------
     // Policy 6: Train on all branches (speculative - at lookup time)
     // Policy 7/8: Don't train here (train only on commit for committed branches)
     // -------------------------------------------------------------------------
@@ -581,7 +615,118 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l2Latency);
+
     return BTBLookupResult(l2_entry->target.get(), l2Latency, false, false, true);
+}
+
+void
+MultiLevelBTB::performShadowLookup(ThreadID tid, Addr instPC, BranchType type)
+{
+    bool realL1Hit = (l1btb.findEntry({instPC, tid}) != nullptr);
+    bool realPBufferHit = (pBuffer.findEntry({instPC, tid}) != nullptr);
+    bool realHit = realL1Hit || realPBufferHit;
+
+    bool shadowL1Hit = false;
+    int8_t hitPredType = -1;  // predecessor type of the hit entry
+    
+    BTBEntry *sL1_entry = shadowL1BTB.accessEntry({instPC, tid});
+    if (sL1_entry != nullptr) {
+        shadowL1Hit = true;
+        hitPredType = sL1_entry->getMarkovPredType();
+    } else {
+        BTBEntry *sPB_entry = shadowPBuffer.accessEntry({instPC, tid});
+        if (sPB_entry != nullptr) {
+            shadowL1Hit = true;
+            hitPredType = sPB_entry->getMarkovPredType();
+            
+            BTBEntry *sL1_victim = shadowL1BTB.findVictim({instPC, tid});
+            shadowL1BTB.insertEntry({instPC, tid}, sL1_victim);
+            sL1_victim->update(*sPB_entry->target, sPB_entry->inst);
+            sL1_victim->setFromPBuffer(true);
+            sL1_victim->setMarkovPredType(hitPredType);  // preserve predecessor type
+            
+            shadowPBuffer.invalidate(sPB_entry);
+            
+            prefetchShadowMarkovSuccessor(tid, instPC, 1, type); 
+        }
+    }
+
+    if (realHit && shadowL1Hit) {
+        multilevelstats.shadowOverlaps[type]++;
+    } else if (realHit && !shadowL1Hit) {
+        multilevelstats.spatialOnlyHits[type]++;
+    } else if (!realHit && shadowL1Hit) {
+        multilevelstats.markovOnlyHits[type]++;
+        // Record predecessor type breakdown
+        // hitPredType == -1 means demand fill (not prefetched), map to index 0 (NoBranch)
+        int idx = (hitPredType >= 0) ? hitPredType : 0;
+        multilevelstats.markovOnlyHitsByPredType[idx]++;
+    } else {
+        BTBEntry *l2_check = l2btb.findEntry({instPC, tid});
+        if (l2_check != nullptr) {
+            multilevelstats.uniMisses[type]++;
+        }
+    }
+
+    // ---- Shadow fill: whenever shadow misses, demand-fill from L2 ----
+    if (!shadowL1Hit) {
+        BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
+        if (l2_entry != nullptr) {
+            handleShadowL2Hit(tid, instPC, l2_entry, type);
+        }
+    }
+}
+
+void
+MultiLevelBTB::handleShadowL2Hit(ThreadID tid, Addr instPC, BTBEntry* l2_entry, BranchType type)
+{
+    if (shadowPrevBranchPC[tid] != 0) {
+        markovSuccessors[shadowPrevBranchPC[tid]][instPC]++;
+    }
+    shadowPrevBranchPC[tid] = instPC;
+
+    BTBEntry *sL1_victim = shadowL1BTB.findVictim({instPC, tid});
+    shadowL1BTB.insertEntry({instPC, tid}, sL1_victim);
+    sL1_victim->update(*l2_entry->target, l2_entry->inst);
+    sL1_victim->setMarkovPredType(-1);  // demand fill, no predecessor
+
+    prefetchShadowMarkovSuccessor(tid, instPC, 1, type);
+}
+
+void
+MultiLevelBTB::prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType)
+{
+    auto it = markovSuccessors.find(pc);
+    if (it == markovSuccessors.end() || it->second.empty()) {
+        return;
+    }
+
+    std::vector<std::pair<Addr, uint64_t>> successors;
+    for (const auto& [succ, freq] : it->second) {
+        successors.push_back({succ, freq});
+    }
+    std::sort(successors.begin(), successors.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    unsigned prefetched = 0;
+    for (const auto& [successor, freq] : successors) {
+        if (prefetched >= numSuccessors) break;
+        if (successor == 0) continue;
+
+        if (shadowL1BTB.findEntry({successor, tid})) continue;
+        
+        BTBEntry *l2_entry = l2btb.findEntry({successor, tid});
+        if (!l2_entry) continue;
+
+        if (shadowPBuffer.findEntry({successor, tid})) continue;
+        
+        BTBEntry *sPB_victim = shadowPBuffer.findVictim({successor, tid});
+        shadowPBuffer.insertEntry({successor, tid}, sPB_victim);
+        sPB_victim->update(*l2_entry->target, l2_entry->inst);
+        sPB_victim->setPrefetched(true);
+        sPB_victim->setTimestamp(curCycle());
+        sPB_victim->setMarkovPredType(static_cast<int8_t>(predType));
+    }
 }
 
 void
