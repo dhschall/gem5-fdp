@@ -74,6 +74,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar l1MissL2Hits;
         statistics::Scalar uselessPrefetches;
         statistics::Scalar totalPrefetches;
+        statistics::Scalar shadowPrefetches;
         
         // Unified prefetch coverage (for policy 4: pBuffer hits + L1 reuse)
         statistics::Scalar prefetchHits;            // pBuffer hit + L1 reuse (both are useful)

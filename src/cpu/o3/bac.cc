@@ -775,6 +775,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             status_change = true;
             break;
         }
+
+        if (branchPredictRemaining[tid] != 0)
+            break;
     }
     stats.ftNumber.sample(num_ft);
 }

@@ -19,6 +19,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
       ADD_STAT(uselessPrefetches, statistics::units::Count::get(), "Number of useless prefetches (L1 direct prefetch evicted)"),
       ADD_STAT(totalPrefetches, statistics::units::Count::get(), "Total number of prefetches"),
+      ADD_STAT(shadowPrefetches, statistics::units::Count::get(), "Total number of shadow prefetches"),
       // Unified prefetch coverage
       ADD_STAT(prefetchHits, statistics::units::Count::get(), "Useful prefetches (pBuffer hit + L1 reuse)"),
       ADD_STAT(prefetchCoverage, statistics::units::Ratio::get(), "Prefetch coverage (prefetchHits / totalPrefetches)"),
@@ -52,6 +53,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     l1MissL2Hits.flags(total);
     uselessPrefetches.flags(total);
     totalPrefetches.flags(total);
+    shadowPrefetches.flags(total);
     prefetchDistCount.init(16);
     prefetchDistUsed.init(16);
     prefetchUsefulness = prefetchDistUsed / prefetchDistCount;
@@ -726,6 +728,7 @@ MultiLevelBTB::prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned num
         sPB_victim->setPrefetched(true);
         sPB_victim->setTimestamp(curCycle());
         sPB_victim->setMarkovPredType(static_cast<int8_t>(predType));
+        multilevelstats.shadowPrefetches++;
     }
 }
 
