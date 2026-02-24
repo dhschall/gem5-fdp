@@ -232,6 +232,10 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     //     totalLatency = Cycles(0);
     // }
     totalLatency = std::max(totalLatency, btb_res.latency);
+    // Correctify totalLatency for BIM&TAGE = not-taken, L2 hit
+    if (cbp_latency == 0 && !hist->uncond && !hist->condPred && btb_res.latency != Cycles(0)) {
+        totalLatency = Cycles(0);
+    }
     if (btb_target) {
         stats.BTBHits++;
         hist->btbHit = true;

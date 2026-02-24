@@ -253,6 +253,12 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(target, inst);
 
+    if (l1PrefetchPolicy == 11) {
+        BTBEntry *sL1_victim = shadowL1BTB.findVictim({instPC, tid});
+        shadowL1BTB.insertEntry({instPC, tid}, sL1_victim);
+        sL1_victim->update(target, inst);
+    }
+
     DPRINTF(BTB, "Updated BTB for PC %#x -> %#x\n", instPC, target.instAddr());
 }
 
