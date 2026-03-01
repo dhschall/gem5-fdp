@@ -427,6 +427,8 @@ class BAC
     /* Max number taken prediction by the BPU per Cycle*/
     const unsigned maxTakenPredPerCycle;
 
+    const bool blockBTB;
+
     /** Align a address to the start of a cache block. */
     inline Addr
     alignToCacheBlock(Addr addr)

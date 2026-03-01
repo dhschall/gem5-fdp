@@ -90,6 +90,7 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       maxFTPerCycle(params.maxFTPerCycle),
       maxTakenPredPerCycle(params.maxTakenPredPerCycle),
+      blockBTB(params.blockBTB),
       stats(_cpu, this)
 {
     fatal_if(decoupledFrontEnd && (fetchTargetWidth < params.fetchBufferSize),
@@ -650,32 +651,74 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         bool branch_found = false;
         bool predict_taken = false;
 
-        // Scan through the instruction stream and search for branches.
-        // The BTB contains only branches where taken at least once.
-        // Search stopped either because a branch was found in instruction
-        // stream or the maximum search width per cycle was reached.
-        // In the first case make the branch prediction and in the later
-        // advance the PC to start the search at the following address.
-        while (true) {
+        if (blockBTB) {
+            Addr br_addr = bpu->lookupBBBranch(tid, search_addr);
+            // If there is no end address or the end is smaller than the beginning fall back.
+            if ((br_addr == MaxAddr) || (br_addr < search_addr)) {
+                DPRINTF(Branch, "[tid:%i] BB [%#x -> unknown].\n", tid, search_addr);
+                // // hit = false;
+                // // curAddr += fetchTargetWidth;
+                // // branchFound = false;
+                // stats.bbMapMisses++;
 
-            // Check if the current search address can be found in the BTB
-            // indicating the end of the branch.
-            branch_found = bpu->BTBValid(tid, search_addr);
+            } else {
 
-            // If its a branch stop searching
-            if (branch_found) {
-                break;
+                if (bpu->BTBValid(tid, br_addr)) {
+
+                    // numAddrSearched = (br_addr - curAddr) / instSize;
+                    // hit = true;
+                    // if (numAddrSearched > fetchTargetWidth) {
+                    //     DPRINTF(Branch, "[tid:%i] BB [%#x -> %#x]. hit. Create FT. To big\n", tid, curAddr, br_addr);
+                    //     numAddrSearched = fetchTargetWidth;
+                    //     curAddr += numAddrSearched;
+
+                    // } else {
+                    //     DPRINTF(Branch, "[tid:%i] BB [%#x -> %#x]. hit. Create FT.\n", tid, curAddr, br_addr);
+                    //     branchFound = true;
+                    //     curAddr = br_addr;
+                    // }
+                    // if ((br_addr - start_addr) > fetchTargetWidth) {
+                    //     break;
+                    // }
+                    search_addr = br_addr;
+                    branch_found = true;
+                }
             }
 
-            // If its not a branch check if the maximum search width is
-            // reached. If yes stop searching.
-            if ((search_addr - start_addr) >= fetchTargetWidth) {
-                break;
+            if (!branch_found) {
+                search_addr += fetchTargetWidth;
             }
 
-            // Continue searching.
-            search_addr += minInstSize;
+        } else {
+
+            // Scan through the instruction stream and search for branches.
+            // The BTB contains only branches where taken at least once.
+            // Search stopped either because a branch was found in instruction
+            // stream or the maximum search width per cycle was reached.
+            // In the first case make the branch prediction and in the later
+            // advance the PC to start the search at the following address.
+            while (true) {
+
+                // Check if the current search address can be found in the BTB
+                // indicating the end of the branch.
+                branch_found = bpu->BTBValid(tid, search_addr);
+
+                // If its a branch stop searching
+                if (branch_found) {
+                    break;
+                }
+
+                // If its not a branch check if the maximum search width is
+                // reached. If yes stop searching.
+                if ((search_addr - start_addr) >= fetchTargetWidth) {
+                    break;
+                }
+
+                // Continue searching.
+                search_addr += minInstSize;
+            }
         }
+
 
         // Update the current PC to point to the last instruction
         // in the fetch target
@@ -907,6 +950,10 @@ BAC::updatePreDecode(ThreadID tid, const InstSeqNum seqNum,
 
     assert(hist != nullptr);
     assert(hist->type == brType);
+
+    // Record the block entry address from the FetchTarget into the
+    // branch history for block-based BTB updates.
+    hist->start_address = ft->startAddress();
 
     // Assign the branch instruction instance its sequence number
     // and push the history to the main history buffer.

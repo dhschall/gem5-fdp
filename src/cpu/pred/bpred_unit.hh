@@ -193,6 +193,8 @@ class BPredUnit : public SimObject
         return btb->update(tid, pc, target);
     }
 
+    Addr lookupBBBranch(ThreadID tid, Addr bbStartPC);
+
 
     void dump();
 
@@ -310,6 +312,9 @@ class BPredUnit : public SimObject
 
         /** The PC associated with the sequence number. */
         const Addr pc;
+
+        /** The start address of the basic block containing this branch. */
+        Addr start_address = 0;
 
         /** The branch instrction */
         const StaticInstPtr inst;
@@ -470,6 +475,10 @@ class BPredUnit : public SimObject
     /** Number of bits to shift instructions by for predictor addresses. */
     const unsigned instShiftAmt;
 
+    const bool basicBlockBTB;
+
+    std::unordered_map<Addr,Addr> bbMap;
+
     /**
      * The per-thread predictor history. This is used to update the predictor
      * as instructions are committed, or restore it to the proper state after
@@ -496,6 +505,8 @@ class BPredUnit : public SimObject
     struct BPredUnitStats : public statistics::Group
     {
         BPredUnitStats(BPredUnit *bp);
+
+        BPredUnit *bpredUnit;
 
         std::unordered_set<Addr> uniqueBranches;
 
@@ -564,6 +575,10 @@ class BPredUnit : public SimObject
         statistics::Formula l2btbHitBasePredRatio;
         statistics::Formula l1btbHitOverridePredRatio;
         statistics::Formula l2btbHitOverridePredRatio;
+
+        /** Block-based BTB stats */
+        statistics::Scalar bbMapSize;
+        statistics::Scalar bbMapSharedExits;
 
     } stats;
 

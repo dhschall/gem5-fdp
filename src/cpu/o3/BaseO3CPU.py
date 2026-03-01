@@ -223,6 +223,7 @@ class BaseO3CPU(BaseCPU):
 
     ## Parameters for decoupled front-end
     decoupledFrontEnd = Param.Bool(False, "Enables the decoupled front-end")
+    blockBTB = Param.Bool(False, "Enables block-based BTB front-end")
     numFTQEntries = Param.Unsigned(
         8,
         "Number of entries in the Fetch target queue. (only used for "

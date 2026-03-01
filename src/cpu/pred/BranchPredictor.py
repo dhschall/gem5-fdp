@@ -205,7 +205,7 @@ class MultiLevelBTB(BranchTargetBuffer):
     l1PrefetchPolicy = Param.Unsigned(
         1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch, 4=FIFO pBuffer"
     )
-   
+
     prefetchOnlyForward = Param.Bool(
         False, "Only prefetch on forward branches (target > PC)"
     )
@@ -325,6 +325,7 @@ class BranchPredictor(SimObject):
         "instead of direction history from all branches. Widely implemented "
         "in modern server CPUs: https://ieeexplore.ieee.org/document/9246215",
     )
+    blockBTB = Param.Bool(False, "Enables block-based BTB front-end")
 
 
 class LocalBP(ConditionalPredictor):

@@ -60,6 +60,7 @@ BPredUnit::BPredUnit(const Params &params)
       requiresBTBHit(params.requiresBTBHit),
       updateBTBAtSquash(params.updateBTBAtSquash),
       instShiftAmt(params.instShiftAmt),
+      basicBlockBTB(params.blockBTB),
       predHist(numThreads),
       btb(params.btb),
       ras(params.ras),
@@ -166,7 +167,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             tid, pc.instAddr(), hist->bpHistory
         );
         hist->condPred = condPred.taken;
-        
+
         if (overridingCPred) {
 
             Prediction secondaryPred = overridingCPred->lookup(
@@ -186,7 +187,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             }
         } else {
             totalLatency += condPred.latency;
-        } 
+        }
 
 
         if (hist->condPred) {
@@ -247,7 +248,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             hist->l2btbHit = btb_res.l2Hit;
             hist->pBufferHit = btb_res.pBufferHit;
             hist->prefetchHit = btb_res.prefetchHit;
-            
+
             if (inst->isCondCtrl()) {
                 if (btb_res.latency == Cycles(0)) {
                     if (cbp_latency == Cycles(0)) {
@@ -503,7 +504,9 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
 
     // Correct BTB (at commit) -------------------------------------
     // Update the BTB for all committed taken branches.
-    if (hist->actuallyTaken && !updateBTBAtSquash) { updateBTB(tid, hist); }
+    if (hist->actuallyTaken && !updateBTBAtSquash) {
+        updateBTB(tid, hist);
+    }
 
     if (isMultiLevelBTB && hist->btbHit) {
         if (hist->pBufferHit) {
@@ -513,7 +516,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
         } else if (hist->l2btbHit) {
             stats.l2btbHits++;
         }
-        
+
         // Track committed prefetch hits
         if (hist->prefetchHit) {
             stats.committedPrefetchHits++;
@@ -758,6 +761,11 @@ BPredUnit::updateBTB(ThreadID tid, PredictorHistory *&hist)
     stats.BTBUpdates++;
     btb->update(tid, hist->pc, *hist->target, hist->type, hist->inst);
     btb->incorrectTarget(hist->pc, hist->type);
+
+    // Update the block-based BTB map
+    if (basicBlockBTB) {
+        bbMap[hist->start_address] = hist->pc;
+    }
 }
 
 void
@@ -771,6 +779,16 @@ BPredUnit::branchPlaceholder(ThreadID tid, Addr pc,
         overridingCPred->branchPlaceholder(tid, pc, uncond,
                                            hist->overridingBpHistory);
     }
+}
+
+Addr
+BPredUnit::lookupBBBranch(ThreadID tid, Addr bbStartPC)
+{
+    auto it = bbMap.find(bbStartPC);
+    if (it != bbMap.end()) {
+        return it->second;
+    }
+    return MaxAddr;
 }
 
 void
@@ -819,6 +837,7 @@ BPredUnit::updateStatsOverriding(bool prediction,
 
 BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
     : statistics::Group(bp),
+        bpredUnit(bp),
         uniqueBranches(),
       ADD_STAT(lookups, statistics::units::Count::get(),
               "Number of BP lookups"),
@@ -900,7 +919,7 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(pBufferHits, statistics::units::Count::get(),
               "Number of pBuffer hits (MultiLevelBTB Policy 4 only)"),
       ADD_STAT(committedPrefetchHits, statistics::units::Count::get(),
-              "Number of committed prefetch hits"),        
+              "Number of committed prefetch hits"),
       ADD_STAT(l1btbHitBasePred, statistics::units::Count::get(),
               "Number of L1 BTB hits with Base Prediction"),
       ADD_STAT(l2btbHitBasePred, statistics::units::Count::get(),
@@ -920,7 +939,11 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               l1btbHitOverridePred / condBTBHits),
       ADD_STAT(l2btbHitOverridePredRatio, statistics::units::Ratio::get(),
               "Ratio of L2 BTB hits with Override Prediction",
-              l2btbHitOverridePred / condBTBHits)
+              l2btbHitOverridePred / condBTBHits),
+      ADD_STAT(bbMapSize, statistics::units::Count::get(),
+              "Number of entries in the block-based BTB map"),
+      ADD_STAT(bbMapSharedExits, statistics::units::Count::get(),
+              "Number of exit branches shared by multiple basic block entries")
 
 {
     using namespace statistics;
@@ -991,6 +1014,20 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
 
 void BPredUnit::BPredUnitStats::preDumpStats() {
     BTBUniqueBranches = uniqueBranches.size();
+
+    auto *bp = bpredUnit;
+    bbMapSize = bp->bbMap.size();
+    std::unordered_map<Addr, unsigned> entryCounts;
+    for (const auto &bb : bp->bbMap) {
+        entryCounts[bb.second]++;
+    }
+    unsigned shared = 0;
+    for (const auto &ec : entryCounts) {
+        if (ec.second > 1) {
+            shared++;
+        }
+    }
+    bbMapSharedExits = shared;
 }
 
 void BPredUnit::BPredUnitStats::resetStats() {

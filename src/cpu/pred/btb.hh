@@ -64,7 +64,7 @@ struct BTBLookupResult
   bool l2Hit;
   bool prefetchHit;   // Hit on a prefetched entry (either in L1 or pBuffer)
   bool predMatch;
-      
+
   BTBLookupResult(const PCStateBase* _target = nullptr,
                   Cycles _latency = Cycles(0),
                   bool _l1Hit = false,
