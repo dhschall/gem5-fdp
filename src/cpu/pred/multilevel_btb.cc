@@ -40,6 +40,9 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(markovOnlyHits, statistics::units::Count::get(), "Miss in Real, Hit in Shadow"),
       ADD_STAT(uniMisses, statistics::units::Count::get(), "Miss in BOTH, but Hit in L2"),
       ADD_STAT(markovOnlyHitsByPredType, statistics::units::Count::get(), "Markov only hits broken down by predecessor type"),
+      ADD_STAT(trainBitsL1Miss, statistics::units::Count::get(), "Policy 13/14: committed branch not in L1, found in L2"),
+      ADD_STAT(takenPathPrefetches, statistics::units::Count::get(), "Policy 12/13/14: prefetches triggered via taken-path (prefetchTarget) bit"),
+      ADD_STAT(notTakenPathPrefetches, statistics::units::Count::get(), "Policy 12/13/14: prefetches triggered via not-taken-path (prefetchThrough) bit"),
       btb(btb)
 {
     using namespace statistics;
@@ -118,11 +121,18 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l2Latency(p.l2Latency),
       minInstSize(p.minInstSize),
       l1PrefetchPolicy(p.l1PrefetchPolicy),
+      trainBitsOnLookup(p.trainBitsOnLookup),
+      trainBitsOnCommit(p.trainBitsOnCommit),
+      prefetchOnL1Hit(p.prefetchOnL1Hit),
+      prefetchOnPrefetchHit(p.prefetchOnPrefetchHit),
+      cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
+      noPrefetchLatency(p.noPrefetchLatency),
       prefetchOnlyForward(p.prefetchOnlyForward),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
       prevBranchPC(p.numThreads, 0),
       shadowPrevBranchPC(p.numThreads, 0),
+      prevBlockInfo(p.numThreads),
       shadowL1BTB("shadowL1BTB", p.l1NumEntries, p.l1Associativity,
             p.l1ReplPolicy, p.l1IndexingPolicy, BTBEntry(genTagExtractor(p.l1IndexingPolicy))),
       shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy)))
@@ -174,7 +184,8 @@ MultiLevelBTB::lookup(ThreadID tid, Addr instPC, BranchType type)
 }
 
 BTBLookupResult
-MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, bool taken)
+MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
+                                 bool taken, Addr blockStartAddr)
 {
     stats.lookups[type]++;
 
@@ -182,11 +193,31 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
         performShadowLookup(tid, instPC, type);
     }
 
+    // Policy 12: Compare current block's start address with prev entry's target/fallThrough
+    // if (usesBlockTrainPolicy() && blockStartAddr != 0) {
+    if (trainBitsOnLookup && blockStartAddr != 0) {
+        auto &prev = prevBlockInfo[tid];
+        if (prev.valid) {
+            BTBEntry *prevL1 = l1btb.findEntry({prev.branchPC, tid});
+            if (prevL1) {
+                if (blockStartAddr == prev.target) {
+                    prevL1->setPrefetchTarget(true);
+                }
+                if (blockStartAddr == prev.fallThrough) {
+                    prevL1->setPrefetchThrough(true);
+                }
+            }
+        }
+    }
+
     // ==========================================================================
     // Step 1: L1 BTB lookup
     // ==========================================================================
     BTBEntry *l1_entry = l1btb.accessEntry({instPC, tid});
     if (l1_entry != nullptr) {
+        // Policy 12/15/16: record current block info for next training iteration
+        if (trainBitsOnLookup && blockStartAddr != 0)
+            recordPrevBlockInfo(tid, instPC, l1_entry->target->instAddr());
         return handleL1Hit(tid, instPC, l1_entry, taken);
     }
 
@@ -195,9 +226,13 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     // ==========================================================================
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || 
         l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10 ||
-        l1PrefetchPolicy == 11) {
+        l1PrefetchPolicy == 11 || trainBitsOnLookup ||
+        trainBitsOnCommit) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
+            // Policy 12/15/16: record current block info (from pBuffer entry)
+            if (trainBitsOnLookup && blockStartAddr != 0)
+                recordPrevBlockInfo(tid, instPC, pB_entry->target->instAddr());
             return handlePBufferHit(tid, instPC, pB_entry, taken);
         }
     }
@@ -208,10 +243,13 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, boo
     // ==========================================================================
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
+        // Policy 12/15/16: record current block info (from L2 entry)
+        if (trainBitsOnLookup && blockStartAddr != 0)
+            recordPrevBlockInfo(tid, instPC, l2_entry->target->instAddr());
         return handleL2Hit(tid, instPC, l2_entry, type, taken);
     }
 
-    // Miss in both l1 and l2
+    // Miss in both l1 and l2. Actually, the progrem will never get here.
     stats.misses[type]++;
     DPRINTF(BTB, "BTB miss for PC %#x\n", instPC);
     return BTBLookupResult(nullptr, l1Latency + l2Latency, false, false, false);
@@ -244,14 +282,29 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     stats.updates[type]++;
 
     
+    
+    bool l2_existing = (l2btb.findEntry({instPC, tid}) != nullptr);
     BTBEntry *l2_victim = l2btb.findVictim({instPC, tid});
     l2btb.insertEntry({instPC, tid}, l2_victim);
     l2_victim->update(target, inst);
 
-  
+    if (usesPrefetchBitPolicy() && !l2_existing) {
+        l2_victim->setPrefetchTarget(true);
+        l2_victim->setPrefetchThrough(false);
+    }
+
+    bool l1_existing = (l1btb.findEntry({instPC, tid}) != nullptr);
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
+ 
+    if (usesPrefetchBitPolicy() && !l1_existing) {
+        writeBackPrefetchBits(tid, l1_victim);
+    }
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(target, inst);
+    
+    if (usesPrefetchBitPolicy() && !l1_existing) {
+        l1_victim->setPrefetchTarget(true);
+    }
 
     if (l1PrefetchPolicy == 11) {
         BTBEntry *sL1_victim = shadowL1BTB.findVictim({instPC, tid});
@@ -355,6 +408,19 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         l1_entry->setFromPBuffer(false);  // Only count first reuse
     }
 
+    // -------------------------------------------------------------------------
+    // Policy 16/17: trigger prefetch on L1 hit based on prefetch bits
+    // -------------------------------------------------------------------------
+    if (prefetchOnL1Hit && bbMap_) {
+        Addr targetAddr = l1_entry->target->instAddr();
+        Addr fallThrough = instPC + minInstSize;
+
+        if (l1_entry->getPrefetchTarget())
+            prefetchViaBBMap(tid, targetAddr, true);
+        if (l1_entry->getPrefetchThrough())
+            prefetchViaBBMap(tid, fallThrough, false);
+    }
+
     DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n",
             instPC, l1Latency + extraLatency);
 
@@ -389,7 +455,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         multilevelstats.prefetchHits++;
         pB_entry->setPrefetched(false);
         Cycles delta = curCycle() - pB_entry->getTimestamp();
-        if (delta < l2Latency) {
+        if (delta < l2Latency && !noPrefetchLatency) {
             extraLatency = l2Latency - delta;
         }
     }
@@ -405,6 +471,8 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // -------------------------------------------------------------------------
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
 
+    writeBackPrefetchBits(tid, l1_victim);
+
     // Track if we're evicting an entry that was previously installed from pBuffer
     if (l1_victim->isFromPBuffer()) {
         multilevelstats.l1InstalledEvicted++;
@@ -419,9 +487,30 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     }
     l1_victim->setPredTaken(pB_entry->getPredTaken());
     l1_victim->setPrefetched(false);
+   
+    if (!cleanBitsOnL1Promotion) {
+        l1_victim->setPrefetchThrough(pB_entry->getPrefetchThrough());
+        l1_victim->setPrefetchTarget(pB_entry->getPrefetchTarget());
+    } else if (cleanBitsOnL1Promotion) {
+        l1_victim->setPrefetchThrough(false);
+        l1_victim->setPrefetchTarget(false);
+    }
 
-    // This entry is now useless since it has been promoted to L1
-    pBuffer.invalidate(pB_entry);
+    if (prefetchOnPrefetchHit && bbMap_) {
+        Addr targetAddr = pB_entry->target->instAddr();
+        Addr fallThrough = instPC + minInstSize;
+        bool doPfTarget = pB_entry->getPrefetchTarget();
+        bool doPfThrough = pB_entry->getPrefetchThrough();
+
+        pBuffer.invalidate(pB_entry);
+
+        if (doPfTarget)
+            prefetchViaBBMap(tid, targetAddr, true);
+        if (doPfThrough)
+            prefetchViaBBMap(tid, fallThrough, false);
+    } else {
+        pBuffer.invalidate(pB_entry);
+    }
 
     multilevelstats.l1Installed++;
 
@@ -477,6 +566,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // Insert entry into L1
     // -------------------------------------------------------------------------
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
+    writeBackPrefetchBits(tid, l1_victim);
     if (l1_victim->isPrefetched()) {
         multilevelstats.uselessPrefetches++;
         l1_victim->setPrefetched(false);
@@ -486,6 +576,14 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     }
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(*l2_entry->target, l2_entry->inst);
+    // cleanBitsOnL1Promotion: reset prefetch bits on L2->L1 demand fill
+    if (!cleanBitsOnL1Promotion) {
+        l1_victim->setPrefetchThrough(l2_entry->getPrefetchThrough());
+        l1_victim->setPrefetchTarget(l2_entry->getPrefetchTarget());
+    } else {
+        l1_victim->setPrefetchThrough(false);
+        l1_victim->setPrefetchTarget(false);
+    }
 
     // -------------------------------------------------------------------------
     // Determine if we should prefetch (forward-only filtering)
@@ -620,6 +718,19 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // if (history.size() > 2) {
     //     history.pop_front();
     // }
+
+    // Policy 12/13/14: Prefetch successor blocks using trained bits + bbMap
+    if (usesPrefetchBitPolicy() && bbMap_) {
+        Addr targetAddr = l2_entry->target->instAddr();
+        Addr fallThrough = instPC + minInstSize;
+
+        if (l2_entry->getPrefetchTarget())
+            prefetchViaBBMap(tid, targetAddr, true);
+        if (l2_entry->getPrefetchThrough())
+            prefetchViaBBMap(tid, fallThrough, false);
+    }
+
+
 
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l2Latency);
@@ -825,6 +936,116 @@ MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit)
         markovSuccessors[prevBranchPC[tid]][pc]++; 
     }
     prevBranchPC[tid] = pc;
+}
+
+// trainPrefetchBitsOnCommit: Train prefetch bits at commit time (Policy 13/14)
+void
+MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken)
+{
+    if (!trainBitsOnCommit)
+        return;
+
+    // Try L1 first
+    BTBEntry *l1_entry = l1btb.findEntry({pc, tid});
+    if (l1_entry) {
+        if (!cleanBitsOnL1Promotion) {
+            // Accumulative: only set bits to 1, never clear
+            if (actuallyTaken)
+                l1_entry->setPrefetchTarget(true);
+            else
+                l1_entry->setPrefetchThrough(true);
+        } else { // Policy 14/17
+            // Exclusive: set one, clear the other
+            if (actuallyTaken) {
+                l1_entry->setPrefetchTarget(true);
+                l1_entry->setPrefetchThrough(false);
+            } else {
+                l1_entry->setPrefetchThrough(true);
+                l1_entry->setPrefetchTarget(false);
+            }
+        }
+        return;
+    }
+
+    // L1 miss — try L2
+    BTBEntry *l2_entry = l2btb.findEntry({pc, tid});
+    if (l2_entry) {
+        multilevelstats.trainBitsL1Miss++;
+        if (!cleanBitsOnL1Promotion) {
+            if (actuallyTaken)
+                l2_entry->setPrefetchTarget(true);
+            else
+                l2_entry->setPrefetchThrough(true);
+        } else { // Policy 14/17
+            if (actuallyTaken) {
+                l2_entry->setPrefetchTarget(true);
+                l2_entry->setPrefetchThrough(false);
+            } else {
+                l2_entry->setPrefetchThrough(true);
+                l2_entry->setPrefetchTarget(false);
+            }
+        }
+    }
+}
+
+// Helper functions for Policy 12–17 shared logic
+bool
+MultiLevelBTB::usesPrefetchBitPolicy() const
+{
+    return trainBitsOnLookup || trainBitsOnCommit;
+}
+
+void
+MultiLevelBTB::writeBackPrefetchBits(ThreadID tid, BTBEntry *l1_victim)
+{
+    if (!usesPrefetchBitPolicy())
+        return;
+    Addr victimPC = l1_victim->getBranchAddr();
+    BTBEntry *l2_wb = l2btb.findEntry({victimPC, tid});
+    if (l2_wb) {
+        l2_wb->setPrefetchThrough(l1_victim->getPrefetchThrough());
+        l2_wb->setPrefetchTarget(l1_victim->getPrefetchTarget());
+    }
+}
+
+void
+MultiLevelBTB::recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr)
+{
+    auto &prev = prevBlockInfo[tid];
+    prev.branchPC = instPC;
+    prev.target = targetAddr;
+    prev.fallThrough = instPC + minInstSize;
+    prev.valid = true;
+}
+
+void
+MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
+                                bool isTakenPath)
+{
+    auto it = bbMap_->find(lookupAddr);
+    if (it == bbMap_->end())
+        return;
+
+    Addr pfPC = it->second;
+    BTBEntry *l2_pf = l2btb.findEntry({pfPC, tid});
+    if (!l2_pf || l1btb.findEntry({pfPC, tid}) ||
+        pBuffer.findEntry({pfPC, tid}))
+        return;
+
+    BTBEntry *pB_victim = pBuffer.findVictim({pfPC, tid});
+    if (pB_victim->isPrefetched())
+        multilevelstats.uselessPrefetches++;
+    pBuffer.insertEntry({pfPC, tid}, pB_victim);
+    pB_victim->update(*l2_pf->target, l2_pf->inst);
+    pB_victim->setPrefetched(true);
+    pB_victim->setTimestamp(curCycle());
+    pB_victim->setPrefetchTarget(l2_pf->getPrefetchTarget());
+    pB_victim->setPrefetchThrough(l2_pf->getPrefetchThrough());
+    multilevelstats.totalPrefetches++;
+    if (isTakenPath)
+        multilevelstats.takenPathPrefetches++;
+    else
+        multilevelstats.notTakenPathPrefetches++;
 }
 
 } // namespace gem5::branch_prediction

@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), prefetchThrough(false), prefetchTarget(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -184,6 +184,7 @@ class BTBEntry : public ReplaceableEntry
     {
         setValid();
         setTag({extractTag(key.address), key.tid});
+        branchAddr = key.address;
     }
 
     /** Copy constructor */
@@ -193,6 +194,7 @@ class BTBEntry : public ReplaceableEntry
         tag        = other.tag;
         inst       = other.inst;
         extractTag = other.extractTag;
+        branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
         timestamp = other.timestamp;
@@ -200,6 +202,8 @@ class BTBEntry : public ReplaceableEntry
         predTaken = other.predTaken;
         fromPBuffer = other.fromPBuffer;
         markovPredType = other.markovPredType;
+        prefetchThrough = other.prefetchThrough;
+        prefetchTarget = other.prefetchTarget;
     }
 
     /** Assignment operator */
@@ -209,6 +213,7 @@ class BTBEntry : public ReplaceableEntry
         tag        = other.tag;
         inst       = other.inst;
         extractTag = other.extractTag;
+        branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
         timestamp = other.timestamp;
@@ -216,6 +221,8 @@ class BTBEntry : public ReplaceableEntry
         predTaken = other.predTaken;
         fromPBuffer = other.fromPBuffer;
         markovPredType = other.markovPredType;
+        prefetchThrough = other.prefetchThrough;
+        prefetchTarget = other.prefetchTarget;
 
         return *this;
     }
@@ -279,10 +286,14 @@ class BTBEntry : public ReplaceableEntry
     /** The entry's tag. */
     KeyType tag;
 
+    /** PC of this entry */
+    Addr branchAddr;
+
     /** Whether this L1 entry was prefetched and hasn't been hit yet. */
     bool prefetched;
 
   public:
+    Addr getBranchAddr() const { return branchAddr; }
     bool isPrefetched() const { return prefetched; }
     void setPrefetched(bool p) { prefetched = p; }
 
@@ -315,12 +326,24 @@ class BTBEntry : public ReplaceableEntry
     int8_t getMarkovPredType() const { return markovPredType; }
     void setMarkovPredType(int8_t t) { markovPredType = t; }
 
+    /** Policy 12: Whether the fall-through BTB entry should be prefetched. */
+    bool getPrefetchThrough() const { return prefetchThrough; }
+    void setPrefetchThrough(bool p) { prefetchThrough = p; }
+
+    /** Policy 12: Whether the taken-target BTB entry should be prefetched. */
+    bool getPrefetchTarget() const { return prefetchTarget; }
+    void setPrefetchTarget(bool p) { prefetchTarget = p; }
+
   private:
     /** Flag to track if this entry was installed from prefetch buffer */
     bool fromPBuffer;
 
     /** Predecessor branch type that triggered this Markov prefetch */
     int8_t markovPredType;
+
+    /** Policy 12: prefetch training bits for block-based BTB */
+    bool prefetchThrough;
+    bool prefetchTarget;
 };
 } // namespace gem5::branch_prediction
 /**

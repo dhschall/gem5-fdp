@@ -61,6 +61,7 @@ BPredUnit::BPredUnit(const Params &params)
       updateBTBAtSquash(params.updateBTBAtSquash),
       instShiftAmt(params.instShiftAmt),
       basicBlockBTB(params.blockBTB),
+      blockStartAddr_(params.numThreads, 0),
       predHist(numThreads),
       btb(params.btb),
       ras(params.ras),
@@ -72,6 +73,7 @@ BPredUnit::BPredUnit(const Params &params)
     isMultiLevelBTB = (dynamic_cast<const MultiLevelBTB*>(btb) != nullptr);
     if (isMultiLevelBTB) {
         static_cast<MultiLevelBTB*>(btb)->setBranchPredictor(cPred);
+        static_cast<MultiLevelBTB*>(btb)->setBBMap(&bbMap);
     }
 }
 
@@ -224,7 +226,9 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     }
 
     stats.BTBLookups++;
-    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType, hist->predTaken);
+    auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType,
+                                           hist->predTaken,
+                                           blockStartAddr_[tid]);
     const PCStateBase * btb_target = btb_res.target;
     // Capture the latency of the conditional predictor
     Cycles cbp_latency = totalLatency;
@@ -527,6 +531,9 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
     if (isMultiLevelBTB) {
         static_cast<MultiLevelBTB*>(btb)->trainMarkovOnCommit(
             tid, hist->pc, hist->l2btbHit);
+        // Train prefetch bits at commit time (Policy 13/14)
+        static_cast<MultiLevelBTB*>(btb)->trainPrefetchBitsOnCommit(
+            tid, hist->pc, hist->actuallyTaken);
     }
 }
 

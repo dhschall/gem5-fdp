@@ -26,7 +26,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     
     BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
                                       BranchType type = BranchType::NoBranch,
-                                      bool taken = true) override;
+                                      bool taken = true,
+                                      Addr blockStartAddr = 0) override;
     
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
@@ -36,10 +37,14 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void setBranchPredictor(ConditionalPredictor *cp) { cPred = cp; }
 
+    void setBBMap(const std::unordered_map<Addr, Addr> *map) { bbMap_ = map; }
+
     void trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit);
+    void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken);
    
   private:
     ConditionalPredictor *cPred = nullptr;
+    const std::unordered_map<Addr, Addr> *bbMap_ = nullptr;
 
     AssociativeCache<BTBEntry> l1btb;
     /* Prefetch Buffer */
@@ -51,6 +56,12 @@ class MultiLevelBTB : public BranchTargetBuffer
     const Cycles l2Latency;
     const unsigned minInstSize;
     const unsigned l1PrefetchPolicy;
+    const bool trainBitsOnLookup;
+    const bool trainBitsOnCommit;
+    const bool prefetchOnL1Hit;
+    const bool prefetchOnPrefetchHit;
+    const bool cleanBitsOnL1Promotion;
+    const bool noPrefetchLatency;
     const bool prefetchOnlyForward;
 
     // Multi-level BTB specific statistics
@@ -108,6 +119,13 @@ class MultiLevelBTB : public BranchTargetBuffer
         // Index 0 (NoBranch) = demand fill from L2, not prefetched
         statistics::Vector markovOnlyHitsByPredType;
 
+        // Policy 13/14: commit-time training stats
+        statistics::Scalar trainBitsL1Miss;  // branch not in L1 at commit, found in L2
+
+        // Policy 12/13/14: prefetch direction counts
+        statistics::Scalar takenPathPrefetches;     // prefetches triggered by prefetchTarget bit
+        statistics::Scalar notTakenPathPrefetches;  // prefetches triggered by prefetchThrough bit
+
         MultiLevelBTB *btb;
         
     } multilevelstats;
@@ -127,6 +145,16 @@ class MultiLevelBTB : public BranchTargetBuffer
     std::vector<Addr> prevBranchPC;
     // Shadow previous branch PC for Policy 11 training
     std::vector<Addr> shadowPrevBranchPC;
+
+    // Policy 12: per-thread tracking of previous block info for training
+    struct PrevBlockInfo {
+        Addr branchPC = 0;
+        Addr target = 0;
+        Addr fallThrough = 0;
+        bool valid = false;
+    };
+    std::vector<PrevBlockInfo> prevBlockInfo;
+
     friend struct MultiLevelBTBStats;
 
     /**
@@ -167,6 +195,24 @@ class MultiLevelBTB : public BranchTargetBuffer
     void handleShadowL2Hit(ThreadID tid, Addr instPC, BTBEntry* l2_entry, BranchType type);
 
     void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
+
+    // ---- Helpers for Policy 12–17 ----
+
+    /** Returns true for policies that use prefetch-bit logic (12–17). */
+    bool usesPrefetchBitPolicy() const;
+
+    /** Write back prefetch bits from an L1 victim to its L2 copy. */
+    void writeBackPrefetchBits(ThreadID tid, BTBEntry *l1_victim);
+
+    /** Record previous block info for next-iteration training. */
+    void recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr);
+
+    /**
+     * Prefetch a successor branch via bbMap lookup → pBuffer insertion.
+     * @param lookupAddr  Address to look up in bbMap (target or fallThrough).
+     * @param isTakenPath true → takenPathPrefetches stat; false → notTakenPathPrefetches.
+     */
+    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath);
 
 };
 } // namespace gem5::branch_prediction

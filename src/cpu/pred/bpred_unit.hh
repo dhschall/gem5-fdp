@@ -164,6 +164,11 @@ class BPredUnit : public SimObject
         return btb->lookupWithLatency(tid, pc.instAddr());
     }
 
+    void setBlockStartAddr(ThreadID tid, Addr addr)
+    {
+        blockStartAddr_[tid] = addr;
+    }
+
     /**
      * Looks up a given PC in the BTB to get current static instruction
      * information. This is necessary in a decoupled frontend as
@@ -478,6 +483,8 @@ class BPredUnit : public SimObject
     const bool basicBlockBTB;
 
     std::unordered_map<Addr,Addr> bbMap;
+
+    std::vector<Addr> blockStartAddr_;
 
     /**
      * The per-thread predictor history. This is used to update the predictor

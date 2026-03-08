@@ -737,6 +737,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
 
         // Now make the actual prediction. Note the BPU will advance
         // the PC to the next instruction.
+        if (blockBTB) {
+            bpu->setBlockStartAddr(tid, start_addr);
+        }
         Prediction pred = predict(tid, staticInst, curFT, *next_pc);
         predict_taken = pred.taken;
         branchPredictRemaining[tid] = Cycles(pred.latency);

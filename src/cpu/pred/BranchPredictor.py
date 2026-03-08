@@ -206,6 +206,30 @@ class MultiLevelBTB(BranchTargetBuffer):
         1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch, 4=FIFO pBuffer"
     )
 
+    trainBitsOnLookup = Param.Bool(
+        False, "Train prefetch bits on BTB hit"
+    )
+
+    trainBitsOnCommit = Param.Bool(
+        False, "Train prefetch bits on branch commit"
+    )
+
+    prefetchOnL1Hit = Param.Bool(
+        False, "Use prefetch bits to prefetch on L1 hit"
+    )
+
+    prefetchOnPrefetchHit = Param.Bool(
+        False, "Use prefetch bits to prefetch on prefetch hit"
+    )
+
+    cleanBitsOnL1Promotion = Param.Bool(
+        False, "Clean prefetch bits on L1 promotion"
+    )
+
+    noPrefetchLatency = Param.Bool(
+        False, "Do not model the prefetch latency"
+    )
+
     prefetchOnlyForward = Param.Bool(
         False, "Only prefetch on forward branches (target > PC)"
     )
@@ -325,7 +349,7 @@ class BranchPredictor(SimObject):
         "instead of direction history from all branches. Widely implemented "
         "in modern server CPUs: https://ieeexplore.ieee.org/document/9246215",
     )
-    blockBTB = Param.Bool(False, "Enables block-based BTB front-end")
+    blockBTB = Param.Bool(True, "Enables block-based BTB front-end")
 
 
 class LocalBP(ConditionalPredictor):

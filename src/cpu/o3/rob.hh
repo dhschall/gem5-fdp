@@ -292,8 +292,11 @@ class ROB
     /** ROB List of Instructions */
     std::list<DynInstPtr> instList[MaxThreads];
 
-    /** Number of instructions that can be squashed in a single cycle. */
-    unsigned squashWidth;
+    /** Number of instructions that can be squashed in a single cycle.
+     * A negative number means all instructions are squashed instantly
+     * within on cycle
+     */
+    const std::optional<unsigned> squashWidth;
 
   public:
     /** Iterator pointing to the instruction which is the last instruction
