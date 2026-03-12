@@ -62,6 +62,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool prefetchOnPrefetchHit;
     const bool cleanBitsOnL1Promotion;
     const bool noPrefetchLatency;
+    const unsigned prefetchDepth;
     const bool prefetchOnlyForward;
 
     // Multi-level BTB specific statistics
@@ -89,6 +90,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         
         // Unified prefetch coverage (for policy 4: pBuffer hits + L1 reuse)
         statistics::Scalar prefetchHits;            // pBuffer hit + L1 reuse (both are useful)
+        statistics::Scalar latePrefetchByPBHit;
+        statistics::Scalar latePrefetchByL2Hit;
         statistics::Formula prefetchCoverage;       // prefetchHits / (prefetchHits + totalPrefetches)
         
         // Separate useless rates for pBuffer and L1 (policy 4)
@@ -212,7 +215,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      * @param lookupAddr  Address to look up in bbMap (target or fallThrough).
      * @param isTakenPath true → takenPathPrefetches stat; false → notTakenPathPrefetches.
      */
-    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath);
+    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath, bool triggeredByPBHit, int depth=1);
 
 };
 } // namespace gem5::branch_prediction

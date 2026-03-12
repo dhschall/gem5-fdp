@@ -39,6 +39,7 @@
 #include "mem/cache/prefetch/fdp.hh"
 
 #include <utility>
+#include <cstdio>
 
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/base.hh"
@@ -68,10 +69,15 @@ void
 FetchDirectedPrefetcher::notifyFTQInsert(const o3::FetchTargetPtr &ft)
 {
     const Addr start_blk_addr = blockAddress(ft->startAddress());
-    const Addr end_blk_addr = blockAddress(ft->endAddress());
-
+    Addr end_blk_addr = blockAddress(ft->endAddress());
+    
     for (Addr blk_addr = start_blk_addr; blk_addr <= end_blk_addr;
          blk_addr += blkSize) {
+
+        // In case overflow happens, break
+        if(end_blk_addr - blk_addr > 2 * blkSize) {
+            break;
+        }
 
         // Check if the address is already in the prefetch queue
         auto it = std::find(pfq.begin(), pfq.end(), blk_addr);

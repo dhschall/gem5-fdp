@@ -22,6 +22,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(shadowPrefetches, statistics::units::Count::get(), "Total number of shadow prefetches"),
       // Unified prefetch coverage
       ADD_STAT(prefetchHits, statistics::units::Count::get(), "Useful prefetches (pBuffer hit + L1 reuse)"),
+      ADD_STAT(latePrefetchByPBHit, statistics::units::Count::get(), "Number of late prefetches by pBuffer hit"),
+      ADD_STAT(latePrefetchByL2Hit, statistics::units::Count::get(), "Number of late prefetches by L2 hit"),
       ADD_STAT(prefetchCoverage, statistics::units::Ratio::get(), "Prefetch coverage (prefetchHits / totalPrefetches)"),
       // Separate useless rates for pBuffer and L1
       ADD_STAT(pBufferUselessRate, statistics::units::Ratio::get(), "pBuffer useless rate"),
@@ -127,6 +129,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchOnPrefetchHit(p.prefetchOnPrefetchHit),
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
       noPrefetchLatency(p.noPrefetchLatency),
+      prefetchDepth(p.prefetchDepth),
       prefetchOnlyForward(p.prefetchOnlyForward),
       multilevelstats(this, this),
       l1MissL2HitHistory(p.numThreads),
@@ -218,6 +221,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
         // Policy 12/15/16: record current block info for next training iteration
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l1_entry->target->instAddr());
+        // l2btb.accessEntry({instPC, tid});
         return handleL1Hit(tid, instPC, l1_entry, taken);
     }
 
@@ -233,6 +237,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             // Policy 12/15/16: record current block info (from pBuffer entry)
             if (trainBitsOnLookup && blockStartAddr != 0)
                 recordPrevBlockInfo(tid, instPC, pB_entry->target->instAddr());
+            // l2btb.accessEntry({instPC, tid});
             return handlePBufferHit(tid, instPC, pB_entry, taken);
         }
     }
@@ -416,9 +421,9 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         Addr fallThrough = instPC + minInstSize;
 
         if (l1_entry->getPrefetchTarget())
-            prefetchViaBBMap(tid, targetAddr, true);
+            prefetchViaBBMap(tid, targetAddr, true, true);
         if (l1_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false);
+            prefetchViaBBMap(tid, fallThrough, false, true);
     }
 
     DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n",
@@ -455,9 +460,17 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         multilevelstats.prefetchHits++;
         pB_entry->setPrefetched(false);
         Cycles delta = curCycle() - pB_entry->getTimestamp();
-        if (delta < l2Latency && !noPrefetchLatency) {
-            extraLatency = l2Latency - delta;
+        Cycles arriveTime = l2Latency;
+        if (pB_entry->isTriggeredByPBHit()) {
+            multilevelstats.latePrefetchByPBHit++;
+        } else {
+            multilevelstats.latePrefetchByL2Hit++;
+            arriveTime += l2Latency;
         }
+        if (delta < arriveTime && !noPrefetchLatency) {
+            extraLatency = arriveTime - delta;
+        }
+        pB_entry->setTriggeredByPBHit(false);
     }
 
     // Track prefetch distance statistics (only for Policy 4, not Policy 6)
@@ -505,9 +518,9 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         pBuffer.invalidate(pB_entry);
 
         if (doPfTarget)
-            prefetchViaBBMap(tid, targetAddr, true);
+            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth);
         if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false);
+            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth);
     } else {
         pBuffer.invalidate(pB_entry);
     }
@@ -725,9 +738,9 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         Addr fallThrough = instPC + minInstSize;
 
         if (l2_entry->getPrefetchTarget())
-            prefetchViaBBMap(tid, targetAddr, true);
+            prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth);
         if (l2_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false);
+            prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth);
     }
 
 
@@ -1020,7 +1033,7 @@ MultiLevelBTB::recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr)
 
 void
 MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
-                                bool isTakenPath)
+                                bool isTakenPath, bool triggeredByPBHit, int depth)
 {
     auto it = bbMap_->find(lookupAddr);
     if (it == bbMap_->end())
@@ -1038,6 +1051,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     pBuffer.insertEntry({pfPC, tid}, pB_victim);
     pB_victim->update(*l2_pf->target, l2_pf->inst);
     pB_victim->setPrefetched(true);
+    pB_victim->setTriggeredByPBHit(triggeredByPBHit);
     pB_victim->setTimestamp(curCycle());
     pB_victim->setPrefetchTarget(l2_pf->getPrefetchTarget());
     pB_victim->setPrefetchThrough(l2_pf->getPrefetchThrough());
@@ -1046,6 +1060,18 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         multilevelstats.takenPathPrefetches++;
     else
         multilevelstats.notTakenPathPrefetches++;
+
+    if (depth > 1) {
+        Addr targetAddr = l2_pf->target->instAddr();
+        Addr fallThrough = pfPC + minInstSize;
+
+        if (l2_pf->getPrefetchTarget()) {
+            prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit, depth - 1);
+        }
+        if (l2_pf->getPrefetchThrough()) {
+            prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit, depth - 1);
+        }
+    }
 }
 
 } // namespace gem5::branch_prediction

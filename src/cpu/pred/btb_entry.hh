@@ -151,7 +151,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), prefetched(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), prefetchThrough(false), prefetchTarget(false)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), prefetched(false), triggeredByPBHit(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), prefetchThrough(false), prefetchTarget(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -197,6 +197,7 @@ class BTBEntry : public ReplaceableEntry
         branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
+        triggeredByPBHit = other.triggeredByPBHit;
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
@@ -216,6 +217,7 @@ class BTBEntry : public ReplaceableEntry
         branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
+        triggeredByPBHit = other.triggeredByPBHit;
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
         predTaken = other.predTaken;
@@ -292,10 +294,16 @@ class BTBEntry : public ReplaceableEntry
     /** Whether this L1 entry was prefetched and hasn't been hit yet. */
     bool prefetched;
 
+    bool triggeredByPBHit;
+
   public:
     Addr getBranchAddr() const { return branchAddr; }
     bool isPrefetched() const { return prefetched; }
     void setPrefetched(bool p) { prefetched = p; }
+
+    bool isTriggeredByPBHit() const { return triggeredByPBHit; }
+    void setTriggeredByPBHit(bool p) { triggeredByPBHit = p; }
+
 
     Cycles getTimestamp() const { return timestamp; }
     void setTimestamp(Cycles t) { timestamp = t; }
@@ -333,7 +341,7 @@ class BTBEntry : public ReplaceableEntry
     /** Policy 12: Whether the taken-target BTB entry should be prefetched. */
     bool getPrefetchTarget() const { return prefetchTarget; }
     void setPrefetchTarget(bool p) { prefetchTarget = p; }
-
+    
   private:
     /** Flag to track if this entry was installed from prefetch buffer */
     bool fromPBuffer;

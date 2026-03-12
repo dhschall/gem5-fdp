@@ -664,22 +664,6 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             } else {
 
                 if (bpu->BTBValid(tid, br_addr)) {
-
-                    // numAddrSearched = (br_addr - curAddr) / instSize;
-                    // hit = true;
-                    // if (numAddrSearched > fetchTargetWidth) {
-                    //     DPRINTF(Branch, "[tid:%i] BB [%#x -> %#x]. hit. Create FT. To big\n", tid, curAddr, br_addr);
-                    //     numAddrSearched = fetchTargetWidth;
-                    //     curAddr += numAddrSearched;
-
-                    // } else {
-                    //     DPRINTF(Branch, "[tid:%i] BB [%#x -> %#x]. hit. Create FT.\n", tid, curAddr, br_addr);
-                    //     branchFound = true;
-                    //     curAddr = br_addr;
-                    // }
-                    // if ((br_addr - start_addr) > fetchTargetWidth) {
-                    //     break;
-                    // }
                     search_addr = br_addr;
                     branch_found = true;
                 }
@@ -795,7 +779,6 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // - a branch is found
         // - or the maximum fetch bandwidth is reached.
         curFT->finalize(cur_pc, branch_found, predict_taken, *next_pc);
-
         ftq->insert(tid, curFT);
         wroteToTimeBuffer = true;
 

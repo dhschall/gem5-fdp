@@ -230,6 +230,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Do not model the prefetch latency"
     )
 
+    prefetchDepth = Param.Unsigned(
+        1, "Prefetch depth for prefetch-bits prefetcher"
+    )
+
     prefetchOnlyForward = Param.Bool(
         False, "Only prefetch on forward branches (target > PC)"
     )
