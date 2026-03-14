@@ -113,6 +113,9 @@ MultiLevelBTB::MultiLevelBTBStats::preDumpStats()
     btb->markovSuccessors.clear();
     std::fill(btb->prevBranchPC.begin(), btb->prevBranchPC.end(), 0);
     std::fill(btb->shadowPrevBranchPC.begin(), btb->shadowPrevBranchPC.end(), 0);
+    for (auto &info : btb->prevCommitBlockInfo) {
+        info = PrevCommitBlockInfo();
+    }
 }
 
 MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
@@ -136,6 +139,8 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       noPrefetchLatency(p.noPrefetchLatency),
       prefetchDepth(p.prefetchDepth),
       prefetchOnlyForward(p.prefetchOnlyForward),
+      finalMarkov(p.finalMarkov),
+      prefetchAllMarkovSuccessors(p.prefetchAllMarkovSuccessors),
       currentQueueSize(0),
       maxPrefetchQueueSize(p.pBufferSize),
       multilevelstats(this, this),
@@ -143,6 +148,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prevBranchPC(p.numThreads, 0),
       shadowPrevBranchPC(p.numThreads, 0),
       prevBlockInfo(p.numThreads),
+      prevCommitBlockInfo(p.numThreads),
       shadowL1BTB("shadowL1BTB", p.l1NumEntries, p.l1Associativity,
             p.l1ReplPolicy, p.l1IndexingPolicy, BTBEntry(genTagExtractor(p.l1IndexingPolicy))),
       shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy)))
@@ -325,7 +331,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
     // ==========================================================================
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || 
         l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10 ||
-        l1PrefetchPolicy == 11 || trainBitsOnLookup ||
+        l1PrefetchPolicy == 11 || finalMarkov || trainBitsOnLookup ||
         trainBitsOnCommit) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
@@ -415,8 +421,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             }
 
             if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
-                l1PrefetchPolicy == 8) {
-                prefetchMarkovSuccessor(tid, instPC, false, 1, true,
+                l1PrefetchPolicy == 8 || finalMarkov) {
+                unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+                prefetchMarkovSuccessor(tid, instPC, false, numSucc, true,
                                         remainingTime);
             } else if (l1PrefetchPolicy == 9) {
                 prefetchMarkovSuccessor(tid, instPC, false, 2, true,
@@ -690,8 +697,10 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // Policy 6/7/8/9/10 (Markov to pBuffer): Continue prefetch chain on pBuffer hit
     // Prefetch the most frequent successor(s) to pBuffer
     // -------------------------------------------------------------------------
-    if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8) {
-        prefetchMarkovSuccessor(tid, instPC, false, 1, true);  // Prefetch 1 successor
+    if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
+        finalMarkov) {
+        unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+        prefetchMarkovSuccessor(tid, instPC, false, numSucc, true);  // Prefetch successor(s)
     } else if (l1PrefetchPolicy == 9) {
         prefetchMarkovSuccessor(tid, instPC, false, 2, true);  // Prefetch 2 successors
     } else if (l1PrefetchPolicy == 10) {
@@ -819,8 +828,10 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // -------------------------------------------------------------------------
     if (l1PrefetchPolicy == 5) {
         prefetchMarkovSuccessor(tid, instPC, true, 1, false, l2Latency);   // Prefetch 1 to L1
-    } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8) {
-        prefetchMarkovSuccessor(tid, instPC, false, 1, false, l2Latency);  // Prefetch 1 to pBuffer
+    } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
+               finalMarkov) {
+        unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+        prefetchMarkovSuccessor(tid, instPC, false, numSucc, false, l2Latency);  // Prefetch to pBuffer
     } else if (l1PrefetchPolicy == 9) {
         prefetchMarkovSuccessor(tid, instPC, false, 2, false, l2Latency);  // Prefetch 2 to pBuffer
     } else if (l1PrefetchPolicy == 10) {
@@ -1042,10 +1053,28 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
     }
 }
 
-// trainMarkovOnCommit: Train Markov predictor on committed branches (Policy 7/8/9/10)
+// trainMarkovOnCommit: Train Markov predictor on committed branches (Policy 7/8/9/10/finalMarkov)
 void
-MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit)
+MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
+                                   Addr targetAddr, unsigned instSize,
+                                   bool wasL2Hit)
 {
+    if (finalMarkov) {
+        auto &prev = prevCommitBlockInfo[tid];
+        if (prev.valid) {
+            //If current commit block's start address matches prev's target or fall-through
+            if (startAddr == prev.target || startAddr == prev.fallThrough) {
+                markovSuccessors[prev.branchPC][pc]++;
+            }
+        }
+        // Always update prev info with current branch
+        prev.branchPC = pc;
+        prev.target = targetAddr;
+        prev.fallThrough = pc + instSize;
+        prev.valid = true;
+        return;
+    }
+
     if (l1PrefetchPolicy != 7 && l1PrefetchPolicy != 8 && 
         l1PrefetchPolicy != 9 && l1PrefetchPolicy != 10) {
         return;

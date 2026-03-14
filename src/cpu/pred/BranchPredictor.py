@@ -250,6 +250,13 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Only prefetch on forward branches (target > PC)"
     )
 
+    finalMarkov = Param.Bool(
+        False, "The Markov prefetcher which should be the upper bound to prefetch bits prefetcher"
+    )
+    prefetchAllMarkovSuccessors = Param.Bool(
+        False, "Prefetch ALL Markov successors instead of just the most frequent"
+    )
+
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"

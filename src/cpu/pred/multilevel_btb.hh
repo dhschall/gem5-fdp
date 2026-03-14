@@ -39,7 +39,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void setBBMap(const std::unordered_map<Addr, Addr> *map) { bbMap_ = map; }
 
-    void trainMarkovOnCommit(ThreadID tid, Addr pc, bool wasL2Hit);
+    void trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
+                             Addr targetAddr, unsigned instSize, bool wasL2Hit);
     void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken);
    
   private:
@@ -67,6 +68,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool noPrefetchLatency;
     const unsigned prefetchDepth;
     const bool prefetchOnlyForward;
+    const bool finalMarkov;
+    const bool prefetchAllMarkovSuccessors;
 
     unsigned currentQueueSize;
     const unsigned maxPrefetchQueueSize;
@@ -156,7 +159,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     // Shadow previous branch PC for Policy 11 training
     std::vector<Addr> shadowPrevBranchPC;
 
-    // Policy 12: per-thread tracking of previous block info for training
+    // trainBitsOnLookup: per-thread tracking of previous block info for lookup training
     struct PrevBlockInfo {
         Addr branchPC = 0;
         Addr target = 0;
@@ -164,6 +167,15 @@ class MultiLevelBTB : public BranchTargetBuffer
         bool valid = false;
     };
     std::vector<PrevBlockInfo> prevBlockInfo;
+
+    // finalMarkov: per-thread tracking of previous committed branch exits
+    struct PrevCommitBlockInfo {
+        Addr branchPC = 0;
+        Addr target = 0;
+        Addr fallThrough = 0;
+        bool valid = false;
+    };
+    std::vector<PrevCommitBlockInfo> prevCommitBlockInfo;
 
     friend struct MultiLevelBTBStats;
 

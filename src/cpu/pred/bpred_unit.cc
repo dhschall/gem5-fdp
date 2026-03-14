@@ -527,11 +527,14 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
         }
     }
 
-    // Train Markov predictor for committed branches (Policy 7 only)
+    // Train Markov predictor for committed branches (Policy 7/finalMarkov)
     if (isMultiLevelBTB) {
         static_cast<MultiLevelBTB*>(btb)->trainMarkovOnCommit(
-            tid, hist->pc, hist->l2btbHit);
-        // Train prefetch bits at commit time (Policy 13/14)
+            tid, hist->pc, hist->start_address,
+            hist->target->instAddr(),
+            4,
+            hist->l2btbHit);
+        // Train prefetch bits at commit time (trainBitsOnCommit)
         static_cast<MultiLevelBTB*>(btb)->trainPrefetchBitsOnCommit(
             tid, hist->pc, hist->actuallyTaken);
     }
