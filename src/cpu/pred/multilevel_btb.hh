@@ -41,7 +41,7 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
                              Addr targetAddr, unsigned instSize, bool wasL2Hit);
-    void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken);
+    void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken, BranchType type);
    
   private:
     ConditionalPredictor *cPred = nullptr;
@@ -62,6 +62,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const unsigned l1PrefetchPolicy;
     const bool trainBitsOnLookup;
     const bool trainBitsOnCommit;
+    const bool prefetchBothForCall;
     const bool prefetchOnL1Hit;
     const bool prefetchOnPrefetchHit;
     const bool cleanBitsOnL1Promotion;

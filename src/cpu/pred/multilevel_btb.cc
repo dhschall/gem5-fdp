@@ -133,6 +133,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l1PrefetchPolicy(p.l1PrefetchPolicy),
       trainBitsOnLookup(p.trainBitsOnLookup),
       trainBitsOnCommit(p.trainBitsOnCommit),
+      prefetchBothForCall(p.prefetchBothForCall),
       prefetchOnL1Hit(p.prefetchOnL1Hit),
       prefetchOnPrefetchHit(p.prefetchOnPrefetchHit),
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
@@ -507,6 +508,9 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     if (usesPrefetchBitPolicy() && !l2_existing) {
         l2_victim->setPrefetchTarget(true);
         l2_victim->setPrefetchThrough(false);
+        if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
+            l2_victim->setPrefetchThrough(true);
+        }
     }
 
     bool l1_existing = (l1btb.findEntry({instPC, tid}) != nullptr);
@@ -534,6 +538,9 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     
     if (usesPrefetchBitPolicy() && !l1_existing) {
         l1_victim->setPrefetchTarget(true);
+        if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
+            l1_victim->setPrefetchThrough(true);
+        }
     }
 
     if (l1PrefetchPolicy == 11) {
@@ -1090,9 +1097,9 @@ MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
     prevBranchPC[tid] = pc;
 }
 
-// trainPrefetchBitsOnCommit: Train prefetch bits at commit time (Policy 13/14)
+// trainPrefetchBitsOnCommit: Train prefetch bits at commit time
 void
-MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken)
+MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken, BranchType type)
 {
     if (!trainBitsOnCommit)
         return;
@@ -1102,11 +1109,15 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
     if (l1_entry) {
         if (!cleanBitsOnL1Promotion) {
             // Accumulative: only set bits to 1, never clear
-            if (actuallyTaken)
+            if (actuallyTaken) {
                 l1_entry->setPrefetchTarget(true);
-            else
+                if ( prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
+                    l1_entry->setPrefetchThrough(true);
+                }
+            } else {
                 l1_entry->setPrefetchThrough(true);
-        } else { // Policy 14/17
+            }
+        } else {
             // Exclusive: set one, clear the other
             if (actuallyTaken) {
                 l1_entry->setPrefetchTarget(true);
@@ -1124,11 +1135,15 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
     if (l2_entry) {
         multilevelstats.trainBitsL1Miss++;
         if (!cleanBitsOnL1Promotion) {
-            if (actuallyTaken)
+            if (actuallyTaken) {
                 l2_entry->setPrefetchTarget(true);
-            else
+                if ( prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
+                    l2_entry->setPrefetchThrough(true);
+                }
+            } else {
                 l2_entry->setPrefetchThrough(true);
-        } else { // Policy 14/17
+            }
+        } else { 
             if (actuallyTaken) {
                 l2_entry->setPrefetchTarget(true);
                 l2_entry->setPrefetchThrough(false);
