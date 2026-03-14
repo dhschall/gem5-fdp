@@ -151,7 +151,10 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), prefetched(false), triggeredByPBHit(false), timestamp(0),  prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), prefetchThrough(false), prefetchTarget(false)
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), 
+        prefetched(false), takenPrefetched(false), triggeredByPBHit(false), timestamp(0),  
+        prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), 
+        prefetchThrough(false), prefetchTarget(false), toL1(false)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -185,6 +188,19 @@ class BTBEntry : public ReplaceableEntry
         setValid();
         setTag({extractTag(key.address), key.tid});
         branchAddr = key.address;
+        
+        // Reset all states since this is a new block or recycled victim
+        prefetched = false;
+        takenPrefetched = false;
+        triggeredByPBHit = false;
+        timestamp = Cycles(0);
+        prefetchDistance = 0;
+        predTaken = false;
+        fromPBuffer = false;
+        markovPredType = -1;
+        prefetchThrough = false;
+        prefetchTarget = false;
+        toL1 = false;
     }
 
     /** Copy constructor */
@@ -197,6 +213,7 @@ class BTBEntry : public ReplaceableEntry
         branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
+        takenPrefetched = other.takenPrefetched;
         triggeredByPBHit = other.triggeredByPBHit;
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
@@ -205,6 +222,7 @@ class BTBEntry : public ReplaceableEntry
         markovPredType = other.markovPredType;
         prefetchThrough = other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
+        toL1 = other.toL1;
     }
 
     /** Assignment operator */
@@ -217,6 +235,7 @@ class BTBEntry : public ReplaceableEntry
         branchAddr = other.branchAddr;
         set(target, other.target);
         prefetched = other.prefetched;
+        takenPrefetched = other.takenPrefetched;
         triggeredByPBHit = other.triggeredByPBHit;
         timestamp = other.timestamp;
         prefetchDistance = other.prefetchDistance;
@@ -225,8 +244,23 @@ class BTBEntry : public ReplaceableEntry
         markovPredType = other.markovPredType;
         prefetchThrough = other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
+        toL1 = other.toL1;
 
         return *this;
+    }
+
+    void copyState(const BTBEntry &other) {
+        prefetched = other.prefetched;
+        takenPrefetched = other.takenPrefetched;
+        triggeredByPBHit = other.triggeredByPBHit;
+        timestamp = other.timestamp;
+        prefetchDistance = other.prefetchDistance;
+        predTaken = other.predTaken;
+        fromPBuffer = other.fromPBuffer;
+        markovPredType = other.markovPredType;
+        prefetchThrough = other.prefetchThrough;
+        prefetchTarget = other.prefetchTarget;
+        toL1 = other.toL1;
     }
 
     /**
@@ -294,12 +328,18 @@ class BTBEntry : public ReplaceableEntry
     /** Whether this L1 entry was prefetched and hasn't been hit yet. */
     bool prefetched;
 
+    /** For counting statistics */
+    bool takenPrefetched;
+
     bool triggeredByPBHit;
 
   public:
     Addr getBranchAddr() const { return branchAddr; }
     bool isPrefetched() const { return prefetched; }
     void setPrefetched(bool p) { prefetched = p; }
+
+    bool isTakenPrefetched() const { return takenPrefetched; }
+    void setTakenPrefetched(bool p) { takenPrefetched = p; }
 
     bool isTriggeredByPBHit() const { return triggeredByPBHit; }
     void setTriggeredByPBHit(bool p) { triggeredByPBHit = p; }
@@ -352,6 +392,13 @@ class BTBEntry : public ReplaceableEntry
     /** Policy 12: prefetch training bits for block-based BTB */
     bool prefetchThrough;
     bool prefetchTarget;
+
+    /** Whether this prefetch-queued entry targets L1 (true) or pBuffer (false). */
+    bool toL1;
+
+  public:
+    bool getToL1() const { return toL1; }
+    void setToL1(bool v) { toL1 = v; }
 };
 } // namespace gem5::branch_prediction
 /**

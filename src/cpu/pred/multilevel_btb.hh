@@ -47,8 +47,11 @@ class MultiLevelBTB : public BranchTargetBuffer
     const std::unordered_map<Addr, Addr> *bbMap_ = nullptr;
 
     AssociativeCache<BTBEntry> l1btb;
-    /* Prefetch Buffer */
+  
     AssociativeCache<BTBEntry> pBuffer;
+
+    /** In-flight prefetch : entries waiting for their arrival cycle. */
+    AssociativeCache<BTBEntry> prefetchQueue;
     
     AssociativeCache<BTBEntry> l2btb;
     
@@ -64,6 +67,9 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool noPrefetchLatency;
     const unsigned prefetchDepth;
     const bool prefetchOnlyForward;
+
+    unsigned currentQueueSize;
+    const unsigned maxPrefetchQueueSize;
 
     // Multi-level BTB specific statistics
     struct MultiLevelBTBStats : public statistics::Group
@@ -87,11 +93,12 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar uselessPrefetches;
         statistics::Scalar totalPrefetches;
         statistics::Scalar shadowPrefetches;
+        statistics::Scalar prefetchQueueFull;
         
         // Unified prefetch coverage (for policy 4: pBuffer hits + L1 reuse)
         statistics::Scalar prefetchHits;            // pBuffer hit + L1 reuse (both are useful)
-        statistics::Scalar latePrefetchByPBHit;
-        statistics::Scalar latePrefetchByL2Hit;
+        statistics::Vector latePrefetchByPBHit;
+        statistics::Vector latePrefetchByL2Hit;
         statistics::Formula prefetchCoverage;       // prefetchHits / (prefetchHits + totalPrefetches)
         
         // Separate useless rates for pBuffer and L1 (policy 4)
@@ -187,7 +194,9 @@ class MultiLevelBTB : public BranchTargetBuffer
      * Prefetch the most frequent successors of given PC (Policy 5/6/7/8/9/10).
      * @param numSuccessors Number of top successors to prefetch (default 1)
      */
-    void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1, unsigned numSuccessors = 1);
+    void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
+                                 unsigned numSuccessors = 1,bool triggeredByPBHit=false,
+                                 Cycles baseLatency = Cycles(0));
 
     // Policy 11: Shadow structures to simulate Markov prefetcher behavior alongside Spatial
     AssociativeCache<BTBEntry> shadowL1BTB;
@@ -199,9 +208,16 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
 
-    // ---- Helpers for Policy 12–17 ----
+    /** Drain arrived entries from prefetchQueue into pBuffer / L1 BTB. */
+    void processPrefetchQueue(ThreadID tid);
 
-    /** Returns true for policies that use prefetch-bit logic (12–17). */
+    /** Enqueue a prefetch into the in-flight queue. */
+    void enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
+                         Cycles arrivalCycle, bool toL1,
+                         bool triggeredByPBHit, uint8_t pfDistance = 0, bool takenPrefetched=false);
+
+
+    /** Returns true for policies that use prefetch-bit logic. */
     bool usesPrefetchBitPolicy() const;
 
     /** Write back prefetch bits from an L1 victim to its L2 copy. */
@@ -214,8 +230,11 @@ class MultiLevelBTB : public BranchTargetBuffer
      * Prefetch a successor branch via bbMap lookup → pBuffer insertion.
      * @param lookupAddr  Address to look up in bbMap (target or fallThrough).
      * @param isTakenPath true → takenPathPrefetches stat; false → notTakenPathPrefetches.
+     * @param baseLatency Cumulative latency for depth > 1 prefetches.
      */
-    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath, bool triggeredByPBHit, int depth=1);
+    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath,
+                          bool triggeredByPBHit, int depth=1,
+                          Cycles baseLatency = Cycles(0));
 
 };
 } // namespace gem5::branch_prediction

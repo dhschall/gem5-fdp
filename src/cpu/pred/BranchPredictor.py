@@ -152,7 +152,7 @@ class MultiLevelBTB(BranchTargetBuffer):
     cxx_header = "cpu/pred/multilevel_btb.hh"
 
     # L1 BTB configuration
-    l1NumEntries = Param.Unsigned(256, "Number of L1 BTB entries")
+    l1NumEntries = Param.Unsigned(128, "Number of L1 BTB entries")
     l1Associativity = Param.Unsigned(8, "L1 BTB associativity")
     l1Latency = Param.Cycles(0, "L1 BTB access latency in cycles")
     l1ReplPolicy = Param.BaseReplacementPolicy(
@@ -179,6 +179,18 @@ class MultiLevelBTB(BranchTargetBuffer):
             numThreads=1,
         ),
         "Indexing policy of prefetch buffer"
+    )
+    prefetchQueueReplPolicy = Param.BaseReplacementPolicy(
+        FIFORP(), "replacement policy of prefetch queue"
+    )
+    prefetchQueueIndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.pBufferSize,
+            num_entries=Parent.pBufferSize,
+            set_shift=Parent.instShiftAmt,
+            numThreads=1,
+        ),
+        "Indexing policy of prefetch queue"
     )
 
     # L2 BTB configuration
