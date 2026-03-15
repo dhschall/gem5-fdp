@@ -226,6 +226,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Train prefetch bits on branch commit"
     )
 
+    togetherArrive = Param.Bool(
+        False, "Arrive at the same time - 2-depth prefetch"
+    )
+
     prefetchBothForCall = Param.Bool(
         False, "Prefetch both directions for Call"
     )

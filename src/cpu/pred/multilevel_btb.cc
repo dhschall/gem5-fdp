@@ -133,6 +133,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l1PrefetchPolicy(p.l1PrefetchPolicy),
       trainBitsOnLookup(p.trainBitsOnLookup),
       trainBitsOnCommit(p.trainBitsOnCommit),
+      togetherArrive(p.togetherArrive),
       prefetchBothForCall(p.prefetchBothForCall),
       prefetchOnL1Hit(p.prefetchOnL1Hit),
       prefetchOnPrefetchHit(p.prefetchOnPrefetchHit),
@@ -1208,6 +1209,9 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         Addr targetAddr = l2_pf->target->instAddr();
         Addr fallThrough = pfPC + minInstSize;
         Cycles nextLatency = baseLatency + l2Latency;
+        if (togetherArrive) {
+            nextLatency = baseLatency;
+        }
 
         if (l2_pf->getPrefetchTarget()) {
             prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
