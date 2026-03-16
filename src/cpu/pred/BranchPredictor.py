@@ -264,6 +264,12 @@ class MultiLevelBTB(BranchTargetBuffer):
     prefetchAllMarkovSuccessors = Param.Bool(
         False, "Prefetch ALL Markov successors instead of just the most frequent"
     )
+    markovUseRecency = Param.Bool(
+        False, "Select Markov successor by recency (curTick) instead of frequency"
+    )
+    markovDepth = Param.Unsigned(
+        1, "Markov prefetch depth: 1 = successor only, 2 = also prefetch successor-of-successor"
+    )
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"

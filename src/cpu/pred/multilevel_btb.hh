@@ -72,6 +72,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool prefetchOnlyForward;
     const bool finalMarkov;
     const bool prefetchAllMarkovSuccessors;
+    const bool markovUseRecency;
+
 
     unsigned currentQueueSize;
     const unsigned maxPrefetchQueueSize;
@@ -141,6 +143,11 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar takenPathPrefetches;     // prefetches triggered by prefetchTarget bit
         statistics::Scalar notTakenPathPrefetches;  // prefetches triggered by prefetchThrough bit
 
+        // Call fall-through coverage stats
+        statistics::Scalar callL2OrPrefetchHits;    // Calls that hit in L2 or prefetched
+        statistics::Scalar callFallThroughL2Only;    // of those, fall-through branch only in L2
+        statistics::Formula callFallThroughL2Ratio;  // callFallThroughL2Only / callL2OrPrefetchHits
+
         MultiLevelBTB *btb;
         
     } multilevelstats;
@@ -194,7 +201,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      * Promotes entry from pBuffer to L1 and tracks statistics.
      */
     BTBLookupResult handlePBufferHit(ThreadID tid, Addr instPC,
-                                     BTBEntry *pB_entry, bool taken);
+                                     BTBEntry *pB_entry, bool taken, BranchType type = BranchType::NoBranch);
 
     /**
      * Handle L2 BTB hit.
@@ -210,7 +217,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     void prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
                                  unsigned numSuccessors = 1,bool triggeredByPBHit=false,
-                                 Cycles baseLatency = Cycles(0));
+                                 Cycles baseLatency = Cycles(0), int depth=1);
 
     // Policy 11: Shadow structures to simulate Markov prefetcher behavior alongside Spatial
     AssociativeCache<BTBEntry> shadowL1BTB;
