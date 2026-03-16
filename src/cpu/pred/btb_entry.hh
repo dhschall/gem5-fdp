@@ -49,6 +49,7 @@
 #include "base/intmath.hh"
 #include "base/types.hh"
 #include "cpu/static_inst.hh"
+#include "cpu/pred/branch_type.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "mem/cache/tags/indexing_policies/base.hh"
 #include "params/BTBIndexingPolicy.hh"
@@ -154,7 +155,8 @@ class BTBEntry : public ReplaceableEntry
         : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), 
         prefetched(false), takenPrefetched(false), triggeredByPBHit(false), timestamp(0),  
         prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), 
-        prefetchThrough(false), prefetchTarget(false), toL1(false)
+        prefetchThrough(false), prefetchTarget(false), toL1(false),
+        prefetchTriggerType(BranchType::NoBranch)
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -201,6 +203,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchThrough = false;
         prefetchTarget = false;
         toL1 = false;
+        prefetchTriggerType = BranchType::NoBranch;
     }
 
     /** Copy constructor */
@@ -223,6 +226,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchThrough = other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
         toL1 = other.toL1;
+        prefetchTriggerType = other.prefetchTriggerType;
     }
 
     /** Assignment operator */
@@ -245,6 +249,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchThrough = other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
         toL1 = other.toL1;
+        prefetchTriggerType = other.prefetchTriggerType;
 
         return *this;
     }
@@ -261,6 +266,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchThrough = other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
         toL1 = other.toL1;
+        prefetchTriggerType = other.prefetchTriggerType;
     }
 
     /**
@@ -395,10 +401,21 @@ class BTBEntry : public ReplaceableEntry
 
     /** Whether this prefetch-queued entry targets L1 (true) or pBuffer (false). */
     bool toL1;
-
+    
+    BranchType prefetchTriggerType;
   public:
     bool getToL1() const { return toL1; }
     void setToL1(bool v) { toL1 = v; }
+
+    BranchType getPrefetchTriggerType() const
+    {
+        return prefetchTriggerType;
+    }
+    void setPrefetchTriggerType(BranchType t)
+    {
+        prefetchTriggerType = t;
+    }
+
 };
 } // namespace gem5::branch_prediction
 /**

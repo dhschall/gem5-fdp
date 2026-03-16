@@ -60,12 +60,13 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     dist2HistoryTarget.init(0).flags(total | pdf);
 
     l1MissL2Hits.flags(total);
-    uselessPrefetches.flags(total);
+    uselessPrefetches.init(enums::Num_BranchType).flags(total | pdf);
     totalPrefetches.flags(total);
     shadowPrefetches.flags(total);
     prefetchQueueFull.flags(total);
     prefetchDistCount.init(16);
     prefetchDistUsed.init(16);
+    prefetchHits.init(enums::Num_BranchType).flags(total | pdf);
     prefetchUsefulness = prefetchDistUsed / prefetchDistCount;
     prefetchUsefulness.precision(3);
     predMatches.init(15);
@@ -83,6 +84,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     
     markovOnlyHitsByPredType.init(enums::Num_BranchType).flags(total | pdf);
     for (int i = 0; i < enums::Num_BranchType; i++) {
+        uselessPrefetches.subname(i, enums::BranchTypeStrings[i]);
+        prefetchHits.subname(i, enums::BranchTypeStrings[i]);
         shadowOverlaps.subname(i, enums::BranchTypeStrings[i]);
         spatialOnlyHits.subname(i, enums::BranchTypeStrings[i]);
         markovOnlyHits.subname(i, enums::BranchTypeStrings[i]);
@@ -90,11 +93,11 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
         markovOnlyHitsByPredType.subname(i, enums::BranchTypeStrings[i]);
     }
     // Unified prefetch coverage formula
-    prefetchCoverage = prefetchHits / (prefetchHits + l1MissL2Hits);
+    prefetchCoverage = prefetchHits.total() / (prefetchHits.total() + l1MissL2Hits);
     prefetchCoverage.precision(3);
     
     // pBuffer useless rate
-    pBufferUselessRate = uselessPrefetches / totalPrefetches;
+    pBufferUselessRate = uselessPrefetches.total() / totalPrefetches;
     pBufferUselessRate.precision(3);
     
     // L1 useless prefetch rate (for pBuffer-installed entries)
@@ -199,17 +202,18 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
             // Insert into L1 BTB
             BTBEntry *l1_victim = l1btb.findVictim({pc, tid});
             if (l1_victim->isPrefetched()) {
-                multilevelstats.uselessPrefetches++;
+                multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
             }
             l1btb.insertEntry({pc, tid}, l1_victim);
             l1_victim->update(*it->target, it->inst);
             l1_victim->setPrefetched(true);
             l1_victim->setPrefetchDistance(it->getPrefetchDistance());
+            l1_victim->setPrefetchTriggerType(it->getPrefetchTriggerType());
         } else {
             // Insert into pBuffer
             BTBEntry *pB_victim = pBuffer.findVictim({pc, tid});
             if (pB_victim->isPrefetched()) {
-                multilevelstats.uselessPrefetches++;
+                multilevelstats.uselessPrefetches[pB_victim->getPrefetchTriggerType()]++;
             }
             pBuffer.insertEntry({pc, tid}, pB_victim);
             pB_victim->update(*it->target, it->inst);
@@ -226,6 +230,7 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
             pB_victim->setPrefetchTarget(it->getPrefetchTarget());
             pB_victim->setPrefetchThrough(it->getPrefetchThrough());
             pB_victim->setPrefetchDistance(it->getPrefetchDistance());
+            pB_victim->setPrefetchTriggerType(it->getPrefetchTriggerType());
         }
         prefetchQueue.invalidate(&(*it));
         currentQueueSize--;
@@ -235,7 +240,8 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
 void
 MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
                                 Cycles arrivalCycle, bool toL1,
-                                bool triggeredByPBHit, uint8_t pfDistance, bool takenPrefetched)
+                                bool triggeredByPBHit, uint8_t pfDistance,
+                                bool takenPrefetched, BranchType triggerType)
 {
     // Skip if already queued, or already in target buffer
     if (prefetchQueue.findEntry({pc, tid}))
@@ -258,6 +264,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
     victim->setPrefetchTarget(l2_entry->getPrefetchTarget());
     victim->setPrefetchThrough(l2_entry->getPrefetchThrough());
     victim->setPrefetchDistance(pfDistance);
+    victim->setPrefetchTriggerType(triggerType);
     if (usesPrefetchBitPolicy() && takenPrefetched) {
         victim->setTakenPrefetched(true);
     }
@@ -333,7 +340,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l1_entry->target->instAddr());
         l2btb.accessEntry({instPC, tid});
-        return handleL1Hit(tid, instPC, l1_entry, taken);
+        return handleL1Hit(tid, instPC, l1_entry, type, taken);
     }
 
     // ==========================================================================
@@ -349,7 +356,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             if (trainBitsOnLookup && blockStartAddr != 0)
                 recordPrevBlockInfo(tid, instPC, pB_entry->target->instAddr());
             l2btb.accessEntry({instPC, tid});
-            return handlePBufferHit(tid, instPC, pB_entry, taken, type);
+            return handlePBufferHit(tid, instPC, pB_entry, type, taken);
         }
     }
     // Check in-flight prefetches
@@ -369,7 +376,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                 }
             }
             // todo: need to invalidate a PB entry?
-            multilevelstats.prefetchHits++;
+            multilevelstats.prefetchHits[pqEntry->getPrefetchTriggerType()]++;
             auto coveredCycle = l2Latency - remainingTime;
             if(pqEntry->isTriggeredByPBHit()) {
                 multilevelstats.latePrefetchByPBHit[coveredCycle]++;
@@ -381,7 +388,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
             writeBackPrefetchBits(tid, l1_victim);
             if (l1_victim->isPrefetched()) {
-                multilevelstats.uselessPrefetches++;
+                multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
             } else if (l1_victim->isFromPBuffer()) {
                 multilevelstats.l1InstalledEvicted++;
             }
@@ -393,6 +400,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                 multilevelstats.prefetchDistUsed[prefetchDistance]++;
                 l1_victim->setPrefetchDistance(prefetchDistance);
             }
+            l1_victim->setPrefetchTriggerType(pqEntry->getPrefetchTriggerType());
 
             if (!pqEntry->getToL1()) {
                 multilevelstats.l1Installed++;
@@ -438,26 +446,26 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
                 if (pqEntry->getPrefetchTarget())
                     prefetchViaBBMap(tid, targetAddr, true, true,
-                                     prefetchDepth, remainingTime);
+                                     prefetchDepth, remainingTime, type);
                 if (pqEntry->getPrefetchThrough())
                     prefetchViaBBMap(tid, fallThrough, false, true,
-                                     prefetchDepth, remainingTime);
+                                     prefetchDepth, remainingTime, type);
             }
 
             if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
                 l1PrefetchPolicy == 8 || finalMarkov) {
                 unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
                 prefetchMarkovSuccessor(tid, instPC, false, numSucc, true,
-                                        remainingTime, prefetchDepth);
+                                        remainingTime, type, prefetchDepth);
             } else if (l1PrefetchPolicy == 9) {
                 prefetchMarkovSuccessor(tid, instPC, false, 2, true,
-                                        remainingTime);
+                                        remainingTime, type);
             } else if (l1PrefetchPolicy == 10) {
                 prefetchMarkovSuccessor(tid, instPC, false, 3, true,
-                                        remainingTime);
+                                        remainingTime, type);
             } else if (l1PrefetchPolicy == 5) {
                 prefetchMarkovSuccessor(tid, instPC, true, 1, true,
-                                        remainingTime);
+                                        remainingTime, type);
             }
 
             prefetchQueue.invalidate(pqEntry);
@@ -540,7 +548,7 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
     if (!l1_existing) {
         if (l1_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches++;
+            multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
         } else if (l1_victim->isFromPBuffer()) {
             multilevelstats.l1InstalledEvicted++;
         }
@@ -586,7 +594,7 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
 //=============================================================================
 BTBLookupResult
 MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
-                           bool taken)
+                           BranchType type, bool taken)
 {
     bool isPrefetchHit = false;
     uint8_t prefetchDistance = 0;
@@ -594,7 +602,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     // Case 1: Hit on a prefetched entry
     if (l1_entry->isPrefetched()) {
         isPrefetchHit = true;
-        multilevelstats.prefetchHits++;
+        multilevelstats.prefetchHits[l1_entry->getPrefetchTriggerType()]++;
 
         // Track prefetch distance statistics (only for spatial prefetch policies 1-4)
         if ((l1PrefetchPolicy <= 4 || l1PrefetchPolicy == 11) && l1_entry->getPrefetchDistance() < 16) {
@@ -606,7 +614,8 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         // Policy 5 (Markov to L1): Continue prefetch chain on L1 prefetch hit
         // Prefetch the most frequent successor to L1
         if (l1PrefetchPolicy == 5) {
-            prefetchMarkovSuccessor(tid, instPC, true, 1,true);  // Prefetch 1 to L1
+            prefetchMarkovSuccessor(tid, instPC, true, 1, true, Cycles(0),
+                                    type);  // Prefetch 1 to L1
         }
 
     // Case 2: Hit on entry installed from pBuffer (Policy 4)
@@ -620,9 +629,9 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         Addr fallThrough = instPC + minInstSize;
 
         if (l1_entry->getPrefetchTarget())
-            prefetchViaBBMap(tid, targetAddr, true, true);
+            prefetchViaBBMap(tid, targetAddr, true, true, 1, Cycles(0), type);
         if (l1_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false, true);
+            prefetchViaBBMap(tid, fallThrough, false, true, 1, Cycles(0), type);
     }
 
     DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n",
@@ -647,10 +656,10 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
 
 BTBLookupResult
 MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
-                                BTBEntry *pB_entry, bool taken, BranchType type)
+                                BTBEntry *pB_entry, BranchType type, bool taken)
 {
     if (pB_entry->isPrefetched()) {
-        multilevelstats.prefetchHits++;
+        multilevelstats.prefetchHits[pB_entry->getPrefetchTriggerType()]++;
         pB_entry->setPrefetched(false);
         pB_entry->setTriggeredByPBHit(false);
     }
@@ -714,9 +723,11 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         pBuffer.invalidate(pB_entry);
 
         if (doPfTarget)
-            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth);
+            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth,
+                             Cycles(0), type);
         if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth);
+            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth,
+                             Cycles(0), type);
     } else {
         pBuffer.invalidate(pB_entry);
     }
@@ -744,11 +755,14 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
         finalMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
-        prefetchMarkovSuccessor(tid, instPC, false, numSucc, true, Cycles(0), prefetchDepth);  // Prefetch successor(s)
+        prefetchMarkovSuccessor(tid, instPC, false, numSucc, true, Cycles(0),
+                                type, prefetchDepth);  // Prefetch successor(s)
     } else if (l1PrefetchPolicy == 9) {
-        prefetchMarkovSuccessor(tid, instPC, false, 2, true);  // Prefetch 2 successors
+        prefetchMarkovSuccessor(tid, instPC, false, 2, true, Cycles(0),
+                                type);  // Prefetch 2 successors
     } else if (l1PrefetchPolicy == 10) {
-        prefetchMarkovSuccessor(tid, instPC, false, 3, true);  // Prefetch 3 successors
+        prefetchMarkovSuccessor(tid, instPC, false, 3, true, Cycles(0),
+                                type);  // Prefetch 3 successors
     }
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
@@ -793,7 +807,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
     writeBackPrefetchBits(tid, l1_victim);
     if (l1_victim->isPrefetched()) {
-        multilevelstats.uselessPrefetches++;
+        multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
         l1_victim->setPrefetched(false);
     } else if (l1_victim->isFromPBuffer()) {
         multilevelstats.l1InstalledEvicted++;
@@ -860,7 +874,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
                 multilevelstats.prefetchDistCount[numBranches]++;
 
             enqueuePrefetch(pfAddr, tid, l2_pf, arrival, toL1,
-                            false, dist);
+                            false, dist, false, type);
         }
         multilevelstats.numBranchesPerPrefetch.sample(numBranches);
     }
@@ -885,15 +899,19 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // Policy 5/6/7/8/9/10: Markov-based prefetching on L2 hit
     // -------------------------------------------------------------------------
     if (l1PrefetchPolicy == 5) {
-        prefetchMarkovSuccessor(tid, instPC, true, 1, false, l2Latency);   // Prefetch 1 to L1
+        prefetchMarkovSuccessor(tid, instPC, true, 1, false, l2Latency,
+                                type);   // Prefetch 1 to L1
     } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
                finalMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
-        prefetchMarkovSuccessor(tid, instPC, false, numSucc, false, l2Latency, prefetchDepth);  // Prefetch to pBuffer
+        prefetchMarkovSuccessor(tid, instPC, false, numSucc, false, l2Latency,
+                                type, prefetchDepth);  // Prefetch to pBuffer
     } else if (l1PrefetchPolicy == 9) {
-        prefetchMarkovSuccessor(tid, instPC, false, 2, false, l2Latency);  // Prefetch 2 to pBuffer
+        prefetchMarkovSuccessor(tid, instPC, false, 2, false, l2Latency,
+                                type);  // Prefetch 2 to pBuffer
     } else if (l1PrefetchPolicy == 10) {
-        prefetchMarkovSuccessor(tid, instPC, false, 3, false, l2Latency);  // Prefetch 3 to pBuffer
+        prefetchMarkovSuccessor(tid, instPC, false, 3, false, l2Latency,
+                                type);  // Prefetch 3 to pBuffer
     }
 
     // -------------------------------------------------------------------------
@@ -930,9 +948,11 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         Addr fallThrough = instPC + minInstSize;
 
         if (l2_entry->getPrefetchTarget())
-            prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth, l2Latency);
+            prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth,
+                             l2Latency, type);
         if (l2_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth, l2Latency);
+            prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth,
+                             l2Latency, type);
     }
 
 
@@ -1057,7 +1077,7 @@ MultiLevelBTB::prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned num
 void
 MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
                                        unsigned numSuccessors, bool triggeredByPBHit,
-                                       Cycles baseLatency, int depth)
+                                       Cycles baseLatency, BranchType triggerType, int depth)
 {
     auto it = markovSuccessors.find(pc);
     if (it == markovSuccessors.end() || it->second.empty()) {
@@ -1105,10 +1125,11 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
         // multilevelstats.markovDist.sample(successor - pc);
 
         enqueuePrefetch(successor, tid, l2_entry, arrival, toL1,
-                        triggeredByPBHit);
+                        triggeredByPBHit, 0, false, triggerType);
 
         if (depth > 2){
-            prefetchMarkovSuccessor(tid, successor, toL1, numSuccessors, triggeredByPBHit, arrival, depth - 1);
+            BranchType nextTriggerType = getBranchType(l2_entry->inst);
+            prefetchMarkovSuccessor(tid, successor, toL1, numSuccessors, triggeredByPBHit, arrival, nextTriggerType, depth - 1);
         }
 
         prefetched++;
@@ -1250,7 +1271,8 @@ MultiLevelBTB::recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr)
 void
 MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                                 bool isTakenPath, bool triggeredByPBHit,
-                                int depth, Cycles baseLatency)
+                                int depth, Cycles baseLatency,
+                                BranchType triggerType)
 {
     auto it = bbMap_->find(lookupAddr);
     if (it == bbMap_->end())
@@ -1265,7 +1287,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     Cycles arrival = curCycle() + l2Latency + baseLatency;
 
     enqueuePrefetch(pfPC, tid, l2_pf, arrival,
-                    false, triggeredByPBHit, 0, isTakenPath);
+                    false, triggeredByPBHit, 0, isTakenPath, triggerType);
 
     if (depth > 1) {
         Addr targetAddr = l2_pf->target->instAddr();
@@ -1275,13 +1297,14 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
             nextLatency = baseLatency;
         }
 
+        BranchType l2PfType = getBranchType(l2_pf->inst);
         if (l2_pf->getPrefetchTarget()) {
             prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                             depth - 1, nextLatency);
+                             depth - 1, nextLatency, l2PfType);
         }
         if (l2_pf->getPrefetchThrough()) {
             prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                             depth - 1, nextLatency);
+                             depth - 1, nextLatency, l2PfType);
         }
     }
 }
