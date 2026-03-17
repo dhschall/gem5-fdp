@@ -486,6 +486,8 @@ class BPredUnit : public SimObject
 
     std::vector<Addr> blockStartAddr_;
 
+    const bool useBtbBim;
+
     /**
      * The per-thread predictor history. This is used to update the predictor
      * as instructions are committed, or restore it to the proper state after

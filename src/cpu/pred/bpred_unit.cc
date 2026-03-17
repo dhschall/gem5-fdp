@@ -62,6 +62,7 @@ BPredUnit::BPredUnit(const Params &params)
       instShiftAmt(params.instShiftAmt),
       basicBlockBTB(params.blockBTB),
       blockStartAddr_(params.numThreads, 0),
+      useBtbBim(params.useBtbBim),
       predHist(numThreads),
       btb(params.btb),
       ras(params.ras),
@@ -232,11 +233,24 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     const PCStateBase * btb_target = btb_res.target;
     // Capture the latency of the conditional predictor
     Cycles cbp_latency = totalLatency;
+    if (useBtbBim) {
+
+        // We just "simulate" the latency here
+        if (hist->condPred == btb_res.taken) {
+            // No override
+            cbp_latency = btb_res.latency;
+        } else {
+            // For overrides we always assume 4 cycles irrespective
+            // of which TAGE component provided the prediction.
+            cbp_latency = cPred->getStaticLatency();
+        }
+    }
+
     // if (btb_res.prefetchHit && inst->isCondCtrl() && btb_res.predMatch) {
     //     cbp_latency = Cycles(0);
     //     totalLatency = Cycles(0);
     // }
-    totalLatency = std::max(totalLatency, btb_res.latency);
+    totalLatency = std::max(cbp_latency, btb_res.latency);
     // Correctify totalLatency for BIM&TAGE = not-taken, L2 hit
     if (cbp_latency == 0 && !hist->uncond && !hist->condPred && btb_res.latency != Cycles(0)) {
         totalLatency = Cycles(0);
@@ -510,6 +524,9 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
     // Update the BTB for all committed taken branches.
     if (hist->actuallyTaken && !updateBTBAtSquash) {
         updateBTB(tid, hist);
+    }
+    if (useBtbBim) {
+        btb->updateDirection(tid, hist->pc, hist->actuallyTaken);
     }
 
     if (isMultiLevelBTB && hist->btbHit) {

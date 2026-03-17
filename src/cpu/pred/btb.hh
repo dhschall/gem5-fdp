@@ -64,6 +64,7 @@ struct BTBLookupResult
   bool l2Hit;
   bool prefetchHit;   // Hit on a prefetched entry (either in L1 or pBuffer)
   bool predMatch;
+  bool taken;
 
   BTBLookupResult(const PCStateBase* _target = nullptr,
                   Cycles _latency = Cycles(0),
@@ -71,9 +72,10 @@ struct BTBLookupResult
                   bool _pBufferHit = false,
                   bool _l2Hit = false,
                   bool _prefetchHit = false,
-                  bool _predMatch = false)
+                  bool _predMatch = false,
+                  bool _taken = false)
       : target(_target), latency(_latency), l1Hit(_l1Hit), pBufferHit(_pBufferHit),
-        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch) {}
+        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch), taken(_taken) {}
 };
 
 class BranchTargetBuffer : public ClockedObject
@@ -135,6 +137,8 @@ class BranchTargetBuffer : public ClockedObject
       // Default behavior: use classic lookup and zero latency
         return BTBLookupResult(lookup(tid, instPC, type), Cycles(0));
     }
+
+    virtual void updateDirection(ThreadID tid, Addr inst_pc, bool taken) {}
 
   protected:
     /** Number of the threads for which the branch history is maintained. */

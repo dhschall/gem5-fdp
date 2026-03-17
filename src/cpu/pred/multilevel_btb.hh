@@ -20,19 +20,21 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     void memInvalidate() override;
     bool valid(ThreadID tid, Addr instPC) override;
-    
+
     const PCStateBase *lookup(ThreadID tid, Addr instPC,
                               BranchType type = BranchType::NoBranch) override;
-    
+
     BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
                                       BranchType type = BranchType::NoBranch,
                                       bool taken = true,
                                       Addr blockStartAddr = 0) override;
-    
+
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;
-    
+
+    void updateDirection(ThreadID tid, Addr inst_pc, bool taken) override;
+
     const StaticInstPtr getInst(ThreadID tid, Addr instPC) override;
 
     void setBranchPredictor(ConditionalPredictor *cp) { cPred = cp; }
@@ -42,20 +44,20 @@ class MultiLevelBTB : public BranchTargetBuffer
     void trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
                              Addr targetAddr, unsigned instSize, bool wasL2Hit);
     void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken, BranchType type);
-   
+
   private:
     ConditionalPredictor *cPred = nullptr;
     const std::unordered_map<Addr, Addr> *bbMap_ = nullptr;
 
     AssociativeCache<BTBEntry> l1btb;
-  
+
     AssociativeCache<BTBEntry> pBuffer;
 
     /** In-flight prefetch : entries waiting for their arrival cycle. */
     AssociativeCache<BTBEntry> prefetchQueue;
-    
+
     AssociativeCache<BTBEntry> l2btb;
-    
+
     const Cycles l1Latency;
     const Cycles l2Latency;
     const unsigned minInstSize;
@@ -75,6 +77,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool finalMarkov;
     const bool prefetchAllMarkovSuccessors;
     const bool markovUseRecency;
+    const bool updateDirOnlyL1;
 
 
     unsigned currentQueueSize;
@@ -84,10 +87,10 @@ class MultiLevelBTB : public BranchTargetBuffer
     struct MultiLevelBTBStats : public statistics::Group
     {
         MultiLevelBTBStats(statistics::Group *parent, MultiLevelBTB *btb);
-        
+
         void preDumpStats() override;
         //For exploring the 1-history Markov prefetcher:
-        //If branch A misses in L1BTB1(hits in L2BTB), 
+        //If branch A misses in L1BTB1(hits in L2BTB),
         //then the immediate branch B is the successor of A if B also misses in L1BTB2 (hits in L2BTB2).
         statistics::SparseHistogram successorCountDist;
         statistics::SparseHistogram markovDist;
@@ -103,16 +106,16 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar totalPrefetches;
         statistics::Scalar shadowPrefetches;
         statistics::Scalar prefetchQueueFull;
-        
+
         // Unified prefetch coverage (for policy 4: pBuffer hits + L1 reuse)
         statistics::Vector prefetchHits;            // pBuffer hit + L1 reuse (both are useful)
         statistics::Vector latePrefetchByPBHit;
         statistics::Vector latePrefetchByL2Hit;
         statistics::Formula prefetchCoverage;       // prefetchHits / (prefetchHits + totalPrefetches)
-        
+
         // Separate useless rates for pBuffer and L1 (policy 4)
         statistics::Formula pBufferUselessRate;     // uselessPrefetches / totalPrefetches
-        
+
         statistics::Scalar l1InstalledEvicted;   // L1 evictions of pBuffer-installed entries without reuse
         statistics::Scalar l1Installed;             // count of entries installed from pBuffer to L1
         statistics::Formula l1UselessInstalledRate;  // l1InstalledEvicted / l1Installed
@@ -151,7 +154,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Formula callFallThroughL2Ratio;  // callFallThroughL2Only / callL2OrPrefetchHits
 
         MultiLevelBTB *btb;
-        
+
     } multilevelstats;
     // Markov prefetcher data structure
     // key: branch PC (L1 miss, L2 hit)

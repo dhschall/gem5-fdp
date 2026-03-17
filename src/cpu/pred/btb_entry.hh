@@ -48,6 +48,7 @@
 #include "arch/generic/pcstate.hh"
 #include "base/intmath.hh"
 #include "base/types.hh"
+#include "base/sat_counter.hh"
 #include "cpu/static_inst.hh"
 #include "cpu/pred/branch_type.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
@@ -152,11 +153,12 @@ class BTBEntry : public ReplaceableEntry
 
     /** Default constructor */
     BTBEntry(TagExtractor ext)
-        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0), 
-        prefetched(false), takenPrefetched(false), triggeredByPBHit(false), timestamp(0),  
-        prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1), 
+        : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0),
+        prefetched(false), takenPrefetched(false), triggeredByPBHit(false), timestamp(0),
+        prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1),
         prefetchThrough(false), prefetchTarget(false), toL1(false),
-        prefetchTriggerType(BranchType::NoBranch)
+        prefetchTriggerType(BranchType::NoBranch),
+        dir(2, 1) // Two bits, weakly not taken
     {}
 
     /** Update the target and instruction in the BTB entry.
@@ -190,7 +192,7 @@ class BTBEntry : public ReplaceableEntry
         setValid();
         setTag({extractTag(key.address), key.tid});
         branchAddr = key.address;
-        
+
         // Reset all states since this is a new block or recycled victim
         prefetched = false;
         takenPrefetched = false;
@@ -204,10 +206,12 @@ class BTBEntry : public ReplaceableEntry
         prefetchTarget = false;
         toL1 = false;
         prefetchTriggerType = BranchType::NoBranch;
+        dir.reset();
     }
 
     /** Copy constructor */
     BTBEntry(const BTBEntry &other)
+        : dir(other.dir)
     {
         valid      = other.valid;
         tag        = other.tag;
@@ -250,6 +254,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchTarget = other.prefetchTarget;
         toL1 = other.toL1;
         prefetchTriggerType = other.prefetchTriggerType;
+        dir = other.dir;
 
         return *this;
     }
@@ -267,6 +272,7 @@ class BTBEntry : public ReplaceableEntry
         prefetchTarget = other.prefetchTarget;
         toL1 = other.toL1;
         prefetchTriggerType = other.prefetchTriggerType;
+        dir = other.dir;
     }
 
     /**
@@ -387,7 +393,7 @@ class BTBEntry : public ReplaceableEntry
     /** Policy 12: Whether the taken-target BTB entry should be prefetched. */
     bool getPrefetchTarget() const { return prefetchTarget; }
     void setPrefetchTarget(bool p) { prefetchTarget = p; }
-    
+
   private:
     /** Flag to track if this entry was installed from prefetch buffer */
     bool fromPBuffer;
@@ -401,7 +407,7 @@ class BTBEntry : public ReplaceableEntry
 
     /** Whether this prefetch-queued entry targets L1 (true) or pBuffer (false). */
     bool toL1;
-    
+
     BranchType prefetchTriggerType;
   public:
     bool getToL1() const { return toL1; }
@@ -414,6 +420,19 @@ class BTBEntry : public ReplaceableEntry
     void setPrefetchTriggerType(BranchType t)
     {
         prefetchTriggerType = t;
+    }
+
+  private:
+    SatCounter8 dir;
+  public:
+    bool getDir() const {
+        return dir > 1; // 0,1 not taken, 1,2 taken
+    }
+    void updateDir(bool taken) {
+        dir += taken ? 1 : -1;
+    }
+    void copyDir(const BTBEntry& other) {
+        dir = other.dir;
     }
 
 };

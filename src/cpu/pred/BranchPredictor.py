@@ -178,7 +178,7 @@ class MultiLevelBTB(BranchTargetBuffer):
             set_shift=Parent.instShiftAmt,
             numThreads=1,
         ),
-        "Indexing policy of prefetch buffer"
+        "Indexing policy of prefetch buffer",
     )
     prefetchQueueReplPolicy = Param.BaseReplacementPolicy(
         FIFORP(), "replacement policy of prefetch queue"
@@ -190,7 +190,7 @@ class MultiLevelBTB(BranchTargetBuffer):
             set_shift=Parent.instShiftAmt,
             numThreads=1,
         ),
-        "Indexing policy of prefetch queue"
+        "Indexing policy of prefetch queue",
     )
 
     # L2 BTB configuration
@@ -215,12 +215,11 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
 
     l1PrefetchPolicy = Param.Unsigned(
-        1, "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch, 4=FIFO pBuffer"
+        1,
+        "L1 BTB prefetch policy: 1=Next 128B, 2=up to next region, 3=hit prefetched L1 entry,triggering next region prefetch, 4=FIFO pBuffer",
     )
 
-    trainBitsOnLookup = Param.Bool(
-        False, "Train prefetch bits on BTB hit"
-    )
+    trainBitsOnLookup = Param.Bool(False, "Train prefetch bits on BTB hit")
 
     trainBitsOnCommit = Param.Bool(
         False, "Train prefetch bits on branch commit"
@@ -230,13 +229,9 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Arrive at the same time - 2-depth prefetch"
     )
 
-    prefetchOnlyCB = Param.Bool(
-        False, "Only prefetch conditional branches"
-    )
+    prefetchOnlyCB = Param.Bool(False, "Only prefetch conditional branches")
 
-    prefetchOnlyUB = Param.Bool(
-        False, "Only prefetch unconditional branches"
-    )
+    prefetchOnlyUB = Param.Bool(False, "Only prefetch unconditional branches")
 
     prefetchBothForCall = Param.Bool(
         False, "Prefetch both directions for Call"
@@ -254,9 +249,7 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Clean prefetch bits on L1 promotion"
     )
 
-    noPrefetchLatency = Param.Bool(
-        False, "Do not model the prefetch latency"
-    )
+    noPrefetchLatency = Param.Bool(False, "Do not model the prefetch latency")
 
     prefetchDepth = Param.Unsigned(
         1, "Prefetch depth for prefetch-bits prefetcher"
@@ -267,14 +260,22 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
 
     finalMarkov = Param.Bool(
-        False, "The Markov prefetcher which should be the upper bound to prefetch bits prefetcher"
+        False,
+        "The Markov prefetcher which should be the upper bound to prefetch bits prefetcher",
     )
     prefetchAllMarkovSuccessors = Param.Bool(
-        False, "Prefetch ALL Markov successors instead of just the most frequent"
+        False,
+        "Prefetch ALL Markov successors instead of just the most frequent",
     )
     markovUseRecency = Param.Bool(
-        False, "Select Markov successor by recency (curTick) instead of frequency"
+        False,
+        "Select Markov successor by recency (curTick) instead of frequency",
     )
+    updateDirOnlyL1 = Param.Bool(
+        False,
+        "Select Markov successor by recency (curTick) instead of frequency",
+    )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
@@ -392,6 +393,7 @@ class BranchPredictor(SimObject):
         "in modern server CPUs: https://ieeexplore.ieee.org/document/9246215",
     )
     blockBTB = Param.Bool(True, "Enables block-based BTB front-end")
+    useBtbBim = Param.Bool(True, "Enables block-based BTB front-end")
 
 
 class LocalBP(ConditionalPredictor):
