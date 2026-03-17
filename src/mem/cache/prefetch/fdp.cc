@@ -70,7 +70,7 @@ FetchDirectedPrefetcher::notifyFTQInsert(const o3::FetchTargetPtr &ft)
 {
     const Addr start_blk_addr = blockAddress(ft->startAddress());
     Addr end_blk_addr = blockAddress(ft->endAddress());
-    
+
     for (Addr blk_addr = start_blk_addr; blk_addr <= end_blk_addr;
          blk_addr += blkSize) {
 

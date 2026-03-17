@@ -291,6 +291,9 @@ class BAC
      */
     bool updatePC(const DynInstPtr &inst, PCStateBase &fetch_pc,
                   FetchTargetPtr &ft);
+    void fetchBlockCycle();
+    StaticInstPtr block_inst;
+    bool fetch_blocked = false;
 
   private:
     /** Pre-decode update -----------------------------------------
@@ -485,6 +488,10 @@ class BAC
         /** Distribution of number of bytes per fetch target. */
         statistics::Distribution ftSizeDist;
         statistics::Distribution ftNumber;
+
+        statistics::Vector bacBlockCycles;
+        statistics::Vector fetchBlockCycles;
+        statistics::Vector fetchBlocked;
 
     } stats;
     /** @} */

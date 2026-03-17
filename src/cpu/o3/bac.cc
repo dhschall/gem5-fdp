@@ -402,6 +402,12 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
         );
         stalls[tid].bpu = true;
     } else {
+        if (stalls[tid].bpu && fetch_blocked) {
+            assert(block_inst);
+            auto btype = branch_prediction::getBranchType(block_inst);
+            stats.fetchBlocked[btype]++;
+        }
+        fetch_blocked = false;
         stalls[tid].bpu = false;
     }
 
@@ -538,6 +544,13 @@ BAC::tick()
                 activity = true;
             }
             stats.status[bacStatus[tid]]++;
+            if (bacStatus[tid] == Blocked && stalls[tid].bpu) {
+                auto btype = branch_prediction::BranchType::NoBranch;
+                if (block_inst) {
+                    btype = branch_prediction::getBranchType(block_inst);
+                }
+                stats.bacBlockCycles[btype]++;
+            }
         }
 
     } else {
@@ -727,6 +740,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         Prediction pred = predict(tid, staticInst, curFT, *next_pc);
         predict_taken = pred.taken;
         branchPredictRemaining[tid] = Cycles(pred.latency);
+        if (branchPredictRemaining[tid] != 0) {
+            block_inst = staticInst;
+        }
 
             DPRINTF(BAC,
                     "[tid:%i, ftn:%llu] Branch found at PC %#x "
@@ -1061,6 +1077,17 @@ BAC::profileCycle(ThreadID tid)
     }
 }
 
+void
+BAC::fetchBlockCycle()
+{
+    auto btype = branch_prediction::BranchType::NoBranch;
+    if (block_inst) {
+        btype = branch_prediction::getBranchType(block_inst);
+    }
+    stats.fetchBlockCycles[btype]++;
+    fetch_blocked = true;
+}
+
 
 BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
     : statistics::Group(cpu, "bac"),
@@ -1106,7 +1133,14 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
     ADD_STAT(ftSizeDist, statistics::units::Count::get(),
              "Number of bytes per fetch target"),
     ADD_STAT(ftNumber, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(bacBlockCycles, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(fetchBlockCycles, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(fetchBlocked, statistics::units::Count::get(),
              "Number of fetch target inserted to the FTQ per cycle")
+
 {
     using namespace statistics;
     status.init(ThreadStatusMax).flags(statistics::pdf | statistics::nozero);
@@ -1123,6 +1157,9 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
 
     preDecUpdate.init(enums::Num_BranchType).flags(total | pdf);
     noHistByType.init(enums::Num_BranchType).flags(total | pdf);
+    bacBlockCycles.init(enums::Num_BranchType).flags(total | pdf);
+    fetchBlockCycles.init(enums::Num_BranchType).flags(total | pdf);
+    fetchBlocked.init(enums::Num_BranchType).flags(total | pdf);
     ftNumber.init(0, bac->maxFTPerCycle, 1);
 
     for (int i = 0; i < enums::Num_BranchType; i++) {

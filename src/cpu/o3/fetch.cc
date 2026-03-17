@@ -1108,6 +1108,7 @@ Fetch::fetch(bool &status_change)
 
         // No fetch target. We don't know what to fetch.
         ++fetchStats.ftqStallCycles;
+        bac->fetchBlockCycle();
         return;
     }
 
@@ -1130,6 +1131,7 @@ Fetch::fetch(bool &status_change)
                     tid, this_pc, curFT->toString());
             bacResteer(this_pc, tid);
             ++fetchStats.ftqStallCycles;
+            bac->fetchBlockCycle();
             return;
         }
     }
@@ -1164,6 +1166,7 @@ Fetch::fetch(bool &status_change)
                 ++fetchStats.tlbCycles;
             else if (fetchStatus[tid] == FTQEmpty) {
                 ++fetchStats.ftqStallCycles;
+                bac->fetchBlockCycle();
             } else {
                 ++fetchStats.miscStallCycles;
             }
@@ -1655,6 +1658,7 @@ Fetch::profileStall(ThreadID tid)
         ++fetchStats.ftqStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting for the BPU to fill FTQ!\n",
                 tid);
+        bac->fetchBlockCycle();
     } else if (fetchStatus[tid] == TrapPending) {
         ++fetchStats.pendingTrapStallCycles;
         DPRINTF(Fetch, "[tid:%i] Fetch is waiting for a pending trap!\n",
