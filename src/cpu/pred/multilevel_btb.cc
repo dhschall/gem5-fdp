@@ -143,6 +143,8 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l1PrefetchPolicy(p.l1PrefetchPolicy),
       trainBitsOnLookup(p.trainBitsOnLookup),
       trainBitsOnCommit(p.trainBitsOnCommit),
+      prefetchOnlyCB(p.prefetchOnlyCB),
+      prefetchOnlyUB(p.prefetchOnlyUB),
       togetherArrive(p.togetherArrive),
       prefetchBothForCall(p.prefetchBothForCall),
       prefetchOnL1Hit(p.prefetchOnL1Hit),
@@ -1283,6 +1285,15 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     if (!l2_pf || l1btb.findEntry({pfPC, tid}) ||
         pBuffer.findEntry({pfPC, tid}))
         return;
+
+    if (trainBitsOnCommit) {
+        if (prefetchOnlyCB && l2_pf->inst && !l2_pf->inst->isCondCtrl()) {
+            return;
+        }
+        if (prefetchOnlyUB && l2_pf->inst && !l2_pf->inst->isUncondCtrl()) {
+            return;
+        }
+    }
 
     Cycles arrival = curCycle() + l2Latency + baseLatency;
 

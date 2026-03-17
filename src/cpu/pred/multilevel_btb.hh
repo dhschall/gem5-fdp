@@ -62,6 +62,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const unsigned l1PrefetchPolicy;
     const bool trainBitsOnLookup;
     const bool trainBitsOnCommit;
+    const bool prefetchOnlyCB;
+    const bool prefetchOnlyUB;
     const bool togetherArrive;
     const bool prefetchBothForCall;
     const bool prefetchOnL1Hit;

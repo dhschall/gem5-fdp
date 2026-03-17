@@ -230,6 +230,14 @@ class MultiLevelBTB(BranchTargetBuffer):
         False, "Arrive at the same time - 2-depth prefetch"
     )
 
+    prefetchOnlyCB = Param.Bool(
+        False, "Only prefetch conditional branches"
+    )
+
+    prefetchOnlyUB = Param.Bool(
+        False, "Only prefetch unconditional branches"
+    )
+
     prefetchBothForCall = Param.Bool(
         False, "Prefetch both directions for Call"
     )
