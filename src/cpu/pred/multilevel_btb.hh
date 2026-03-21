@@ -250,8 +250,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     /** Returns true for policies that use prefetch-bit logic. */
     bool usesPrefetchBitPolicy() const;
 
-    /** Write back prefetch bits from an L1 victim to its L2 copy. */
-    void writeBackPrefetchBits(ThreadID tid, BTBEntry *l1_victim);
+    /** Evict an L1 victim entry to L2, writing back full state. */
+    void writebackToL2(ThreadID tid, BTBEntry *victim);
 
     /** Record previous block info for next-iteration training. */
     void recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr);

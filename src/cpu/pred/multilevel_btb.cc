@@ -345,7 +345,6 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
         // trainBitsOnLookup: record current block info for next training iteration
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l1_entry->target->instAddr());
-        l2btb.accessEntry({instPC, tid});
         return handleL1Hit(tid, instPC, l1_entry, type, taken);
     }
 
@@ -361,7 +360,6 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             // trainBitsOnLookup: record current block info (from pBuffer entry)
             if (trainBitsOnLookup && blockStartAddr != 0)
                 recordPrevBlockInfo(tid, instPC, pB_entry->target->instAddr());
-            l2btb.accessEntry({instPC, tid});
             return handlePBufferHit(tid, instPC, pB_entry, type, taken);
         }
     }
@@ -392,7 +390,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
             // Insert directly into L1 (Prefetched hit)
             BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
-            writeBackPrefetchBits(tid, l1_victim);
+            writebackToL2(tid, l1_victim);
             if (l1_victim->isPrefetched()) {
                 multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
             } else if (l1_victim->isFromPBuffer()) {
@@ -430,7 +428,6 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
             if (trainBitsOnLookup && blockStartAddr != 0)
                 recordPrevBlockInfo(tid, instPC, l1_victim->target->instAddr());
-            l2btb.accessEntry({instPC, tid});
 
             if ((type == BranchType::CallDirect || type == BranchType::CallIndirect) && bbMap_) {
                 multilevelstats.callL2OrPrefetchHits++;
@@ -552,26 +549,6 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     stats.updates[type]++;
 
 
-
-    bool l2_existing = (l2btb.findEntry({instPC, tid}) != nullptr);
-    BTBEntry *l2_victim = l2btb.findVictim({instPC, tid});
-    BTBEntry old_l2_state(*l2_victim);
-
-    l2btb.insertEntry({instPC, tid}, l2_victim);
-    l2_victim->update(target, inst);
-
-    if (l2_existing) {
-        l2_victim->copyState(old_l2_state);
-    }
-
-    if (usesPrefetchBitPolicy() && !l2_existing) {
-        l2_victim->setPrefetchTarget(true);
-        l2_victim->setPrefetchThrough(false);
-        if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-            l2_victim->setPrefetchThrough(true);
-        }
-    }
-
     bool l1_existing = (l1btb.findEntry({instPC, tid}) != nullptr);
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
     if (!l1_existing) {
@@ -582,8 +559,9 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
         }
     }
 
-    if (usesPrefetchBitPolicy() && !l1_existing) {
-        writeBackPrefetchBits(tid, l1_victim);
+    // Inserting a new L1-entry, evict victim to L2
+    if (!l1_existing) {
+        writebackToL2(tid, l1_victim);
     }
 
     BTBEntry old_l1_state(*l1_victim);
@@ -703,7 +681,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // -------------------------------------------------------------------------
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
 
-    writeBackPrefetchBits(tid, l1_victim);
+    writebackToL2(tid, l1_victim);
 
     // Track if we're evicting an entry that was previously installed from pBuffer
     if (l1_victim->isFromPBuffer()) {
@@ -834,7 +812,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // Insert entry into L1
     // -------------------------------------------------------------------------
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
-    writeBackPrefetchBits(tid, l1_victim);
+    writebackToL2(tid, l1_victim);
     if (l1_victim->isPrefetched()) {
         multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
         l1_victim->setPrefetched(false);
@@ -1277,16 +1255,20 @@ MultiLevelBTB::usesPrefetchBitPolicy() const
 }
 
 void
-MultiLevelBTB::writeBackPrefetchBits(ThreadID tid, BTBEntry *l1_victim)
+MultiLevelBTB::writebackToL2(ThreadID tid, BTBEntry *victim)
 {
-    Addr victimPC = l1_victim->getBranchAddr();
-    BTBEntry *l2_wb = l2btb.findEntry({victimPC, tid});
-    if (l2_wb) {
-        l2_wb->copyDir(*l1_victim);
-        if (usesPrefetchBitPolicy()) {
-            l2_wb->setPrefetchThrough(l1_victim->getPrefetchThrough());
-            l2_wb->setPrefetchTarget(l1_victim->getPrefetchTarget());
-        }
+    // There is no L1 entry evicted.
+    if (!victim->target)
+        return;
+    Addr victimPC = victim->getBranchAddr();
+    // Writeback trained status of the L1 victim to L2
+    BTBEntry *l2_victim = l2btb.findVictim({victimPC, tid});
+    l2btb.insertEntry({victimPC, tid}, l2_victim);
+    l2_victim->update(*victim->target, victim->inst);
+    l2_victim->copyDir(*victim);
+    if (usesPrefetchBitPolicy()) {
+        l2_victim->setPrefetchThrough(victim->getPrefetchThrough());
+        l2_victim->setPrefetchTarget(victim->getPrefetchTarget());
     }
 }
 

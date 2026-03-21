@@ -393,7 +393,7 @@ class BranchPredictor(SimObject):
         "in modern server CPUs: https://ieeexplore.ieee.org/document/9246215",
     )
     blockBTB = Param.Bool(True, "Enables block-based BTB front-end")
-    useBtbBim = Param.Bool(True, "Enables block-based BTB front-end")
+    useBtbBim = Param.Bool(False, "Enables block-based BTB front-end")
 
 
 class LocalBP(ConditionalPredictor):
