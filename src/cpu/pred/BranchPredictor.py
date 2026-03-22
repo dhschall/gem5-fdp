@@ -276,6 +276,28 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Select Markov successor by recency (curTick) instead of frequency",
     )
 
+    useCompressedTagFilter = Param.Bool(
+        False,
+        "Use compressed tag array for filtering prefetches",
+    )
+    compressedTagBits = Param.Unsigned(
+        4,
+        "Number of tag bits in compressed tag array (Simply truncating the full tags for now)",
+    )
+    compressedTagIndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.l1Associativity,
+            num_entries=Parent.l1NumEntries,
+            set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.compressedTagBits,
+            numThreads=1,
+        ),
+        "Compressed tag array indexing policy",
+    )
+    compressedTagReplPolicy = Param.BaseReplacementPolicy(
+        LRURP(), "Compressed tag array replacement policy"
+    )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"

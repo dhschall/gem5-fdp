@@ -78,6 +78,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool prefetchAllMarkovSuccessors;
     const bool markovUseRecency;
     const bool updateDirOnlyL1;
+    const bool useCompressedTagFilter;
 
 
     unsigned currentQueueSize;
@@ -131,6 +132,11 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Vector predMatches;
         statistics::Vector predChecks;
         statistics::Formula predMatchRatio;
+
+        // Evaluate the false positive rate of compressed tag array
+        statistics::Scalar compressedTagChecks;
+        statistics::Scalar compressedTagFalsePositives;
+        statistics::Formula compressedTagFalsePositiveRate;
 
         // Policy 11: Shadow Statistics (indexed by BranchType)
         statistics::Vector shadowOverlaps;    // Hit in BOTH Real and Shadow
@@ -229,6 +235,13 @@ class MultiLevelBTB : public BranchTargetBuffer
     // Policy 11: Shadow structures to simulate Markov prefetcher behavior alongside Spatial
     AssociativeCache<BTBEntry> shadowL1BTB;
     AssociativeCache<BTBEntry> shadowPBuffer;
+
+    // For L1 prefetcher's bandwidth issue.
+    AssociativeCache<BTBEntry> l1CompressedTags;
+
+    bool l1ApproxContains(Addr pc, ThreadID tid);
+
+    void l1CompressedTagSync(Addr pc, ThreadID tid);
 
     void performShadowLookup(ThreadID tid, Addr instPC, BranchType type);
 

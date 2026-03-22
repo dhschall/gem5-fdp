@@ -38,6 +38,9 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(predMatches, statistics::units::Count::get(), "Number of prediction matches for prefetched entries"),
       ADD_STAT(predChecks, statistics::units::Count::get(), "Number of prediction checks for prefetched entries"),
       ADD_STAT(predMatchRatio, statistics::units::Ratio::get(), "Prediction match ratio for prefetched entries"),
+      ADD_STAT(compressedTagChecks, statistics::units::Count::get(), "Number of compressed tag array checks"),
+      ADD_STAT(compressedTagFalsePositives, statistics::units::Count::get(), "Compressed tag array false positives"),
+      ADD_STAT(compressedTagFalsePositiveRate, statistics::units::Ratio::get(), "Compressed tag array false positive rate"),
       ADD_STAT(shadowOverlaps, statistics::units::Count::get(), "Hit in BOTH Real and Shadow"),
       ADD_STAT(spatialOnlyHits, statistics::units::Count::get(), "Hit in Real, Miss in Shadow"),
       ADD_STAT(markovOnlyHits, statistics::units::Count::get(), "Miss in Real, Hit in Shadow"),
@@ -108,6 +111,11 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     callFallThroughL2Ratio = callFallThroughL2Only / callL2OrPrefetchHits;
     callFallThroughL2Ratio.precision(3);
 
+    compressedTagChecks.flags(total);
+    compressedTagFalsePositives.flags(total);
+    compressedTagFalsePositiveRate = compressedTagFalsePositives / compressedTagChecks;
+    compressedTagFalsePositiveRate.precision(4);
+
     numBranchesPerPrefetch.init(0, 64, 1);
 }
 
@@ -157,6 +165,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchAllMarkovSuccessors(p.prefetchAllMarkovSuccessors),
       markovUseRecency(p.markovUseRecency),
       updateDirOnlyL1(p.updateDirOnlyL1),
+      useCompressedTagFilter(p.useCompressedTagFilter),
       currentQueueSize(0),
       maxPrefetchQueueSize(p.pBufferSize),
       multilevelstats(this, this),
@@ -167,7 +176,10 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prevCommitBlockInfo(p.numThreads),
       shadowL1BTB("shadowL1BTB", p.l1NumEntries, p.l1Associativity,
             p.l1ReplPolicy, p.l1IndexingPolicy, BTBEntry(genTagExtractor(p.l1IndexingPolicy))),
-      shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy)))
+      shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy))),
+      l1CompressedTags("l1CompressedTags", p.l1NumEntries, p.l1Associativity,
+            p.compressedTagReplPolicy, p.compressedTagIndexingPolicy,
+            BTBEntry(genTagExtractor(p.compressedTagIndexingPolicy)))
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
@@ -185,6 +197,7 @@ MultiLevelBTB::memInvalidate()
     pBuffer.clear();
     shadowL1BTB.clear();
     shadowPBuffer.clear();
+    l1CompressedTags.clear();
     prefetchQueue.clear();
     currentQueueSize = 0;
 }
@@ -213,6 +226,7 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
             l1_victim->setPrefetched(true);
             l1_victim->setPrefetchDistance(it->getPrefetchDistance());
             l1_victim->setPrefetchTriggerType(it->getPrefetchTriggerType());
+            l1CompressedTagSync(pc, tid);
         } else {
             // Insert into pBuffer
             BTBEntry *pB_victim = pBuffer.findVictim({pc, tid});
@@ -399,6 +413,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             l1btb.insertEntry({instPC, tid}, l1_victim);
             l1_victim->update(*pqEntry->target, pqEntry->inst);
             l1_victim->copyDir(*pqEntry);
+            l1CompressedTagSync(instPC, tid);
 
             uint8_t prefetchDistance = pqEntry->getPrefetchDistance();
             if ((l1PrefetchPolicy <= 4 || l1PrefetchPolicy == 11) && prefetchDistance < 16) {
@@ -568,6 +583,7 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
 
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(target, inst);
+    l1CompressedTagSync(instPC, tid);
 
     if (l1_existing) {
         l1_victim->copyState(old_l1_state);
@@ -692,6 +708,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     l1_victim->update(*pB_entry->target, pB_entry->inst);
     l1_victim->copyDir(*pB_entry);
     l1_victim->setFromPBuffer(true);  // Mark for reuse tracking
+    l1CompressedTagSync(instPC, tid);
     // Only set prefetch distance for Policy 4 (spatial prefetch)
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 11) {
         l1_victim->setPrefetchDistance(prefetchDistance);
@@ -823,6 +840,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     l1btb.insertEntry({instPC, tid}, l1_victim);
     l1_victim->update(*l2_entry->target, l2_entry->inst);
     l1_victim->copyDir(*l2_entry);
+    l1CompressedTagSync(instPC, tid);
     // cleanBitsOnL1Promotion: reset prefetch bits on L2->L1 demand fill
     if (!cleanBitsOnL1Promotion) {
         l1_victim->setPrefetchThrough(l2_entry->getPrefetchThrough());
@@ -870,8 +888,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
             BTBEntry *l2_pf = l2btb.findEntry({pfAddr, tid});
             if (!l2_pf) continue;
 
-            BTBEntry *l1_pf_check = l1btb.findEntry({pfAddr, tid});
-            if (l1_pf_check) continue;
+            if (l1ApproxContains(pfAddr, tid)) continue;
 
             if (!toL1 && pBuffer.findEntry({pfAddr, tid})) continue;
 
@@ -1117,7 +1134,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
         }
 
         // Check if already in L1
-        if (l1btb.findEntry({successor, tid})) {
+        if (l1ApproxContains(successor, tid)) {
             continue;
         }
         // Find in L2
@@ -1294,7 +1311,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
 
     Addr pfPC = it->second;
     BTBEntry *l2_pf = l2btb.findEntry({pfPC, tid});
-    if (!l2_pf || l1btb.findEntry({pfPC, tid}) ||
+    if (!l2_pf || l1ApproxContains(pfPC, tid) ||
         pBuffer.findEntry({pfPC, tid}))
         return;
 
@@ -1330,6 +1347,34 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                              depth - 1, nextLatency, l2PfType);
         }
     }
+}
+
+bool
+MultiLevelBTB::l1ApproxContains(Addr pc, ThreadID tid)
+{
+    // If filter disabled, fall back to exact L1 lookup
+    if (!useCompressedTagFilter)
+        return l1btb.findEntry({pc, tid}) != nullptr;
+
+    bool approxHit = l1CompressedTags.findEntry({pc, tid}) != nullptr;
+    if (approxHit) {
+        multilevelstats.compressedTagChecks++;
+        bool exactHit = l1btb.findEntry({pc, tid}) != nullptr;
+        if (!exactHit) {
+            multilevelstats.compressedTagFalsePositives++;
+        }
+    }
+    return approxHit;
+}
+
+void
+MultiLevelBTB::l1CompressedTagSync(Addr pc, ThreadID tid)
+{
+    if (!useCompressedTagFilter)
+        return;
+
+    BTBEntry *victim = l1CompressedTags.findVictim({pc, tid});
+    l1CompressedTags.insertEntry({pc, tid}, victim);
 }
 
 } // namespace gem5::branch_prediction
