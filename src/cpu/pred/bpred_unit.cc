@@ -63,6 +63,7 @@ BPredUnit::BPredUnit(const Params &params)
       basicBlockBTB(params.blockBTB),
       blockStartAddr_(params.numThreads, 0),
       useBtbBim(params.useBtbBim),
+      prevL2HitInfo(params.numThreads),
       predHist(numThreads),
       btb(params.btb),
       ras(params.ras),
@@ -542,6 +543,31 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
         if (hist->prefetchHit) {
             stats.committedPrefetchHits++;
         }
+
+        // L2 hit classification
+        bool isL2OrPrefetchHit = !hist->l1btbHit;
+        if (isL2OrPrefetchHit) {
+            if (prevL2HitInfo[tid].valid && hist->start_address != 0) {
+                if (hist->start_address == prevL2HitInfo[tid].fallThrough) {
+                    stats.l2Hit_NotTaken++;
+                    if (hist->prefetchHit)
+                        stats.l2PrefetchHit_NotTaken++;
+                } else if (hist->start_address == prevL2HitInfo[tid].target) {
+                    stats.l2Hit_Taken++;
+                    if (hist->prefetchHit)
+                        stats.l2PrefetchHit_Taken++;
+                } else {
+                    stats.l2Hit_NonContinuous++;
+                    if (hist->prefetchHit)
+                        stats.l2PrefetchHit_NonContinuous++;
+                }
+            }
+            // Update prev L2 hit info for next comparison
+            prevL2HitInfo[tid].branchPC = hist->pc;
+            prevL2HitInfo[tid].target = hist->target->instAddr();
+            prevL2HitInfo[tid].fallThrough = hist->pc + 4;
+            prevL2HitInfo[tid].valid = true;
+        }
     }
 
     // Train Markov predictor for committed branches (Policy 7/finalMarkov)
@@ -970,7 +996,19 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(bbMapSize, statistics::units::Count::get(),
               "Number of entries in the block-based BTB map"),
       ADD_STAT(bbMapSharedExits, statistics::units::Count::get(),
-              "Number of exit branches shared by multiple basic block entries")
+              "Number of exit branches shared by multiple basic block entries"),
+      ADD_STAT(l2Hit_NotTaken, statistics::units::Count::get(),
+              "L2 hits (incl. prefetch) on fall-through path of preceding L2 hit"),
+      ADD_STAT(l2Hit_Taken, statistics::units::Count::get(),
+              "L2 hits (incl. prefetch) on taken path of preceding L2 hit"),
+      ADD_STAT(l2Hit_NonContinuous, statistics::units::Count::get(),
+              "L2 hits (incl. prefetch) neither fall-through nor taken of preceding L2 hit"),
+      ADD_STAT(l2PrefetchHit_NotTaken, statistics::units::Count::get(),
+              "Prefetch-sourced L2 hits on fall-through path of preceding L2 hit"),
+      ADD_STAT(l2PrefetchHit_Taken, statistics::units::Count::get(),
+              "Prefetch-sourced L2 hits on taken path of preceding L2 hit"),
+      ADD_STAT(l2PrefetchHit_NonContinuous, statistics::units::Count::get(),
+              "Prefetch-sourced L2 hits neither fall-through nor taken of preceding L2 hit")
 
 {
     using namespace statistics;

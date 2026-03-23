@@ -488,6 +488,15 @@ class BPredUnit : public SimObject
 
     const bool useBtbBim;
 
+    /** Per-thread tracking of previous L2 hit info for classification */
+    struct PrevL2HitInfo {
+        Addr branchPC = 0;
+        Addr target = 0;
+        Addr fallThrough = 0;
+        bool valid = false;
+    };
+    std::vector<PrevL2HitInfo> prevL2HitInfo;
+
     /**
      * The per-thread predictor history. This is used to update the predictor
      * as instructions are committed, or restore it to the proper state after
@@ -588,6 +597,16 @@ class BPredUnit : public SimObject
         /** Block-based BTB stats */
         statistics::Scalar bbMapSize;
         statistics::Scalar bbMapSharedExits;
+
+        /** L2 hit classification stats (all L2 hits including prefetch) */
+        statistics::Scalar l2Hit_NotTaken;
+        statistics::Scalar l2Hit_Taken;
+        statistics::Scalar l2Hit_NonContinuous;
+
+        /** L2 hit classification stats (prefetch hits only) */
+        statistics::Scalar l2PrefetchHit_NotTaken;
+        statistics::Scalar l2PrefetchHit_Taken;
+        statistics::Scalar l2PrefetchHit_NonContinuous;
 
     } stats;
 
