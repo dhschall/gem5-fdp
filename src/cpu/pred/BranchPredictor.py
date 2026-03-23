@@ -267,13 +267,17 @@ class MultiLevelBTB(BranchTargetBuffer):
         False,
         "Prefetch ALL Markov successors instead of just the most frequent",
     )
+    limitRet = Param.Bool(
+        False,
+        "Limit the number of prefetch successors to 2 for Return instructions when prefetchAllMarkovSuccessors",
+    )
     markovUseRecency = Param.Bool(
         False,
         "Select Markov successor by recency (curTick) instead of frequency",
     )
     updateDirOnlyL1 = Param.Bool(
-        False,
-        "Select Markov successor by recency (curTick) instead of frequency",
+        True,
+        "Only update direction/PBits in L1 BTB",
     )
 
     useCompressedTagFilter = Param.Bool(

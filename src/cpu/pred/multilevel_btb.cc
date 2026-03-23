@@ -163,6 +163,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchOnlyForward(p.prefetchOnlyForward),
       finalMarkov(p.finalMarkov),
       prefetchAllMarkovSuccessors(p.prefetchAllMarkovSuccessors),
+      limitRet(p.limitRet),
       markovUseRecency(p.markovUseRecency),
       updateDirOnlyL1(p.updateDirOnlyL1),
       useCompressedTagFilter(p.useCompressedTagFilter),
@@ -474,6 +475,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
                 l1PrefetchPolicy == 8 || finalMarkov) {
                 unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+                if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
+                    numSucc = 2;
+                }
                 prefetchMarkovSuccessor(tid, instPC, false, numSucc, true,
                                         remainingTime, type, prefetchDepth);
             } else if (l1PrefetchPolicy == 9) {
@@ -656,6 +660,14 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
             prefetchViaBBMap(tid, fallThrough, false, true, 1, Cycles(0), type);
     }
 
+    if (prefetchOnL1Hit && finalMarkov) {
+        unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+        if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
+            numSucc = 2;
+        }
+        prefetchMarkovSuccessor(tid, instPC, false, numSucc, true, Cycles(0), type, prefetchDepth);
+    }
+
     DPRINTF(BTB, "L1 BTB hit for PC %#x, latency=%d cycles\n",
             instPC, l1Latency);
 
@@ -779,6 +791,9 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
         finalMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+        if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
+            numSucc = 2;
+        }
         prefetchMarkovSuccessor(tid, instPC, false, numSucc, true, Cycles(0),
                                 type, prefetchDepth);  // Prefetch successor(s)
     } else if (l1PrefetchPolicy == 9) {
@@ -929,6 +944,9 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
                finalMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
+        if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
+            numSucc = 2;
+        }
         prefetchMarkovSuccessor(tid, instPC, false, numSucc, false, l2Latency,
                                 type, prefetchDepth);  // Prefetch to pBuffer
     } else if (l1PrefetchPolicy == 9) {
@@ -1239,6 +1257,8 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
         }
         return;
     }
+    if (updateDirOnlyL1)
+        return;
 
     // L1 miss — try L2
     BTBEntry *l2_entry = l2btb.findEntry({pc, tid});

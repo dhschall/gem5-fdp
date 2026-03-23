@@ -76,6 +76,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool prefetchOnlyForward;
     const bool finalMarkov;
     const bool prefetchAllMarkovSuccessors;
+    const bool limitRet;
     const bool markovUseRecency;
     const bool updateDirOnlyL1;
     const bool useCompressedTagFilter;
