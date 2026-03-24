@@ -267,6 +267,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             hist->l2btbHit = btb_res.l2Hit;
             hist->pBufferHit = btb_res.pBufferHit;
             hist->prefetchHit = btb_res.prefetchHit;
+            hist->prefetchTriggerType = btb_res.prefetchTriggerType;
 
             if (inst->isCondCtrl()) {
                 if (btb_res.latency == Cycles(0)) {
@@ -281,6 +282,12 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                     } else if (cbp_latency == Cycles(4)) {
                         stats.l2btbHitOverridePred++;
                     }
+                }
+            } else{
+                if (btb_res.latency == Cycles(0)) {
+                    stats.l1btbHitBasePred++;
+                } else if (btb_res.latency == Cycles(4)) {
+                    stats.l2btbHitBasePred++;
                 }
             }
         }
@@ -542,6 +549,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
         // Track committed prefetch hits
         if (hist->prefetchHit) {
             stats.committedPrefetchHits++;
+            stats.committedPHBreakdown[hist->prefetchTriggerType]++;
         }
 
         // L2 hit classification
@@ -973,6 +981,8 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Number of pBuffer hits (MultiLevelBTB Policy 4 only)"),
       ADD_STAT(committedPrefetchHits, statistics::units::Count::get(),
               "Number of committed prefetch hits"),
+      ADD_STAT(committedPHBreakdown, statistics::units::Count::get(),
+              "Number of committed prefetch hits broken down by trigger branch type"),
       ADD_STAT(l1btbHitBasePred, statistics::units::Count::get(),
               "Number of L1 BTB hits with Base Prediction"),
       ADD_STAT(l2btbHitBasePred, statistics::units::Count::get(),
@@ -983,16 +993,16 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Number of L2 BTB hits with Override Prediction"),
       ADD_STAT(l1btbHitBasePredRatio, statistics::units::Ratio::get(),
               "Ratio of L1 BTB hits with Base Prediction",
-              l1btbHitBasePred / condBTBHits),
+              l1btbHitBasePred / BTBHits),
       ADD_STAT(l2btbHitBasePredRatio, statistics::units::Ratio::get(),
               "Ratio of L2 BTB hits with Base Prediction",
-              l2btbHitBasePred / condBTBHits),
+              l2btbHitBasePred / BTBHits),
       ADD_STAT(l1btbHitOverridePredRatio, statistics::units::Ratio::get(),
               "Ratio of L1 BTB hits with Override Prediction",
-              l1btbHitOverridePred / condBTBHits),
+              l1btbHitOverridePred / BTBHits),
       ADD_STAT(l2btbHitOverridePredRatio, statistics::units::Ratio::get(),
               "Ratio of L2 BTB hits with Override Prediction",
-              l2btbHitOverridePred / condBTBHits),
+              l2btbHitOverridePred / BTBHits),
       ADD_STAT(bbMapSize, statistics::units::Count::get(),
               "Number of entries in the block-based BTB map"),
       ADD_STAT(bbMapSharedExits, statistics::units::Count::get(),
@@ -1074,6 +1084,13 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
     BTBstackDistLog
         .init(16)
         .flags(total | pdf);
+
+    committedPHBreakdown
+        .init(enums::Num_BranchType)
+        .flags(total | pdf);
+    for (int i = 0; i < enums::Num_BranchType; i++) {
+        committedPHBreakdown.subname(i, enums::BranchTypeStrings[i]);
+    }
 
 }
 

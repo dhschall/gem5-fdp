@@ -65,6 +65,7 @@ struct BTBLookupResult
   bool prefetchHit;   // Hit on a prefetched entry (either in L1 or pBuffer)
   bool predMatch;
   bool taken;
+  BranchType prefetchTriggerType;
 
   BTBLookupResult(const PCStateBase* _target = nullptr,
                   Cycles _latency = Cycles(0),
@@ -73,9 +74,11 @@ struct BTBLookupResult
                   bool _l2Hit = false,
                   bool _prefetchHit = false,
                   bool _predMatch = false,
-                  bool _taken = false)
+                  bool _taken = false,
+                  BranchType _prefetchTriggerType = BranchType::NoBranch)
       : target(_target), latency(_latency), l1Hit(_l1Hit), pBufferHit(_pBufferHit),
-        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch), taken(_taken) {}
+        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch), taken(_taken),
+        prefetchTriggerType(_prefetchTriggerType) {}
 };
 
 class BranchTargetBuffer : public ClockedObject

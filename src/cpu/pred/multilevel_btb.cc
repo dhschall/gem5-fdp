@@ -495,7 +495,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             currentQueueSize--;
             return BTBLookupResult(l1_victim->target.get(),
                                    remainingTime, false, true, false,
-                                   true, false, l1_victim->getDir());
+                                   true, false, l1_victim->getDir(), l1_victim->getPrefetchTriggerType());
         } else {
             // Cancel prefetching and fall through to demand L2 access
             prefetchQueue.invalidate(pqEntry);
@@ -684,7 +684,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     // }
 
     return BTBLookupResult(l1_entry->target.get(), l1Latency,
-                           true, false, false, isPrefetchHit, predMatch, l1_entry->getDir());
+                           true, false, false, isPrefetchHit, predMatch, l1_entry->getDir(), l1_entry->getPrefetchTriggerType());
 }
 
 
@@ -692,8 +692,9 @@ BTBLookupResult
 MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
                                 BTBEntry *pB_entry, BranchType type, bool taken)
 {
+    BranchType triggerType = pB_entry->getPrefetchTriggerType();
     if (pB_entry->isPrefetched()) {
-        multilevelstats.prefetchHits[pB_entry->getPrefetchTriggerType()]++;
+        multilevelstats.prefetchHits[triggerType]++;
         pB_entry->setPrefetched(false);
         pB_entry->setTriggeredByPBHit(false);
     }
@@ -806,7 +807,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
 
     DPRINTF(BTB, "pBuffer hit for PC %#x, promoted to L1\n", instPC);
     return BTBLookupResult(l1_victim->target.get(), l1Latency,
-                           false, true, false, true, predMatch, l1_victim->getDir());
+                           false, true, false, true, predMatch, l1_victim->getDir(), triggerType);
 }
 
 //=============================================================================

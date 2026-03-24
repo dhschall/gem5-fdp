@@ -286,7 +286,7 @@ class BPredUnit : public SimObject
               predTaken(false), actuallyTaken(false), condPred(false),
               overridden(false),
               btbHit(false), l1btbHit(false), l2btbHit(false), pBufferHit(false),
-              prefetchHit(false),
+              prefetchHit(false), prefetchTriggerType(BranchType::NoBranch),
               targetProvider(TargetProvider::NoTarget),
               resteered(false), mispredict(false), target(nullptr),
               bpHistory(nullptr),
@@ -359,6 +359,8 @@ class BPredUnit : public SimObject
 
         /** Was prefetch hit (either L1 or pBuffer prefetched entry) */
         bool prefetchHit;
+
+        BranchType prefetchTriggerType;
 
         /** Which component provided the target */
         TargetProvider targetProvider;
@@ -583,6 +585,7 @@ class BPredUnit : public SimObject
         statistics::Scalar l2btbHits;
         statistics::Scalar pBufferHits;
         statistics::Scalar committedPrefetchHits;
+        statistics::Vector committedPHBreakdown;
 
         statistics::Scalar l1btbHitBasePred;
         statistics::Scalar l2btbHitBasePred;
