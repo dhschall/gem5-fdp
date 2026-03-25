@@ -77,8 +77,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 
     predMatchRatio = predMatches / predChecks;
 
-    latePrefetchByPBHit.init(4).flags(total | pdf);
-    latePrefetchByL2Hit.init(4).flags(total | pdf);
+    latePrefetchByPBHit.init(5).flags(total | pdf);
+    latePrefetchByL2Hit.init(5).flags(total | pdf);
     // Policy 11 Shadow Stats
     shadowOverlaps.init(enums::Num_BranchType).flags(total | pdf);
     spatialOnlyHits.init(enums::Num_BranchType).flags(total | pdf);
@@ -696,6 +696,13 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     if (pB_entry->isPrefetched()) {
         multilevelstats.prefetchHits[triggerType]++;
         pB_entry->setPrefetched(false);
+        if (!noPrefetchLatency) {
+            if(pB_entry->isTriggeredByPBHit()) {
+                multilevelstats.latePrefetchByPBHit[4]++;
+            } else {
+                multilevelstats.latePrefetchByL2Hit[4]++;
+            }
+        }
         pB_entry->setTriggeredByPBHit(false);
     }
 
@@ -1335,7 +1342,9 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     if (!l2_pf || l1ApproxContains(pfPC, tid) ||
         pBuffer.findEntry({pfPC, tid}))
         return;
-
+    if (limitRet && triggerType == BranchType::Return) {
+        return;
+    }
     if (trainBitsOnCommit) {
         if (prefetchOnlyCB && l2_pf->inst && !l2_pf->inst->isCondCtrl()) {
             return;

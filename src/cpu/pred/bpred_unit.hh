@@ -490,14 +490,20 @@ class BPredUnit : public SimObject
 
     const bool useBtbBim;
 
-    /** Per-thread tracking of previous L2 hit info for classification */
-    struct PrevL2HitInfo {
+    struct PrevBranchInfo {
         Addr branchPC = 0;
         Addr target = 0;
         Addr fallThrough = 0;
         bool valid = false;
+        enum BranchClass {
+            Unknown,
+            L1Hit,
+            L2Hit,
+            L2Miss,
+            NoBtbEntry
+        } branchClass = Unknown;
     };
-    std::vector<PrevL2HitInfo> prevL2HitInfo;
+    std::vector<PrevBranchInfo> prevBranchInfo;
 
     /**
      * The per-thread predictor history. This is used to update the predictor
@@ -601,15 +607,13 @@ class BPredUnit : public SimObject
         statistics::Scalar bbMapSize;
         statistics::Scalar bbMapSharedExits;
 
-        /** L2 hit classification stats (all L2 hits including prefetch) */
-        statistics::Scalar l2Hit_NotTaken;
-        statistics::Scalar l2Hit_Taken;
-        statistics::Scalar l2Hit_NonContinuous;
-
-        /** L2 hit classification stats (prefetch hits only) */
-        statistics::Scalar l2PrefetchHit_NotTaken;
-        statistics::Scalar l2PrefetchHit_Taken;
-        statistics::Scalar l2PrefetchHit_NonContinuous;
+        statistics::Scalar L2Misses;
+        statistics::Scalar Succ_NoBtbEntry;
+        statistics::Scalar Succ_L2Miss;
+        statistics::Scalar Succ_L1Hit_Taken;
+        statistics::Scalar Succ_L1Hit_NotTaken;
+        statistics::Scalar Succ_L2Hit_Taken;
+        statistics::Scalar Succ_L2Hit_NotTaken;
 
     } stats;
 
