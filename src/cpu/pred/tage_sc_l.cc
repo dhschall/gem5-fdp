@@ -383,6 +383,12 @@ TAGE_SC_L_TAGE::getBimodePred(Addr pc, TAGEBase::BranchInfo* tage_bi) const
     return TAGEBase::getBimodePred(pc, tage_bi);
 }
 
+bool
+TAGE_SC_L_TAGE::getBimodePred(Addr pc) const
+{
+    return btablePrediction[bindex(pc)];
+}
+
 void
 TAGE_SC_L_TAGE::extraAltCalc(TAGEBase::BranchInfo* bi)
 {
@@ -473,13 +479,13 @@ TAGE_SC_L::predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch)
 
     bool pred_taken = tage->tagePredict(tid, pc, cond_branch,
                                         bi->tageBranchInfo);
-    
+
     // Use getLoop directly instead of loopPredict to avoid side effects
     // loopPredict calls specLoopUpdate which modifies state
-    bi->lpBranchInfo->loopPred = loopPredictor->getLoop(pc, bi->lpBranchInfo, 
-                                                        loopPredictor->isSpeculationEnabled(), 
+    bi->lpBranchInfo->loopPred = loopPredictor->getLoop(pc, bi->lpBranchInfo,
+                                                        loopPredictor->isSpeculationEnabled(),
                                                         instShiftAmt);
-    
+
     if ((loopPredictor->getLoopUseCounter() >= 0) && bi->lpBranchInfo->loopPredValid) {
         pred_taken = bi->lpBranchInfo->loopPred;
         bi->lpBranchInfo->loopPredUsed = true;
@@ -528,6 +534,12 @@ TAGE_SC_L::predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch)
     delete bi;
 
     return pred_taken;
+}
+
+bool
+TAGE_SC_L::predictL1NoUpdate(ThreadID tid, Addr pc)
+{
+    return tage->getBimodePred(pc);
 }
 
 void

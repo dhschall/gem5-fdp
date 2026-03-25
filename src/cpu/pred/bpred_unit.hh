@@ -200,6 +200,7 @@ class BPredUnit : public SimObject
 
     Addr lookupBBBranch(ThreadID tid, Addr bbStartPC);
 
+    Addr predictL1(ThreadID tid, Addr pc);
 
     void dump();
 

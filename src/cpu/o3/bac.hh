@@ -111,6 +111,7 @@ class BAC
         Running,
         Squashing,
         Blocked,
+        Overriding,
         FTQFull,
         FTQLocked,
         ThreadStatusMax
@@ -243,6 +244,7 @@ class BAC
      * fetch target.
      */
     FetchTargetPtr newFetchTarget(ThreadID tid, const PCStateBase &start_pc);
+    FetchTargetPtr newFakeFetchTarget(ThreadID tid, const Addr start_pc, const Addr end_pc);
 
     /**
      * The prediction function for the BAC stage. In the decoupled scenario
@@ -267,6 +269,8 @@ class BAC
      * search bandwidth for a cycle is reached.
      **/
     void generateFetchTargets(ThreadID tid, bool &status_change);
+    void generateOverrideFetchTargets(ThreadID tid, bool &status_change);
+    void advanceL1PredPC();
 
     /* ----------------------------------------------------------------
      * Next PC address calculation
@@ -293,7 +297,9 @@ class BAC
                   FetchTargetPtr &ft);
     void fetchBlockCycle();
     StaticInstPtr block_inst;
+    FetchTargetPtr block_ft;
     bool fetch_blocked = false;
+    Addr false_path_cur_addr;
 
   private:
     /** Pre-decode update -----------------------------------------
@@ -431,6 +437,7 @@ class BAC
     const unsigned maxTakenPredPerCycle;
 
     const bool blockBTB;
+    const bool modelOverrideFalsePath;
 
     /** Align a address to the start of a cache block. */
     inline Addr
@@ -492,6 +499,9 @@ class BAC
         statistics::Vector bacBlockCycles;
         statistics::Vector fetchBlockCycles;
         statistics::Vector fetchBlocked;
+
+        statistics::Scalar l1FallThrough;
+        statistics::Scalar l1Taken;
 
     } stats;
     /** @} */

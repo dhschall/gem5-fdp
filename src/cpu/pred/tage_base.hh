@@ -270,6 +270,7 @@ class TAGEBase : public SimObject
      * prediction.
      */
     virtual bool getBimodePred(Addr pc, BranchInfo* bi) const;
+    virtual bool getBimodePred(Addr pc) const { panic("Not Implemented"); return false; }
 
     /**
      * Updates the bimodal predictor.

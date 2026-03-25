@@ -450,6 +450,21 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
 }
 
 
+Addr
+BPredUnit::predictL1(ThreadID tid, Addr pc)
+{
+    Addr target = btb->lookupL1(tid, pc);
+    bool taken = cPred->predictL1NoUpdate(tid, pc);
+
+    // On BTB miss the target will be MaxAddr.
+    // On taken the traget is correct
+    // On not-taken we want to have target = pc + 4 (only arm)
+    if ((target != MaxAddr) && !taken) {
+        target = pc + 4;
+    }
+    return target;
+}
+
 void
 BPredUnit::update(const InstSeqNum &done_sn, ThreadID tid)
 {

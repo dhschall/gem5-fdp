@@ -60,9 +60,23 @@ FetchTarget::FetchTarget(const ThreadID _tid, const PCStateBase &_start_pc,
       tid(_tid),
       is_branch(false),
       taken(false),
+      is_override_ft(false),
       bpuHistory(nullptr)
 {
     set(startPC, _start_pc);
+}
+
+FetchTarget::FetchTarget(const ThreadID _tid, const PCStateBase &_start_pc, const PCStateBase &_end_pc,
+                         FTSeqNum _seqNum)
+    : ftSeqNum(_seqNum),
+      tid(_tid),
+      is_branch(false),
+      taken(false),
+      is_override_ft(true),
+      bpuHistory(nullptr)
+{
+    set(startPC, _start_pc);
+    set(endPC, _end_pc);
 }
 
 void
@@ -189,6 +203,15 @@ void
 FTQ::insert(ThreadID tid, FetchTargetPtr fetchTarget)
 {
     assert(ftq[tid].size() < numEntries);
+
+    if (fetchTarget->isOverride()) {
+        // For override FTs we only notifiy the prefether to simulate
+        // false-path prefetches but then we drop it.
+        // This is for simplicity.
+        ppFTQInsert->notify(fetchTarget);
+        return;
+    }
+
     ftq[tid].push_back(fetchTarget);
     ppFTQInsert->notify(fetchTarget);
     stats.inserts++;

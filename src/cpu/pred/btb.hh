@@ -142,6 +142,7 @@ class BranchTargetBuffer : public ClockedObject
     }
 
     virtual void updateDirection(ThreadID tid, Addr inst_pc, bool taken) {}
+    virtual Addr lookupL1(ThreadID tid, Addr instPC) { panic("Not Implemented"); return 0; }
 
   protected:
     /** Number of the threads for which the branch history is maintained. */

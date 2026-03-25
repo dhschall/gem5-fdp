@@ -539,6 +539,16 @@ MultiLevelBTB::getInst(ThreadID tid, Addr instPC)
     return nullptr;
 }
 
+Addr
+MultiLevelBTB::lookupL1(ThreadID tid, Addr inst_pc)
+{
+    BTBEntry *l1_entry = l1btb.findEntry({inst_pc, tid});
+    if (l1_entry) {
+        return l1_entry->target->instAddr();
+    }
+    return MaxAddr;
+}
+
 void
 MultiLevelBTB::updateDirection(ThreadID tid, Addr inst_pc, bool taken)
 {

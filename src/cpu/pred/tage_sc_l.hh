@@ -148,6 +148,7 @@ class TAGE_SC_L_TAGE : public TAGEBase
 
     bool getBimodePred(Addr branch_pc,
                        TAGEBase::BranchInfo* tage_bi) const override;
+    bool getBimodePred(Addr branch_pc) const override;
 
     void extraAltCalc(TAGEBase::BranchInfo* bi) override;
     int calcNewPathHist(ThreadID tid, Addr pc, int cur_phist, bool taken,
@@ -175,6 +176,7 @@ class TAGE_SC_L: public LTAGE
         ThreadID tid, Addr branch_pc, bool cond_branch, void* &b) override;
 
     bool predictNoUpdate(ThreadID tid, Addr pc, bool cond_branch) override;
+    bool predictL1NoUpdate(ThreadID tid, Addr pc) override;
 
     void squash(ThreadID tid, void * &bp_history) override;
     void update(ThreadID tid, Addr pc, bool taken, void * &bp_history,

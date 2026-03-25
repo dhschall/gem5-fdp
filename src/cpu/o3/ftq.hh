@@ -84,6 +84,8 @@ class FetchTarget
   public:
     FetchTarget(const ThreadID _tid, const PCStateBase &_start_pc,
                 FTSeqNum _seqNum);
+    FetchTarget(const ThreadID _tid, const PCStateBase &_start_pc, const PCStateBase &_end_pc,
+                FTSeqNum _seqNum);
 
   private:
     /** Start address of the fetch target */
@@ -107,6 +109,8 @@ class FetchTarget
 
     /** If the exit branch is predicted taken */
     bool taken;
+
+    bool is_override_ft;
 
   public:
     /** Anchor point to attach a branch predictor history.
@@ -208,6 +212,12 @@ class FetchTarget
     predTaken()
     {
         return taken;
+    }
+
+    bool
+    isOverride()
+    {
+        return is_override_ft;
     }
 
     /** Complete a fetch target with the exit instruction */
