@@ -1363,7 +1363,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
             return;
         }
     }
-
+    baseLatency = baseLatency + Cycles(1);
     Cycles arrival = curCycle() + l2Latency + baseLatency;
 
     enqueuePrefetch(pfPC, tid, l2_pf, arrival,
@@ -1381,6 +1381,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         if (l2_pf->getPrefetchTarget()) {
             prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
                              depth - 1, nextLatency, l2PfType);
+            nextLatency = nextLatency + Cycles(1);
         }
         if (l2_pf->getPrefetchThrough()) {
             prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,

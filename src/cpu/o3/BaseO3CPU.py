@@ -226,7 +226,7 @@ class BaseO3CPU(BaseCPU):
 
     ## Parameters for decoupled front-end
     decoupledFrontEnd = Param.Bool(False, "Enables the decoupled front-end")
-    blockBTB = Param.Bool(False, "Enables block-based BTB front-end")
+    blockBTB = Param.Bool(True, "Enables block-based BTB front-end")
     modelOverrideFalsePath = Param.Bool(True, "Enables block-based BTB front-end")
     numFTQEntries = Param.Unsigned(
         8,
