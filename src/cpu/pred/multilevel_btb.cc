@@ -1204,6 +1204,9 @@ MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
                                    Addr targetAddr, unsigned instSize,
                                    bool wasL2Hit)
 {
+    if (!(finalMarkov || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10)) {
+        return;
+    }
     if (finalMarkov) {
         auto &prev = prevCommitBlockInfo[tid];
         if (prev.valid) {
