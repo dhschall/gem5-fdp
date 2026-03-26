@@ -141,6 +141,9 @@ FetchDirectedPrefetcher::notifyFTQRemove(const o3::FetchTargetPtr &ft)
     auto it = pfq.begin();
     while (it != pfq.end()) {
         if (it->ftn == ft->ftNum()) {
+            if (it->pkt != nullptr) {
+                delete it->pkt;
+            }
             it = pfq.erase(it);
             stats.pfSquashed++;
         } else {
