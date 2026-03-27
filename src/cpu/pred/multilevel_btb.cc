@@ -548,10 +548,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
         // trainBitsOnLookup: record current block info (from L2 entry)
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l2_entry->target->instAddr());
-        if (newUpdate)
-            return handleL2Hit2(tid, instPC, l2_entry, type, taken);
-        else
-            return handleL2Hit(tid, instPC, l2_entry, type, taken);
+        // if (newUpdate)
+        //     return handleL2Hit2(tid, instPC, l2_entry, type, taken);
+        return handleL2Hit(tid, instPC, l2_entry, type, taken);
     }
 
     // Miss in both l1 and l2. Actually, the progrem will never get here.
@@ -971,24 +970,33 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // -------------------------------------------------------------------------
     // Insert entry into L1
     // -------------------------------------------------------------------------
-    BTBEntry *l1_victim;
-    if (newUpdate) {
-        l1_victim = freeUpL1Entry(tid, instPC);
-    } else {
-        l1_victim = l1btb.findVictim({instPC, tid});
-        writebackToL2(tid, l1_victim);
-        // @Yongjie, this is probably not working anymore. It should now be moved to the `freeUpL1Entry` function
-        if (l1_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
-            l1_victim->setPrefetched(false);
-        } else if (l1_victim->isFromPBuffer()) {
-            multilevelstats.l1InstalledEvicted++;
-            l1_victim->setFromPBuffer(false);
-        }
-        l1btb.insertEntry({instPC, tid}, l1_victim);
-        l1_victim->update(*l2_entry->target, l2_entry->inst);
-        l1_victim->copyDir(*l2_entry);
-    }
+
+    // Access L2 to prevent replacing it.
+    l2btb.accessEntry(l2_entry);
+    DPRINTF(BTB, "%s(pc=%#x) -> L2[pc=%#x tgt=%#x]\n", __func__, instPC,
+            l2_entry->getBranchAddr(), l2_entry->target->instAddr());
+
+    BTBEntry *l1_victim = freeUpL1Entry(tid, instPC);
+    assert(instPC == l2_entry->getBranchAddr()); // Ensure the write back has not modified the L2 entry.
+
+    l1_victim->update(*l2_entry);
+    DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
+            instPC, l2Latency);
+
+    // l1_victim = l1btb.findVictim({instPC, tid});
+    // writebackToL2(tid, l1_victim);
+    // // @Yongjie, this is probably not working anymore. It should now be moved to the `freeUpL1Entry` function
+    // if (l1_victim->isPrefetched()) {
+    //     multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
+    //     l1_victim->setPrefetched(false);
+    // } else if (l1_victim->isFromPBuffer()) {
+    //     multilevelstats.l1InstalledEvicted++;
+    //     l1_victim->setFromPBuffer(false);
+    // }
+    // l1btb.insertEntry({instPC, tid}, l1_victim);
+    // l1_victim->update(*l2_entry->target, l2_entry->inst);
+    // l1_victim->copyDir(*l2_entry);
+
     l1CompressedTagSync(instPC, tid);
     // cleanBitsOnL1Promotion: reset prefetch bits on L2->L1 demand fill
     if (!cleanBitsOnL1Promotion) {
