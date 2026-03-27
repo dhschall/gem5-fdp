@@ -34,6 +34,9 @@ class MultiLevelBTB : public BranchTargetBuffer
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;
+    void update2(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
+                BranchType type = BranchType::NoBranch,
+                StaticInstPtr inst = nullptr);
 
     void updateDirection(ThreadID tid, Addr inst_pc, bool taken) override;
 
@@ -81,6 +84,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool limitRet;
     const bool markovUseRecency;
     const bool updateDirOnlyL1;
+    const bool inclusive;
+    const bool newUpdate;
     const bool useCompressedTagFilter;
 
 
@@ -164,6 +169,10 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar callFallThroughL2Only;    // of those, fall-through branch only in L2
         statistics::Formula callFallThroughL2Ratio;  // callFallThroughL2Only / callL2OrPrefetchHits
 
+        statistics::Scalar updatesL1hits;  // branch not in L1 at commit, found in L2
+        statistics::Scalar updatesL2hits;  // branch not in L1 at commit, found in L2
+        statistics::Scalar updatesL2miss;  // branch not in L1 at commit, found in L2
+
         MultiLevelBTB *btb;
 
     } multilevelstats;
@@ -227,6 +236,8 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     BTBLookupResult handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
                                 BranchType type, bool taken);
+    BTBLookupResult handleL2Hit2(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
+                                BranchType type, bool taken);
 
     /**
      * Prefetch the most frequent successors of given PC (Policy 5/6/7/8/9/10).
@@ -270,6 +281,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     /** Evict an L1 victim entry to L2, writing back full state. */
     void writebackToL2(ThreadID tid, BTBEntry *victim);
+
+    BTBEntry* freeUpL1Entry(ThreadID tid, Addr instPC);
 
     /** Record previous block info for next-iteration training. */
     void recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr);

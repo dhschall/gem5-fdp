@@ -104,6 +104,17 @@ SimpleBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type, bool ta
     return BTBLookupResult(lookup(tid, instPC, type), latency);
 }
 
+Addr
+SimpleBTB::lookupL1(ThreadID tid, Addr inst_pc)
+{
+    BTBEntry *entry = btb.findEntry({inst_pc, tid});
+    if (entry) {
+        return entry->target->instAddr();
+    }
+    return MaxAddr;
+}
+
+
 const StaticInstPtr
 SimpleBTB::getInst(ThreadID tid, Addr instPC)
 {

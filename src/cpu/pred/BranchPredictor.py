@@ -279,6 +279,14 @@ class MultiLevelBTB(BranchTargetBuffer):
         True,
         "Only update direction/PBits in L1 BTB",
     )
+    inclusive = Param.Bool(
+        False,
+        "Only update direction/PBits in L1 BTB",
+    )
+    newUpdate = Param.Bool(
+        True,
+        "Only update direction/PBits in L1 BTB",
+    )
 
     useCompressedTagFilter = Param.Bool(
         False,

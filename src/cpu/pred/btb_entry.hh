@@ -172,6 +172,17 @@ class BTBEntry : public ReplaceableEntry
         inst = _inst;
     }
 
+    void
+    update(const BTBEntry &other)
+    {
+        inst       = other.inst;
+        branchAddr = other.branchAddr;
+        set(target, other.target);
+        prefetchThrough = other.prefetchThrough;
+        prefetchTarget = other.prefetchTarget;
+        dir = other.dir;
+    }
+
     /**
      * Checks if the given tag information corresponds to this entry's.
      */
