@@ -156,8 +156,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         // Policy 12/13/14: prefetch direction counts
         statistics::Scalar takenPathPrefetches;     // prefetches triggered by prefetchTarget bit
         statistics::Scalar notTakenPathPrefetches;  // prefetches triggered by prefetchThrough bit
-        statistics::Scalar prefetchHitsFromTaken;
-        statistics::Scalar prefetchHitsFromNotTaken;
+        statistics::Vector prefetchHitsFromTaken;
+        statistics::Vector prefetchHitsFromNotTaken;
 
         // Call fall-through coverage stats
         statistics::Scalar callL2OrPrefetchHits;    // Calls that hit in L2 or prefetched

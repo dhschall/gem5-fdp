@@ -67,8 +67,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     l1MissL2Hits.flags(total);
     takenPathPrefetches.flags(total);
     notTakenPathPrefetches.flags(total);
-    prefetchHitsFromTaken.flags(total);
-    prefetchHitsFromNotTaken.flags(total);
+    prefetchHitsFromTaken.init(enums::Num_BranchType).flags(total | pdf);
+    prefetchHitsFromNotTaken.init(enums::Num_BranchType).flags(total | pdf);
     uselessPrefetches.init(enums::Num_BranchType).flags(total | pdf);
     totalPrefetches.flags(total);
     shadowPrefetches.flags(total);
@@ -95,6 +95,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     for (int i = 0; i < enums::Num_BranchType; i++) {
         uselessPrefetches.subname(i, enums::BranchTypeStrings[i]);
         prefetchHits.subname(i, enums::BranchTypeStrings[i]);
+        prefetchHitsFromTaken.subname(i, enums::BranchTypeStrings[i]);
+        prefetchHitsFromNotTaken.subname(i, enums::BranchTypeStrings[i]);
         shadowOverlaps.subname(i, enums::BranchTypeStrings[i]);
         spatialOnlyHits.subname(i, enums::BranchTypeStrings[i]);
         markovOnlyHits.subname(i, enums::BranchTypeStrings[i]);
@@ -412,9 +414,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                 multilevelstats.prefetchHits[pqEntry->getPrefetchTriggerType()]++;
                 if (usesPrefetchBitPolicy()) {
                     if (pqEntry->isTakenPrefetched()) {
-                        multilevelstats.prefetchHitsFromTaken++;
+                        multilevelstats.prefetchHitsFromTaken[pqEntry->getPrefetchTriggerType()]++;
                     } else {
-                        multilevelstats.prefetchHitsFromNotTaken++;
+                        multilevelstats.prefetchHitsFromNotTaken[pqEntry->getPrefetchTriggerType()]++;
                     }
                 }
             }
@@ -515,9 +517,10 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
             prefetchQueue.invalidate(pqEntry);
             currentQueueSize--;
+            bool isCovered = remainingTime > Cycles(0);
             return BTBLookupResult(l1_victim->target.get(),
-                                   remainingTime, false, true, false,
-                                   true, false, l1_victim->getDir(), l1_victim->getPrefetchTriggerType());
+                                   remainingTime, false, isCovered, !isCovered,
+                                   isCovered, false, l1_victim->getDir(), l1_victim->getPrefetchTriggerType());
         } else {
             // Cancel prefetching and fall through to demand L2 access
             prefetchQueue.invalidate(pqEntry);
@@ -729,9 +732,9 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         multilevelstats.prefetchHits[triggerType]++;
         if (usesPrefetchBitPolicy()) {
             if (pB_entry->isTakenPrefetched()) {
-                multilevelstats.prefetchHitsFromTaken++;
+                multilevelstats.prefetchHitsFromTaken[triggerType]++;
             } else {
-                multilevelstats.prefetchHitsFromNotTaken++;
+                multilevelstats.prefetchHitsFromNotTaken[triggerType]++;
             }
         }
         pB_entry->setPrefetched(false);
