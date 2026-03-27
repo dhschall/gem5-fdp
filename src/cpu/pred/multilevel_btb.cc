@@ -49,6 +49,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(trainBitsL1Miss, statistics::units::Count::get(), "committed branch not in L1, found in L2"),
       ADD_STAT(takenPathPrefetches, statistics::units::Count::get(), " prefetches triggered via taken-path (prefetchTarget) bit"),
       ADD_STAT(notTakenPathPrefetches, statistics::units::Count::get(), " prefetches triggered via not-taken-path (prefetchThrough) bit"),
+      ADD_STAT(prefetchHitsFromTaken, statistics::units::Count::get(), "Prefetch hits from taken path"),
+      ADD_STAT(prefetchHitsFromNotTaken, statistics::units::Count::get(), "Prefetch hits from not-taken path"),
       ADD_STAT(callL2OrPrefetchHits, statistics::units::Count::get(), "Calls that hit in L2 or via prefetch path"),
       ADD_STAT(callFallThroughL2Only, statistics::units::Count::get(), "Calls whose fall-through branch is L2-only"),
       ADD_STAT(callFallThroughL2Ratio, statistics::units::Ratio::get(), "callFallThroughL2Only / callL2OrPrefetchHits"),
@@ -63,6 +65,10 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     dist2HistoryTarget.init(0).flags(total | pdf);
 
     l1MissL2Hits.flags(total);
+    takenPathPrefetches.flags(total);
+    notTakenPathPrefetches.flags(total);
+    prefetchHitsFromTaken.flags(total);
+    prefetchHitsFromNotTaken.flags(total);
     uselessPrefetches.init(enums::Num_BranchType).flags(total | pdf);
     totalPrefetches.flags(total);
     shadowPrefetches.flags(total);
@@ -214,6 +220,13 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
         if (!noPrefetchLatency && (curCycle() < it->getTimestamp()))
             continue;
         multilevelstats.totalPrefetches++;
+        if (usesPrefetchBitPolicy()) {
+            if (it->isTakenPrefetched()) {
+                multilevelstats.takenPathPrefetches++;
+            } else {
+                multilevelstats.notTakenPathPrefetches++;
+            }
+        }
         Addr pc = it->getBranchAddr();
         if (it->getToL1()) {
             // Insert into L1 BTB
@@ -245,6 +258,7 @@ MultiLevelBTB::processPrefetchQueue(ThreadID tid)
                 } else {
                     multilevelstats.notTakenPathPrefetches++;
                 }
+                pB_victim->setTakenPrefetched(it->isTakenPrefetched());
             }
             pB_victim->setTriggeredByPBHit(it->isTriggeredByPBHit());
             pB_victim->setPrefetchTarget(it->getPrefetchTarget());
@@ -389,14 +403,22 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             if (usesPrefetchBitPolicy()) {
                 if (pqEntry->isTakenPrefetched()) {
                     multilevelstats.takenPathPrefetches++;
-                    pqEntry->setTakenPrefetched(false);
                 } else {
                     multilevelstats.notTakenPathPrefetches++;
                 }
             }
-            // todo: need to invalidate a PB entry?
-            multilevelstats.prefetchHits[pqEntry->getPrefetchTriggerType()]++;
             auto coveredCycle = l2Latency - remainingTime;
+            if (coveredCycle > Cycles(0)) {
+                multilevelstats.prefetchHits[pqEntry->getPrefetchTriggerType()]++;
+                if (usesPrefetchBitPolicy()) {
+                    if (pqEntry->isTakenPrefetched()) {
+                        multilevelstats.prefetchHitsFromTaken++;
+                    } else {
+                        multilevelstats.prefetchHitsFromNotTaken++;
+                    }
+                }
+            }
+            pqEntry->setTakenPrefetched(false);
             if(pqEntry->isTriggeredByPBHit()) {
                 multilevelstats.latePrefetchByPBHit[coveredCycle]++;
             } else {
@@ -705,7 +727,15 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     BranchType triggerType = pB_entry->getPrefetchTriggerType();
     if (pB_entry->isPrefetched()) {
         multilevelstats.prefetchHits[triggerType]++;
+        if (usesPrefetchBitPolicy()) {
+            if (pB_entry->isTakenPrefetched()) {
+                multilevelstats.prefetchHitsFromTaken++;
+            } else {
+                multilevelstats.prefetchHitsFromNotTaken++;
+            }
+        }
         pB_entry->setPrefetched(false);
+        pB_entry->setTakenPrefetched(false);
         if (!noPrefetchLatency) {
             if(pB_entry->isTriggeredByPBHit()) {
                 multilevelstats.latePrefetchByPBHit[4]++;

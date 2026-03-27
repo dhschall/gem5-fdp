@@ -490,7 +490,13 @@ class BPredUnit : public SimObject
     std::vector<Addr> blockStartAddr_;
 
     const bool useBtbBim;
-
+    /** Per-thread tracking of previous L2 hit info for classification */
+    struct PrevL2HitInfo {
+        Addr branchPC = 0;
+        Addr target = 0;
+        Addr fallThrough = 0;
+        bool valid = false;
+    };
     struct PrevBranchInfo {
         Addr branchPC = 0;
         Addr target = 0;
@@ -504,6 +510,7 @@ class BPredUnit : public SimObject
             NoBtbEntry
         } branchClass = Unknown;
     };
+    std::vector<PrevL2HitInfo> prevL2HitInfo;
     std::vector<PrevBranchInfo> prevBranchInfo;
 
     /**
@@ -607,6 +614,15 @@ class BPredUnit : public SimObject
         /** Block-based BTB stats */
         statistics::Scalar bbMapSize;
         statistics::Scalar bbMapSharedExits;
+        /** L2 hit classification stats (all L2 hits including prefetch) */
+        statistics::Scalar l2Hit_NotTaken;
+        statistics::Scalar l2Hit_Taken;
+        statistics::Scalar l2Hit_NonContinuous;
+
+        /** L2 hit classification stats (prefetch hits only) */
+        statistics::Scalar l2PrefetchHit_NotTaken;
+        statistics::Scalar l2PrefetchHit_Taken;
+        statistics::Scalar l2PrefetchHit_NonContinuous;
 
         statistics::Scalar L2Misses;
         statistics::Scalar Succ_NoBtbEntry;
