@@ -437,6 +437,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             BTBEntry *l1_victim;
             if (newUpdate) {
                 l1_victim = freeUpL1Entry(tid, instPC);
+                l1_victim->update(*pqEntry);
             } else {
                 l1_victim = l1btb.findVictim({instPC, tid});
                 writebackToL2(tid, l1_victim);
@@ -499,13 +500,15 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             if (prefetchOnPrefetchHit && bbMap_) {
                 Addr targetAddr = pqEntry->target->instAddr();
                 Addr fallThrough = instPC + minInstSize;
-
-                if (pqEntry->getPrefetchTarget())
+                auto baseLatency = remainingTime;
+                if (pqEntry->getPrefetchTarget()) {
                     prefetchViaBBMap(tid, targetAddr, true, true,
-                                     prefetchDepth, remainingTime, type);
+                                     prefetchDepth, baseLatency, type);
+                    baseLatency = baseLatency + Cycles(1);
+                }
                 if (pqEntry->getPrefetchThrough())
                     prefetchViaBBMap(tid, fallThrough, false, true,
-                                     prefetchDepth, remainingTime, type);
+                                     prefetchDepth, baseLatency, type);
             }
 
             if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
@@ -759,11 +762,13 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     if (prefetchOnL1Hit && bbMap_) {
         Addr targetAddr = l1_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
-
-        if (l1_entry->getPrefetchTarget())
-            prefetchViaBBMap(tid, targetAddr, true, true, 1, Cycles(0), type);
+        auto baseLatency = Cycles(0);
+        if (l1_entry->getPrefetchTarget()) {
+            prefetchViaBBMap(tid, targetAddr, true, true, 1, baseLatency, type);
+            baseLatency = baseLatency + Cycles(1);
+        }
         if (l1_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false, true, 1, Cycles(0), type);
+            prefetchViaBBMap(tid, fallThrough, false, true, 1, baseLatency, type);
     }
 
     if (prefetchOnL1Hit && finalMarkov) {
@@ -832,6 +837,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     BTBEntry *l1_victim;
     if (newUpdate) {
         l1_victim = freeUpL1Entry(tid, instPC);
+        l1_victim->update(*pB_entry);
     } else {
         l1_victim = l1btb.findVictim({instPC, tid});
         writebackToL2(tid, l1_victim);
@@ -884,13 +890,15 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         bool doPfThrough = pB_entry->getPrefetchThrough();
 
         pBuffer.invalidate(pB_entry);
-
-        if (doPfTarget)
+        auto baseLatency = Cycles(0);
+        if (doPfTarget) {
             prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth,
-                             Cycles(0), type);
+                baseLatency, type);
+            baseLatency = baseLatency + Cycles(1);
+        }
         if (doPfThrough)
             prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth,
-                             Cycles(0), type);
+                baseLatency, type);
     } else {
         pBuffer.invalidate(pB_entry);
     }
@@ -1131,13 +1139,15 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     if (usesPrefetchBitPolicy() && bbMap_) {
         Addr targetAddr = l2_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
-
-        if (l2_entry->getPrefetchTarget())
+        auto baseLatency = l2Latency;
+        if (l2_entry->getPrefetchTarget()) {
             prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth,
-                             l2Latency, type);
+                baseLatency, type);
+            baseLatency = baseLatency + Cycles(1);
+        }
         if (l2_entry->getPrefetchThrough())
             prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth,
-                             l2Latency, type);
+                baseLatency, type);
     }
 
 
