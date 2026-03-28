@@ -47,7 +47,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     void setBBMap(const std::unordered_map<Addr, Addr> *map) { bbMap_ = map; }
 
     void trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
-                             Addr targetAddr, unsigned instSize, bool wasL2Hit);
+                             Addr targetAddr, unsigned instSize, bool actuallyTaken, bool wasL2Hit);
     void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken, BranchType type);
 
   private:
@@ -172,6 +172,12 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar updatesL1hits;  // branch not in L1 at commit, found in L2
         statistics::Scalar updatesL2hits;  // branch not in L1 at commit, found in L2
         statistics::Scalar updatesL2miss;  // branch not in L1 at commit, found in L2
+
+        statistics::Scalar pfIssued;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfL2LookupHit;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfL2LookupMiss;  // branch not in L1 at commit, found in L2
+        statistics::Scalar mkHits;  // branch not in L1 at commit, found in L2
+
 
         MultiLevelBTB *btb;
 

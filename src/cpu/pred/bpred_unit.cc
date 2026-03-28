@@ -645,7 +645,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
             tid, hist->pc, hist->start_address,
             hist->target->instAddr(),
             4,
-            hist->l2btbHit);
+            hist->actuallyTaken, hist->l2btbHit);
         // Train prefetch bits at commit time (trainBitsOnCommit)
         static_cast<MultiLevelBTB*>(btb)->trainPrefetchBitsOnCommit(
             tid, hist->pc, hist->actuallyTaken, hist->type);

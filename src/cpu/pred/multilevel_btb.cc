@@ -57,6 +57,12 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(updatesL1hits, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(updatesL2hits, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(updatesL2miss, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfIssued, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfL2LookupHit, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfL2LookupMiss, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(mkHits, statistics::units::Ratio::get(), "number of L2 updates"),
+
+
       btb(btb)
 {
     using namespace statistics;
@@ -293,6 +299,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
         multilevelstats.prefetchQueueFull++;
         return;
     }
+    multilevelstats.pfIssued++;
 
     BTBEntry *victim = prefetchQueue.findVictim({pc, tid});
     prefetchQueue.insertEntry({pc, tid}, victim);
@@ -1303,6 +1310,8 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
         return;  // No successor data for this PC
     }
 
+    multilevelstats.mkHits++;
+
     // Build a vector of (successor, frequency) pairs and sort by frequency
     std::vector<std::pair<Addr, uint64_t>> successors;
     for (const auto& [succ, freq] : it->second) {
@@ -1332,6 +1341,13 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
         }
         // Find in L2
         BTBEntry *l2_entry = l2btb.findEntry({successor, tid});
+        if (l2_entry) {
+            multilevelstats.pfL2LookupHit++;
+        } else {
+            multilevelstats.pfL2LookupMiss++;
+        }
+        DPRINTF(BTB, "%s(spc=%#x) bpc=%#x, hit=%i\n", __func__, pc, successor, l2_entry!=nullptr);
+
         if (!l2_entry) {
             continue;
         }
@@ -1359,28 +1375,55 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
 void
 MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
                                    Addr targetAddr, unsigned instSize,
-                                   bool wasL2Hit)
+                                   bool actuallyTaken, bool wasL2Hit)
 {
     if (!(finalMarkov || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10)) {
         return;
     }
     if (finalMarkov) {
-        auto &prev = prevCommitBlockInfo[tid];
-        if (prev.valid) {
-            //If current commit block's start address matches prev's target or fall-through
-            if (startAddr == prev.target || startAddr == prev.fallThrough) {
-                if (markovUseRecency) {
-                    markovSuccessors[prev.branchPC][pc] = curTick();
-                } else {
-                    markovSuccessors[prev.branchPC][pc]++;
-                }
-            }
-        }
-        // Always update prev info with current branch
-        prev.branchPC = pc;
-        prev.target = targetAddr;
-        prev.fallThrough = pc + instSize;
-        prev.valid = true;
+        // auto &prev = prevCommitBlockInfo[tid];
+        // if (prev.valid) {
+        //     //If current commit block's start address matches prev's target or fall-through
+        //     if (startAddr == prev.target || startAddr == prev.fallThrough) {
+        //         if (markovUseRecency) {
+        //             markovSuccessors[prev.branchPC][pc] = curTick();
+        //         } else {
+        //             markovSuccessors[prev.branchPC][pc]++;
+        //         }
+        //     }
+        // }
+        // // Always update prev info with current branch
+        // prev.branchPC = pc;
+        // prev.target = targetAddr;
+        // prev.fallThrough = pc + instSize;
+        // prev.valid = true;
+        // return;
+
+
+        // auto &prev = prevCommitBlockInfo[tid];
+        // if (prev.valid) {
+        //     //If current commit block's start address matches prev's target or fall-through
+        //     if (startAddr == prev.target || startAddr == prev.fallThrough) {
+        //         if (markovUseRecency) {
+        //             markovSuccessors[prev.branchPC][pc] = curTick();
+        //         } else {
+        //             markovSuccessors[prev.branchPC][pc]++;
+        //         }
+        //     }
+        // }
+        // // Always update prev info with current branch
+        // prev.branchPC = pc;
+        // prev.target = targetAddr;
+        // prev.fallThrough = pc + instSize;
+        // prev.valid = true;
+
+        auto next_pc = actuallyTaken ? targetAddr : pc + instSize;
+
+        auto it = bbMap_->find(next_pc);
+        if (it == bbMap_->end())
+            return;
+
+        markovSuccessors[pc][it->second]++;
         return;
     }
 
@@ -1551,6 +1594,15 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
 
     Addr pfPC = it->second;
     BTBEntry *l2_pf = l2btb.findEntry({pfPC, tid});
+    if (l2_pf) {
+        multilevelstats.pfL2LookupHit++;
+    } else {
+        multilevelstats.pfL2LookupMiss++;
+    }
+    DPRINTF(BTB, "%s(spc=%#x) bpc=%#x, hit=%i\n", __func__, lookupAddr, pfPC, l2_pf!=nullptr);
+
+
+
     if (!l2_pf || l1ApproxContains(pfPC, tid) ||
         pBuffer.findEntry({pfPC, tid}))
         return;
