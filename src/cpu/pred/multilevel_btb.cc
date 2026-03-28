@@ -532,7 +532,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
             prefetchQueue.invalidate(pqEntry);
             currentQueueSize--;
-            bool isCovered = remainingTime > Cycles(0);
+            bool isCovered = coveredCycle > Cycles(0);
             return BTBLookupResult(l1_victim->target.get(),
                                    remainingTime, false, isCovered, !isCovered,
                                    isCovered, false, l1_victim->getDir(), l1_victim->getPrefetchTriggerType());
