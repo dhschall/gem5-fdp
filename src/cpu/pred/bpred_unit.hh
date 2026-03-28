@@ -501,6 +501,8 @@ class BPredUnit : public SimObject
         Addr branchPC = 0;
         Addr target = 0;
         Addr fallThrough = 0;
+        Addr startAddress = 0;
+        bool taken = false;
         bool valid = false;
         enum BranchClass {
             Unknown,
@@ -624,13 +626,17 @@ class BPredUnit : public SimObject
         statistics::Scalar l2PrefetchHit_Taken;
         statistics::Scalar l2PrefetchHit_NonContinuous;
 
-        statistics::Scalar L2Misses;
-        statistics::Scalar Succ_NoBtbEntry;
-        statistics::Scalar Succ_L2Miss;
+        statistics::Scalar NeverTaken;
+        statistics::Scalar L1Hit;
+        statistics::Scalar L2Hit;
+        statistics::Scalar L2Miss;
+        statistics::Scalar NoBtbEntry;
         statistics::Scalar Succ_L1Hit_Taken;
         statistics::Scalar Succ_L1Hit_NotTaken;
         statistics::Scalar Succ_L2Hit_Taken;
         statistics::Scalar Succ_L2Hit_NotTaken;
+        statistics::Scalar Succ_L2Miss;
+        statistics::Scalar Succ_NoBtbEntry;
 
     } stats;
 

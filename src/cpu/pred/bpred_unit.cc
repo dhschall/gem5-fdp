@@ -594,49 +594,84 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
     }
 
     if (isMultiLevelBTB) {
-        // Branch classification
-        PrevBranchInfo::BranchClass currentClass = PrevBranchInfo::Unknown;
-        if (hist->l1btbHit) {
-            currentClass = PrevBranchInfo::L1Hit;
-        } else if (hist->l2btbHit || hist->pBufferHit) {
-            currentClass = PrevBranchInfo::L2Hit;
-        } else if (hist->mispredict && hist->actuallyTaken && !hist->btbHit) {
-            currentClass = PrevBranchInfo::L2Miss;
-        } else if (!hist->mispredict && !hist->btbHit) {
-            currentClass = PrevBranchInfo::NoBtbEntry;
-        }
 
-        if (currentClass != PrevBranchInfo::NoBtbEntry) {
-            if (!hist->l1btbHit) {
-                if (currentClass == PrevBranchInfo::L2Miss) {
-                    stats.L2Misses++;
-                } else if (currentClass == PrevBranchInfo::L2Hit && prevBranchInfo[tid].valid && hist->start_address != 0) {
-                    bool isTarget = (hist->start_address == prevBranchInfo[tid].target);
-                    bool isFallThrough = (hist->start_address == prevBranchInfo[tid].fallThrough);
-                    if (isTarget || isFallThrough) {
-                        if (prevBranchInfo[tid].branchClass == PrevBranchInfo::L2Miss) {
-                            stats.Succ_L2Miss++;
-                        } else if (prevBranchInfo[tid].branchClass == PrevBranchInfo::L1Hit) {
-                            if (isTarget) stats.Succ_L1Hit_Taken++;
-                            else if (isFallThrough) stats.Succ_L1Hit_NotTaken++;
-                        } else if (prevBranchInfo[tid].branchClass == PrevBranchInfo::L2Hit) {
-                            if (isTarget) stats.Succ_L2Hit_Taken++;
-                            else if (isFallThrough) stats.Succ_L2Hit_NotTaken++;
-                        }
-                    } else{
+        // Check if this is the terminating branch for this start address.
+        auto it = bbMap.find(hist->start_address);
+        if (it != bbMap.end() && it->second == hist->pc) {
+
+            // Branch classification
+            PrevBranchInfo::BranchClass currentClass = PrevBranchInfo::Unknown;
+            if (hist->l1btbHit) {
+                currentClass = PrevBranchInfo::L1Hit;
+            } else if (hist->l2btbHit || hist->pBufferHit) {
+                currentClass = PrevBranchInfo::L2Hit;
+            } else {
+                assert(!hist->btbHit);
+                if (hist->actuallyTaken) {
+                    currentClass = PrevBranchInfo::L2Miss;
+                } else {
+                    currentClass = PrevBranchInfo::NoBtbEntry;
+                }
+            }
+
+            switch (currentClass) {
+                case PrevBranchInfo::L1Hit:
+                    stats.L1Hit++;
+                    break;
+                case PrevBranchInfo::L2Hit:
+                    stats.L2Hit++;
+                    break;
+                case PrevBranchInfo::L2Miss:
+                    stats.L2Miss++;
+                    break;
+                case PrevBranchInfo::NoBtbEntry:
+                    stats.NoBtbEntry++;
+                    break;
+                default: break;
+            }
+
+            // For L2 hits classify based on predecessor
+            if (currentClass == PrevBranchInfo::L2Hit) {
+                switch (prevBranchInfo[tid].branchClass) {
+                    case PrevBranchInfo::L1Hit:
+                        if (prevBranchInfo[tid].taken)
+                            stats.Succ_L1Hit_Taken++;
+                        else
+                            stats.Succ_L1Hit_NotTaken++;
+                        break;
+                    case PrevBranchInfo::L2Hit:
+                        if (prevBranchInfo[tid].taken)
+                            stats.Succ_L2Hit_Taken++;
+                        else
+                            stats.Succ_L2Hit_NotTaken++;
+                        break;
+                    case PrevBranchInfo::L2Miss:
+                        stats.Succ_L2Miss++;
+                        break;
+                    case PrevBranchInfo::NoBtbEntry:
                         stats.Succ_NoBtbEntry++;
-                    }
+                        break;
+                    default: break;
                 }
             }
 
             // For next comparison
-            prevBranchInfo[tid].branchPC = hist->pc;
-            prevBranchInfo[tid].target = hist->target->instAddr();
-            prevBranchInfo[tid].fallThrough = hist->pc + 4;
-            prevBranchInfo[tid].valid = true;
+            // prevBranchInfo[tid].branchPC = hist->pc;
+            // prevBranchInfo[tid].target = hist->target->instAddr();
+            // prevBranchInfo[tid].fallThrough = hist->pc + 4;
+            // prevBranchInfo[tid].valid = true;
+            prevBranchInfo[tid].startAddress = hist->start_address;
+            prevBranchInfo[tid].taken = hist->actuallyTaken;
             prevBranchInfo[tid].branchClass = currentClass;
+
+        } else {
+            stats.NeverTaken++;
+
+            // If the block has no BTB entry reset
+            if (it == bbMap.end()) {
+                prevBranchInfo[tid].branchClass = PrevBranchInfo::NoBtbEntry;
+            }
         }
-        
     }
 
     // Train Markov predictor for committed branches (Policy 7/finalMarkov)
@@ -1080,12 +1115,16 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Prefetch-sourced L2 hits on taken path of preceding L2 hit"),
       ADD_STAT(l2PrefetchHit_NonContinuous, statistics::units::Count::get(),
               "Prefetch-sourced L2 hits neither fall-through nor taken of preceding L2 hit"),
-      ADD_STAT(L2Misses, statistics::units::Count::get(),
-              "Number of L2 Misses (BTB missed but branch taken)"),
-      ADD_STAT(Succ_NoBtbEntry, statistics::units::Count::get(),
-              "Number of successors of No BTB entry on fall-through path"),
-      ADD_STAT(Succ_L2Miss, statistics::units::Count::get(),
+      ADD_STAT(NeverTaken, statistics::units::Count::get(),
+              "Number of never taken branches."),
+      ADD_STAT(L1Hit, statistics::units::Count::get(),
+              "Number of successors of L1 hit on taken path"),
+      ADD_STAT(L2Hit, statistics::units::Count::get(),
+              "Number of successors of L1 hit on taken path"),
+      ADD_STAT(L2Miss, statistics::units::Count::get(),
               "Number of successors of L2 Miss on taken path"),
+      ADD_STAT(NoBtbEntry, statistics::units::Count::get(),
+              "Number of successors of No BTB entry on fall-through path"),
       ADD_STAT(Succ_L1Hit_Taken, statistics::units::Count::get(),
               "Number of successors of L1 hit on taken path"),
       ADD_STAT(Succ_L1Hit_NotTaken, statistics::units::Count::get(),
@@ -1093,7 +1132,11 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
       ADD_STAT(Succ_L2Hit_Taken, statistics::units::Count::get(),
               "Number of successors of L2 hit on taken path"),
       ADD_STAT(Succ_L2Hit_NotTaken, statistics::units::Count::get(),
-              "Number of successors of L2 hit on fall-through path")
+              "Number of successors of L2 hit on fall-through path"),
+      ADD_STAT(Succ_L2Miss, statistics::units::Count::get(),
+              "Number of successors of L2 Miss on taken path"),
+      ADD_STAT(Succ_NoBtbEntry, statistics::units::Count::get(),
+              "Number of successors of No BTB entry on fall-through path")
 
 {
     using namespace statistics;
