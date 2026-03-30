@@ -62,7 +62,8 @@ class IndirectPredictor : public SimObject
     typedef IndirectPredictorParams Params;
 
     IndirectPredictor(const Params &params)
-        : SimObject(params)
+        : SimObject(params),
+          staticLatency(params.latency)
     {
     }
 
@@ -117,6 +118,14 @@ class IndirectPredictor : public SimObject
      * @param i_history The pointer to the history object.
      */
     virtual void commit(ThreadID tid, InstSeqNum sn, void * &i_history) = 0;
+
+    Cycles getStaticLatency() const {
+        return staticLatency;
+    }
+
+  protected:
+    /** Static latency of the predictor in cycles */
+    const Cycles staticLatency;
 };
 
 } // namespace branch_prediction

@@ -374,6 +374,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             // Indirect predictor hit
             ++stats.indirectHits;
             hist->targetProvider = TargetProvider::Indirect;
+            totalLatency = std::max(totalLatency, iPred->getStaticLatency());
             set(hist->target, *itarget);
 
             DPRINTF(Branch,
