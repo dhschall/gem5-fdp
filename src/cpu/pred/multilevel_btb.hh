@@ -217,6 +217,18 @@ class MultiLevelBTB : public BranchTargetBuffer
     };
     std::vector<PrevCommitBlockInfo> prevCommitBlockInfo;
 
+    // Deferred prefetch queue: stages prefetches by issueTime before inserting into prefetchQueue.
+    struct DeferredPrefetchEntry {
+        Addr pc = 0;
+        ThreadID tid = 0;
+        Cycles issueTime = Cycles(0);
+        bool toL1 = false;
+        bool triggeredByPBHit = false;
+        bool takenPrefetched = false;
+        BranchType triggerType = BranchType::NoBranch;
+    };
+    std::vector<DeferredPrefetchEntry> deferredPrefetchQueue;
+
     friend struct MultiLevelBTBStats;
 
     /**
@@ -273,6 +285,9 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     /** Drain arrived entries from prefetchQueue into pBuffer / L1 BTB. */
     void processPrefetchQueue(ThreadID tid);
+
+    /** Process deferred prefetches whose issueTime has passed. */
+    void processDeferredPrefetchQueue(ThreadID tid);
 
     /** Enqueue a prefetch into the in-flight queue. */
     void enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,

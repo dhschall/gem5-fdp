@@ -220,6 +220,7 @@ MultiLevelBTB::memInvalidate()
     l1CompressedTags.clear();
     prefetchQueue.clear();
     currentQueueSize = 0;
+    deferredPrefetchQueue.clear();
 }
 
 void
@@ -352,6 +353,9 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                                  bool taken, Addr blockStartAddr)
 {
     DPRINTF(BTB, "%s(pc=%#x)\n", __func__, instPC);
+    if (!deferredPrefetchQueue.empty()) {
+        processDeferredPrefetchQueue(tid);
+    }
     // Try draining arrived prefetches into PB/L1
     if (currentQueueSize > 0) {
         processPrefetchQueue(tid);
@@ -1618,10 +1622,26 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         }
     }
     baseLatency = baseLatency + Cycles(1);
-    Cycles arrival = curCycle() + l2Latency + baseLatency;
+    Cycles issueTime = curCycle() + baseLatency;
 
-    enqueuePrefetch(pfPC, tid, l2_pf, arrival,
-                    false, triggeredByPBHit, 0, isTakenPath, triggerType);
+    // Insert into deferred queue instead of prefetchQueue directly
+    DeferredPrefetchEntry dfEntry;
+    dfEntry.pc = pfPC;
+    dfEntry.tid = tid;
+    dfEntry.issueTime = issueTime;
+    dfEntry.toL1 = false;
+    dfEntry.triggeredByPBHit = triggeredByPBHit;
+    dfEntry.takenPrefetched = isTakenPath;
+    dfEntry.triggerType = triggerType;
+
+    // Sorted insertion by issueTime (ascending)
+    auto pos = std::lower_bound(deferredPrefetchQueue.begin(),
+                                deferredPrefetchQueue.end(), dfEntry,
+                                [](const DeferredPrefetchEntry& a,
+                                   const DeferredPrefetchEntry& b) {
+                                    return a.issueTime < b.issueTime;
+                                });
+    deferredPrefetchQueue.insert(pos, dfEntry);
 
     if (depth > 1) {
         Addr targetAddr = l2_pf->target->instAddr();
@@ -1641,6 +1661,34 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
             prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
                              depth - 1, nextLatency, l2PfType);
         }
+    }
+}
+
+void
+MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid)
+{
+    auto it = deferredPrefetchQueue.begin();
+    while (it != deferredPrefetchQueue.end()) {
+        if (!noPrefetchLatency && it->issueTime > curCycle())
+            break;
+
+        Addr pc = it->pc;
+
+        if (!l1ApproxContains(pc, it->tid) &&
+            !pBuffer.findEntry({pc, it->tid}) &&
+            !prefetchQueue.findEntry({pc, it->tid})) {
+
+            BTBEntry *l2_pf = l2btb.findEntry({pc, it->tid});
+            if (l2_pf) {
+                Cycles arrival = it->issueTime + l2Latency;
+                enqueuePrefetch(pc, it->tid, l2_pf, arrival,
+                               it->toL1, it->triggeredByPBHit,
+                               0, it->takenPrefetched,
+                               it->triggerType);
+            }
+        }
+
+        it = deferredPrefetchQueue.erase(it);
     }
 }
 

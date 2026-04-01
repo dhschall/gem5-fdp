@@ -339,7 +339,7 @@ class IndirectPredictor(SimObject):
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
 
     latency = Param.Cycles(
-        0, "Static (flat) latency of the predictor (in cycles)"
+        2, "Static (flat) latency of the predictor (in cycles)"
     )
 
 
