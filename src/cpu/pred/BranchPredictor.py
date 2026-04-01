@@ -287,6 +287,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         True,
         "Only update direction/PBits in L1 BTB",
     )
+    newPBits = Param.Bool(
+        False,
+        "Only perform prefetch if both bits are set and pick path based on predicted direction",
+    )
 
     useCompressedTagFilter = Param.Bool(
         False,

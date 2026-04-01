@@ -86,6 +86,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool updateDirOnlyL1;
     const bool inclusive;
     const bool newUpdate;
+    const bool newPBits;
     const bool useCompressedTagFilter;
 
 
@@ -299,6 +300,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     /** Returns true for policies that use prefetch-bit logic. */
     bool usesPrefetchBitPolicy() const;
+
+    void applyNewPBitsLogic(BranchType type, bool taken, bool &doPfTarget, bool &doPfThrough) const;
 
     /** Evict an L1 victim entry to L2, writing back full state. */
     void writebackToL2(ThreadID tid, BTBEntry *victim);

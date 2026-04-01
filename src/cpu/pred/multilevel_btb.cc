@@ -185,6 +185,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       updateDirOnlyL1(p.updateDirOnlyL1),
       inclusive(p.inclusive),
       newUpdate(p.newUpdate),
+      newPBits(p.newPBits),
       useCompressedTagFilter(p.useCompressedTagFilter),
       currentQueueSize(0),
       maxPrefetchQueueSize(p.pBufferSize),
@@ -512,12 +513,18 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                 Addr targetAddr = pqEntry->target->instAddr();
                 Addr fallThrough = instPC + minInstSize;
                 auto baseLatency = remainingTime;
-                if (pqEntry->getPrefetchTarget()) {
+                
+                bool doPfTarget = pqEntry->getPrefetchTarget();
+                bool doPfThrough = pqEntry->getPrefetchThrough();
+                
+                applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+
+                if (doPfTarget) {
                     prefetchViaBBMap(tid, targetAddr, true, true,
                                      prefetchDepth, baseLatency, type);
                     baseLatency = baseLatency + Cycles(1);
                 }
-                if (pqEntry->getPrefetchThrough())
+                if (doPfThrough)
                     prefetchViaBBMap(tid, fallThrough, false, true,
                                      prefetchDepth, baseLatency, type);
             }
@@ -774,12 +781,18 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         Addr targetAddr = l1_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = Cycles(0);
-        if (l1_entry->getPrefetchTarget()) {
-            prefetchViaBBMap(tid, targetAddr, true, true, 1, baseLatency, type);
+        
+        bool doPfTarget = l1_entry->getPrefetchTarget();
+        bool doPfThrough = l1_entry->getPrefetchThrough();
+        
+        applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+
+        if (doPfTarget) {
+            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth, baseLatency, type);
             baseLatency = baseLatency + Cycles(1);
         }
-        if (l1_entry->getPrefetchThrough())
-            prefetchViaBBMap(tid, fallThrough, false, true, 1, baseLatency, type);
+        if (doPfThrough)
+            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth, baseLatency, type);
     }
 
     if (prefetchOnL1Hit && finalMarkov) {
@@ -899,6 +912,8 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         Addr fallThrough = instPC + minInstSize;
         bool doPfTarget = pB_entry->getPrefetchTarget();
         bool doPfThrough = pB_entry->getPrefetchThrough();
+
+        applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
 
         pBuffer.invalidate(pB_entry);
         auto baseLatency = Cycles(0);
@@ -1151,12 +1166,18 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         Addr targetAddr = l2_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = l2Latency;
-        if (l2_entry->getPrefetchTarget()) {
+        
+        bool doPfTarget = l2_entry->getPrefetchTarget();
+        bool doPfThrough = l2_entry->getPrefetchThrough();
+        
+        applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+
+        if (doPfTarget) {
             prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth,
                 baseLatency, type);
             baseLatency = baseLatency + Cycles(1);
         }
-        if (l2_entry->getPrefetchThrough())
+        if (doPfThrough)
             prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth,
                 baseLatency, type);
     }
@@ -1514,6 +1535,28 @@ bool
 MultiLevelBTB::usesPrefetchBitPolicy() const
 {
     return trainBitsOnLookup || trainBitsOnCommit;
+}
+
+void
+MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken, bool &doPfTarget, bool &doPfThrough) const
+{
+    if (newPBits) {
+        bool isCall = (type == BranchType::CallDirect || type == BranchType::CallIndirect);
+        if (!(isCall && prefetchBothForCall)) {
+            if (doPfTarget && doPfThrough) {
+                if (taken) {
+                    doPfTarget = false;
+                    doPfThrough = true;
+                } else {
+                    doPfTarget = true;
+                    doPfThrough = false;
+                }
+            } else {
+                doPfTarget = false;
+                doPfThrough = false;
+            }
+        }
+    }
 }
 
 void
