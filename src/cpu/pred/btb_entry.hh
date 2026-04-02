@@ -178,7 +178,7 @@ class BTBEntry : public ReplaceableEntry
         inst       = other.inst;
         branchAddr = other.branchAddr;
         set(target, other.target);
-        prefetchThrough = other.prefetchThrough;
+        prefetchThrough |= other.prefetchThrough;
         prefetchTarget = other.prefetchTarget;
         dir = other.dir;
     }
