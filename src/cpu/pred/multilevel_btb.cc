@@ -842,12 +842,11 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         }
         pB_entry->setPrefetched(false);
         pB_entry->setTakenPrefetched(false);
-        if (!noPrefetchLatency) {
-            if(pB_entry->isTriggeredByPBHit()) {
-                multilevelstats.latePrefetchByPBHit[4]++;
-            } else {
-                multilevelstats.latePrefetchByL2Hit[4]++;
-            }
+
+        if(pB_entry->isTriggeredByPBHit()) {
+            multilevelstats.latePrefetchByPBHit[4]++;
+        } else {
+            multilevelstats.latePrefetchByL2Hit[4]++;
         }
         pB_entry->setTriggeredByPBHit(false);
     }
@@ -1547,19 +1546,23 @@ MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken, bool &doPfTarget,
 {
     if (newPBits) {
         bool isCall = (type == BranchType::CallDirect || type == BranchType::CallIndirect);
-        if (!(isCall && prefetchBothForCall)) {
-            if (doPfTarget && doPfThrough) {
-                if (taken) {
-                    doPfTarget = false;
-                    doPfThrough = true;
-                } else {
-                    doPfTarget = true;
-                    doPfThrough = false;
-                }
-            } else {
+        
+        if (doPfTarget && doPfThrough) {
+            if (taken) {
                 doPfTarget = false;
+                doPfThrough = true;
+            } else {
+                doPfTarget = true;
                 doPfThrough = false;
             }
+        } else {
+            doPfTarget = false;
+            doPfThrough = false;
+        }
+        
+        if (isCall) {
+            doPfTarget = false;
+            doPfThrough = true;
         }
     }
 }
