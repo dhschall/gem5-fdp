@@ -91,6 +91,11 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool newPBits;
     const bool onlyCall;
     const bool onlyCallAndBackward;
+    const bool callFallthrough;
+    const bool forwardLoopExit;
+    const bool backwardLoopExit;
+    const bool allConditional;
+    const bool prefetchFwExitOnL1Hit;
     const bool useCompressedTagFilter;
 
 
@@ -182,6 +187,10 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar pfL2LookupHit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfL2LookupMiss;  // branch not in L1 at commit, found in L2
         statistics::Scalar mkHits;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfTriggerCall;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfTriggerBwExit;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfTriggerFwExit;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfTriggerCondAlt;  // branch not in L1 at commit, found in L2
 
 
         MultiLevelBTB *btb;
@@ -309,7 +318,16 @@ class MultiLevelBTB : public BranchTargetBuffer
         return type == BranchType::CallDirect || type == BranchType::CallIndirect;
     }
 
-    void applyNewPBitsLogic(BranchType type, bool taken, bool isBackward, bool &doPfTarget, bool &doPfThrough) const;
+    struct PrevBrInfo {
+        bool is_bw;
+        bool is_l2_miss;
+    } prevBwBranch;
+
+    enum TriggerLocation { L1Hit, L2Hit, PBHit };
+    void applyNewPBitsLogic(BranchType type, bool taken,
+                            bool isBackward,
+                            bool &doPfTarget, bool &doPfThrough,
+                            TriggerLocation triggerLoc);
 
     /** Evict an L1 victim entry to L2, writing back full state. */
     void writebackToL2(ThreadID tid, BTBEntry *victim);

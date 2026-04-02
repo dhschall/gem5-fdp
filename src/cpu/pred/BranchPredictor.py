@@ -305,6 +305,27 @@ class MultiLevelBTB(BranchTargetBuffer):
         False,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
+    callFallthrough = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+    forwardLoopExit = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+    backwardLoopExit = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+    allConditional = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+    prefetchFwExitOnL1Hit = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+
 
     useCompressedTagFilter = Param.Bool(
         False,

@@ -61,6 +61,10 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(pfL2LookupHit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfL2LookupMiss, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(mkHits, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfTriggerCall, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfTriggerBwExit, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfTriggerFwExit, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfTriggerCondAlt, statistics::units::Ratio::get(), "number of L2 updates"),
 
 
       btb(btb)
@@ -189,6 +193,11 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       newPBits(p.newPBits),
       onlyCall(p.onlyCall),
       onlyCallAndBackward(p.onlyCallAndBackward),
+      callFallthrough(p.callFallthrough),
+      forwardLoopExit(p.forwardLoopExit),
+      backwardLoopExit(p.backwardLoopExit),
+      allConditional(p.allConditional),
+      prefetchFwExitOnL1Hit(p.prefetchFwExitOnL1Hit),
       useCompressedTagFilter(p.useCompressedTagFilter),
       currentQueueSize(0),
       maxPrefetchQueueSize(p.pBufferSize),
@@ -512,7 +521,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
             }
 
             // Trigger new prefetches on prefetch hit
-            if (prefetchOnPrefetchHit && bbMap_) {
+            if (bbMap_) {
                 Addr targetAddr = pqEntry->target->instAddr();
                 Addr fallThrough = instPC + minInstSize;
                 auto baseLatency = remainingTime;
@@ -522,12 +531,14 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
                 bool isBackward = (pqEntry->target->instAddr() < instPC);
                 if (coveredCycle > Cycles(0)){
-                    applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough);
+                    applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough, PBHit);
                 }else {
                     // coveredCycle == 0, do things the same as prefetchOnL2Hit
-                    applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough);
+                    applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough, PBHit);
                 }
-                
+                prevBwBranch.is_bw = isBackward;
+                prevBwBranch.is_l2_miss = true;
+
 
                 int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
                 bool triggeredByPBHit = coveredCycle > Cycles(0);
@@ -588,6 +599,8 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 
     // Miss in both l1 and l2. Actually, the progrem will never get here.
     stats.misses[type]++;
+    prevBwBranch.is_bw = false;
+    prevBwBranch.is_l2_miss = false;
     DPRINTF(BTB, "BTB miss for PC %#x\n", instPC);
     return BTBLookupResult(nullptr, l1Latency + l2Latency, false, false, false);
 }
@@ -789,7 +802,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     }
 
     // Prefetch-bit prefetcher: trigger prefetch on L1 hit based on prefetch bits
-    if (prefetchOnL1Hit && bbMap_) {
+    if (bbMap_) {
         Addr targetAddr = l1_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = Cycles(0);
@@ -798,8 +811,10 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         bool doPfThrough = l1_entry->getPrefetchThrough();
 
         bool isBackward = (l1_entry->target->instAddr() < instPC);
-        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough);
+        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough, L1Hit);
         int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
+        prevBwBranch.is_bw = isBackward;
+        prevBwBranch.is_l2_miss = false;
 
         if (doPfTarget) {
             prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type);
@@ -920,15 +935,17 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         }
     }
 
-    if (prefetchOnPrefetchHit && bbMap_) {
+    if (bbMap_) {
         Addr targetAddr = pB_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         bool doPfTarget = pB_entry->getPrefetchTarget();
         bool doPfThrough = pB_entry->getPrefetchThrough();
 
         bool isBackward = (pB_entry->target->instAddr() < instPC);
-        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough);
+        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough, PBHit);
         int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
+        prevBwBranch.is_bw = isBackward;
+        prevBwBranch.is_l2_miss = true;
 
         pBuffer.invalidate(pB_entry);
         auto baseLatency = Cycles(0);
@@ -1177,7 +1194,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     //     history.pop_front();
     // }
 
-    if (usesPrefetchBitPolicy() && bbMap_) {
+    if (bbMap_) {
         Addr targetAddr = l2_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = l2Latency;
@@ -1186,8 +1203,10 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         bool doPfThrough = l2_entry->getPrefetchThrough();
 
         bool isBackward = (l2_entry->target->instAddr() < instPC);
-        applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough);
+        applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough, L2Hit);
         int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
+        prevBwBranch.is_bw = isBackward;
+        prevBwBranch.is_l2_miss = true;
 
         if (doPfTarget) {
             prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
@@ -1555,9 +1574,42 @@ MultiLevelBTB::usesPrefetchBitPolicy() const
 }
 
 void
-MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken, bool isBackward, bool &doPfTarget, bool &doPfThrough) const
+MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken,
+                bool isBackward,
+                bool &doPfTarget, bool &doPfThrough,
+                TriggerLocation triggerLoc)
 {
+    if ((triggerLoc == L1Hit && !prefetchOnL1Hit && !prefetchFwExitOnL1Hit)
+      ||(triggerLoc == L2Hit && !usesPrefetchBitPolicy())
+      ||(triggerLoc == PBHit && !prefetchOnPrefetchHit)
+       ) {
+        doPfTarget = false;
+        doPfThrough = false;
+        return;
+    }
     if (newPBits) {
+
+        bool isForwardExit = prevBwBranch.is_bw         // Was previous branch a backward branch
+                          && doPfTarget && doPfThrough  // Was alternating
+                          && !taken                     // We didn't exit the loop
+                          && prevBwBranch.is_l2_miss    // If the backward branch was an L2 miss
+                          ;
+
+        if (forwardLoopExit && isForwardExit) {
+            doPfTarget = true;
+            doPfThrough = false;
+            multilevelstats.pfTriggerFwExit++;
+            return;
+        }
+
+        // Forward exits might have happen on L1 hits
+        if (triggerLoc == L1Hit && !prefetchOnL1Hit) {
+            doPfTarget = false;
+            doPfThrough = false;
+            return;
+        }
+
+
         bool isCall = (type == BranchType::CallDirect || type == BranchType::CallIndirect);
 
         if (onlyCall && !isCall) {
@@ -1574,6 +1626,26 @@ MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken, bool isBackward, 
             }
         }
 
+        if (callFallthrough && isCall) {
+            doPfTarget = false;
+            doPfThrough = true;
+            multilevelstats.pfTriggerCall++;
+            return;
+        }
+
+        if (backwardLoopExit && isBackward) {
+            doPfTarget = false;
+            doPfThrough = true;
+            multilevelstats.pfTriggerBwExit++;
+            return;
+        }
+
+        if (!allConditional) {
+            doPfTarget = false;
+            doPfThrough = false;
+            return;
+        }
+
         if (doPfTarget && doPfThrough) {
             if (taken) {
                 doPfTarget = false;
@@ -1582,15 +1654,16 @@ MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken, bool isBackward, 
                 doPfTarget = true;
                 doPfThrough = false;
             }
+            multilevelstats.pfTriggerCondAlt++;
         } else {
             doPfTarget = false;
             doPfThrough = false;
         }
 
-        if (isCall) {
-            doPfTarget = false;
-            doPfThrough = true;
-        }
+        // if (isCall) {
+        //     doPfTarget = false;
+        //     doPfThrough = true;
+        // }
     }
 }
 
