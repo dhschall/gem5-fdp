@@ -78,6 +78,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool cleanBitsOnL1Promotion;
     const bool noPrefetchLatency;
     const unsigned prefetchDepth;
+    const bool depthOnlyCall;
     const bool prefetchOnlyForward;
     const bool finalMarkov;
     const bool prefetchAllMarkovSuccessors;
@@ -300,6 +301,10 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     /** Returns true for policies that use prefetch-bit logic. */
     bool usesPrefetchBitPolicy() const;
+
+    bool isCall(BranchType type) const {
+        return type == BranchType::CallDirect || type == BranchType::CallIndirect;
+    }
 
     void applyNewPBitsLogic(BranchType type, bool taken, bool &doPfTarget, bool &doPfThrough) const;
 

@@ -177,6 +177,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
       noPrefetchLatency(p.noPrefetchLatency),
       prefetchDepth(p.prefetchDepth),
+      depthOnlyCall(p.depthOnlyCall),
       prefetchOnlyForward(p.prefetchOnlyForward),
       finalMarkov(p.finalMarkov),
       prefetchAllMarkovSuccessors(p.prefetchAllMarkovSuccessors),
@@ -513,20 +514,21 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                 Addr targetAddr = pqEntry->target->instAddr();
                 Addr fallThrough = instPC + minInstSize;
                 auto baseLatency = remainingTime;
-                
+
                 bool doPfTarget = pqEntry->getPrefetchTarget();
                 bool doPfThrough = pqEntry->getPrefetchThrough();
-                
+
                 applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
 
+                int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
                 if (doPfTarget) {
                     prefetchViaBBMap(tid, targetAddr, true, true,
-                                     prefetchDepth, baseLatency, type);
+                                     effectiveDepth, baseLatency, type);
                     baseLatency = baseLatency + Cycles(1);
                 }
                 if (doPfThrough)
                     prefetchViaBBMap(tid, fallThrough, false, true,
-                                     prefetchDepth, baseLatency, type);
+                                     effectiveDepth, baseLatency, type);
             }
 
             if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
@@ -781,18 +783,19 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         Addr targetAddr = l1_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = Cycles(0);
-        
+
         bool doPfTarget = l1_entry->getPrefetchTarget();
         bool doPfThrough = l1_entry->getPrefetchThrough();
-        
+
         applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
 
         if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth, baseLatency, type);
+            prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type);
             baseLatency = baseLatency + Cycles(1);
         }
         if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth, baseLatency, type);
+            prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type);
     }
 
     if (prefetchOnL1Hit && finalMarkov) {
@@ -914,16 +917,17 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         bool doPfThrough = pB_entry->getPrefetchThrough();
 
         applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
 
         pBuffer.invalidate(pB_entry);
         auto baseLatency = Cycles(0);
         if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, true, prefetchDepth,
+            prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth,
                 baseLatency, type);
             baseLatency = baseLatency + Cycles(1);
         }
         if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, true, prefetchDepth,
+            prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth,
                 baseLatency, type);
     } else {
         pBuffer.invalidate(pB_entry);
@@ -1166,19 +1170,20 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         Addr targetAddr = l2_entry->target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = l2Latency;
-        
+
         bool doPfTarget = l2_entry->getPrefetchTarget();
         bool doPfThrough = l2_entry->getPrefetchThrough();
-        
+
         applyNewPBitsLogic(type, taken, doPfTarget, doPfThrough);
+        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
 
         if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, false, prefetchDepth,
+            prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
                 baseLatency, type);
             baseLatency = baseLatency + Cycles(1);
         }
         if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, false, prefetchDepth,
+            prefetchViaBBMap(tid, fallThrough, false, false, effectiveDepth,
                 baseLatency, type);
     }
 
@@ -1695,13 +1700,13 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         }
 
         BranchType l2PfType = getBranchType(l2_pf->inst);
-        if (l2_pf->getPrefetchTarget()) {
-            prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
+            if (l2_pf->getPrefetchTarget()) {
+                prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
                              depth - 1, nextLatency, l2PfType);
-            nextLatency = nextLatency + Cycles(1);
-        }
-        if (l2_pf->getPrefetchThrough()) {
-            prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
+                nextLatency = nextLatency + Cycles(1);
+            }
+            if (l2_pf->getPrefetchThrough()) {
+                prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
                              depth - 1, nextLatency, l2PfType);
         }
     }

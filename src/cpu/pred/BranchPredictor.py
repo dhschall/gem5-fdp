@@ -255,6 +255,10 @@ class MultiLevelBTB(BranchTargetBuffer):
         1, "Prefetch depth for prefetch-bits prefetcher"
     )
 
+    depthOnlyCall = Param.Bool(
+        False, "Only apply prefetchDepth to call instructions for newPBits prefetcher"
+    )
+
     prefetchOnlyForward = Param.Bool(
         False, "Only prefetch on forward branches (target > PC)"
     )
