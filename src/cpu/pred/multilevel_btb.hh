@@ -27,7 +27,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     BTBLookupResult lookupWithLatency(ThreadID tid, Addr instPC,
                                       BranchType type = BranchType::NoBranch,
                                       bool taken = true,
-                                      Addr blockStartAddr = 0) override;
+                                      Addr blockStartAddr = 0,
+                                      bool basePrediction = true) override;
 
     Addr lookupL1(ThreadID tid, Addr instPC) override;
 
@@ -88,6 +89,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool inclusive;
     const bool newUpdate;
     const bool newPBits;
+    const bool onlyCall;
+    const bool onlyCallAndBackward;
     const bool useCompressedTagFilter;
 
 
@@ -239,7 +242,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      * and prediction match checking.
      */
     BTBLookupResult handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
-                                BranchType type, bool taken);
+                                BranchType type, bool taken, bool basePrediction);
 
     /**
      * Handle pBuffer hit (Policy 4 only).
@@ -247,7 +250,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     BTBLookupResult handlePBufferHit(ThreadID tid, Addr instPC,
                                      BTBEntry *pB_entry, BranchType type,
-                                     bool taken);
+                                     bool taken, bool basePrediction);
 
     /**
      * Handle L2 BTB hit.
@@ -306,7 +309,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         return type == BranchType::CallDirect || type == BranchType::CallIndirect;
     }
 
-    void applyNewPBitsLogic(BranchType type, bool taken, bool &doPfTarget, bool &doPfThrough) const;
+    void applyNewPBitsLogic(BranchType type, bool taken, bool isBackward, bool &doPfTarget, bool &doPfThrough) const;
 
     /** Evict an L1 victim entry to L2, writing back full state. */
     void writebackToL2(ThreadID tid, BTBEntry *victim);

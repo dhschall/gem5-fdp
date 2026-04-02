@@ -296,6 +296,16 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Only perform prefetch if both bits are set and pick path based on predicted direction",
     )
 
+    onlyCall = Param.Bool(
+        False,
+        "Only apply initial prefetch logic to call instructions in applyNewPBitsLogic",
+    )
+
+    onlyCallAndBackward = Param.Bool(
+        False,
+        "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
+    )
+
     useCompressedTagFilter = Param.Bool(
         False,
         "Use compressed tag array for filtering prefetches",

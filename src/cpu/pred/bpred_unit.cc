@@ -229,12 +229,18 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     }
 
     stats.BTBLookups++;
+    Cycles cbp_latency = totalLatency;
+    auto basePrediction = hist->predTaken;
+    if (cbp_latency == Cycles(2)) {
+        basePrediction = !basePrediction;
+    }
     auto btb_res = btb->lookupWithLatency(tid, pc.instAddr(), brType,
                                            hist->predTaken,
-                                           blockStartAddr_[tid]);
+                                           blockStartAddr_[tid],
+                                           basePrediction);
     const PCStateBase * btb_target = btb_res.target;
     // Capture the latency of the conditional predictor
-    Cycles cbp_latency = totalLatency;
+    
     if (useBtbBim) {
 
         // We just "simulate" the latency here
@@ -274,13 +280,13 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                 if (btb_res.latency == Cycles(0)) {
                     if (cbp_latency == Cycles(0)) {
                         stats.l1btbHitBasePred++;
-                    } else if (cbp_latency == Cycles(4)) {
+                    } else if (cbp_latency == Cycles(2)) {
                         stats.l1btbHitOverridePred++;
                     }
                 } else if (btb_res.latency == Cycles(4)) {
                     if (cbp_latency == Cycles(0)) {
                         stats.l2btbHitBasePred++;
-                    } else if (cbp_latency == Cycles(4)) {
+                    } else if (cbp_latency == Cycles(2)) {
                         stats.l2btbHitOverridePred++;
                     }
                 }
