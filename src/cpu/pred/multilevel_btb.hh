@@ -59,9 +59,6 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     AssociativeCache<BTBEntry> pBuffer;
 
-    /** In-flight prefetch : entries waiting for their arrival cycle. */
-    AssociativeCache<BTBEntry> prefetchQueue;
-
     AssociativeCache<BTBEntry> l2btb;
 
     const Cycles l1Latency;
@@ -99,8 +96,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool useCompressedTagFilter;
 
 
-    unsigned currentQueueSize;
-    const unsigned maxPrefetchQueueSize;
+
 
     // Multi-level BTB specific statistics
     struct MultiLevelBTBStats : public statistics::Group
@@ -231,7 +227,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     };
     std::vector<PrevCommitBlockInfo> prevCommitBlockInfo;
 
-    // Deferred prefetch queue: stages prefetches by issueTime before inserting into prefetchQueue.
+    // Deferred prefetch queue: stages prefetches by issueTime before inserting into pBuffer.
     struct DeferredPrefetchEntry {
         Addr pc = 0;
         ThreadID tid = 0;
@@ -296,9 +292,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     void handleShadowL2Hit(ThreadID tid, Addr instPC, BTBEntry* l2_entry, BranchType type);
 
     void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
-
-    /** Drain arrived entries from prefetchQueue into pBuffer / L1 BTB. */
-    void processPrefetchQueue(ThreadID tid);
 
     /** Process deferred prefetches whose issueTime has passed. */
     void processDeferredPrefetchQueue(ThreadID tid);

@@ -173,26 +173,13 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
     pBufferIndexingPolicy = Param.BTBIndexingPolicy(
         BTBSetAssociative(
-            assoc=Parent.pBufferSize,
+            assoc=8,
             num_entries=Parent.pBufferSize,
             set_shift=Parent.instShiftAmt,
             numThreads=1,
         ),
         "Indexing policy of prefetch buffer",
     )
-    prefetchQueueReplPolicy = Param.BaseReplacementPolicy(
-        FIFORP(), "replacement policy of prefetch queue"
-    )
-    prefetchQueueIndexingPolicy = Param.BTBIndexingPolicy(
-        BTBSetAssociative(
-            assoc=Parent.pBufferSize,
-            num_entries=Parent.pBufferSize,
-            set_shift=Parent.instShiftAmt,
-            numThreads=1,
-        ),
-        "Indexing policy of prefetch queue",
-    )
-
     # L2 BTB configuration
     l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
     l2Associativity = Param.Unsigned(8, "L2 BTB associativity")
@@ -306,15 +293,15 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     callFallthrough = Param.Bool(
-        False,
+        True,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     forwardLoopExit = Param.Bool(
-        False,
+        True,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     backwardLoopExit = Param.Bool(
-        False,
+        True,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     allConditional = Param.Bool(
