@@ -282,10 +282,13 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     // For L1 prefetcher's bandwidth issue.
     AssociativeCache<BTBEntry> l1CompressedTags;
+    AssociativeCache<BTBEntry> pbCompressedTags;
 
     bool l1ApproxContains(Addr pc, ThreadID tid);
+    bool pbApproxContains(Addr pc, ThreadID tid);
 
     void l1CompressedTagSync(Addr pc, ThreadID tid);
+    void pbCompressedTagSync(Addr pc, ThreadID tid, bool is_insert);
 
     void performShadowLookup(ThreadID tid, Addr instPC, BranchType type);
 

@@ -209,7 +209,10 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       shadowPBuffer("shadowPrefetchBuffer", p.pBufferSize, 1, p.pBufferReplPolicy, p.pBufferIndexingPolicy, BTBEntry(genTagExtractor(p.pBufferIndexingPolicy))),
       l1CompressedTags("l1CompressedTags", p.l1NumEntries, p.l1Associativity,
             p.compressedTagReplPolicy, p.compressedTagIndexingPolicy,
-            BTBEntry(genTagExtractor(p.compressedTagIndexingPolicy)))
+            BTBEntry(genTagExtractor(p.compressedTagIndexingPolicy))),
+      pbCompressedTags("pbCompressedTags", p.pBufferSize, 8,
+            p.pbCompressedTagReplPolicy, p.pbCompressedTagIndexingPolicy,
+            BTBEntry(genTagExtractor(p.pbCompressedTagIndexingPolicy)))
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
@@ -228,6 +231,7 @@ MultiLevelBTB::memInvalidate()
     shadowL1BTB.clear();
     shadowPBuffer.clear();
     l1CompressedTags.clear();
+    pbCompressedTags.clear();
     deferredPrefetchQueue.clear();
 }
 
@@ -238,7 +242,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
                                 bool takenPrefetched, BranchType triggerType)
 {
     // Skip if already in pBuffer or L1
-    if (l1ApproxContains(pc, tid) || pBuffer.findEntry({pc, tid}))
+    if (l1ApproxContains(pc, tid) || pbApproxContains(pc, tid))
         return;
 
     multilevelstats.pfIssued++;
@@ -256,6 +260,8 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
         multilevelstats.uselessPrefetches[victim->getPrefetchTriggerType()]++;
     }
     pBuffer.insertEntry({pc, tid}, victim);
+    pbCompressedTagSync(pc, tid, true);
+
     victim->update(*l2_entry->target, l2_entry->inst);
     victim->copyDir(*l2_entry);
     victim->setTimestamp(arrivalCycle);  // timestamp tracks arrival cycle
@@ -755,6 +761,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
                 effectiveDepth, baseLatency, type);
     } 
     pBuffer.invalidate(pB_entry);
+    pbCompressedTagSync(instPC, tid, false);
 
     // -------------------------------------------------------------------------
     // Markov prefetch chain
@@ -899,7 +906,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
             if (l1ApproxContains(pfAddr, tid)) continue;
 
-            if (!toL1 && pBuffer.findEntry({pfAddr, tid})) continue;
+            if (!toL1 && pbApproxContains(pfAddr, tid)) continue;
 
             numBranches++;
 
@@ -1200,7 +1207,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
         }
 
         // Skip if already in pBuffer (for pBuffer-targeting prefetches)
-        if (!toL1 && pBuffer.findEntry({successor, tid})) {
+        if (!toL1 && pbApproxContains(successor, tid)) {
             continue;
         }
 
@@ -1603,7 +1610,7 @@ MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid)
         Addr pc = it->pc;
 
         if (!l1ApproxContains(pc, it->tid) &&
-            !pBuffer.findEntry({pc, it->tid})) {
+            !pbApproxContains(pc, it->tid)) {
 
             BTBEntry *l2_pf = l2btb.findEntry({pc, it->tid});
             // Give priority to demand access
@@ -1643,6 +1650,24 @@ MultiLevelBTB::l1ApproxContains(Addr pc, ThreadID tid)
     return approxHit;
 }
 
+bool
+MultiLevelBTB::pbApproxContains(Addr pc, ThreadID tid)
+{
+    // If filter disabled, fall back to exact L1 lookup
+    if (!useCompressedTagFilter)
+        return pBuffer.findEntry({pc, tid}) != nullptr;
+
+    bool approxHit = pbCompressedTags.findEntry({pc, tid}) != nullptr;
+    if (approxHit) {
+        multilevelstats.compressedTagChecks++;
+        bool exactHit = pBuffer.findEntry({pc, tid}) != nullptr;
+        if (!exactHit) {
+            multilevelstats.compressedTagFalsePositives++;
+        }
+    }
+    return approxHit;
+}
+
 void
 MultiLevelBTB::l1CompressedTagSync(Addr pc, ThreadID tid)
 {
@@ -1657,6 +1682,23 @@ MultiLevelBTB::l1CompressedTagSync(Addr pc, ThreadID tid)
         l1CompressedTags.insertEntry({pc, tid}, entry);
     }
     // l1CompressedTags has no need to update target.(no target)
+}
+
+void
+MultiLevelBTB::pbCompressedTagSync(Addr pc, ThreadID tid, bool is_insert)
+{
+    if (!useCompressedTagFilter)
+        return;
+
+    if (is_insert) {
+        BTBEntry *entry = pbCompressedTags.findVictim({pc, tid});
+        pbCompressedTags.insertEntry({pc, tid}, entry);
+    } else {
+        BTBEntry *entry = pbCompressedTags.findEntry({pc, tid});
+        if (entry) {
+            pbCompressedTags.invalidate(entry);
+        }
+    }
 }
 
 } // namespace gem5::branch_prediction

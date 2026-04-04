@@ -297,7 +297,7 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     forwardLoopExit = Param.Bool(
-        True,
+        False,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     backwardLoopExit = Param.Bool(
@@ -305,7 +305,7 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     allConditional = Param.Bool(
-        False,
+        True,
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
     prefetchFwExitOnL1Hit = Param.Bool(
@@ -334,6 +334,20 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
     compressedTagReplPolicy = Param.BaseReplacementPolicy(
         LRURP(), "Compressed tag array replacement policy"
+    )
+
+    pbCompressedTagIndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=8,
+            num_entries=Parent.pBufferSize,
+            set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.compressedTagBits,
+            numThreads=1,
+        ),
+        "Compressed tag array indexing policy for prefetch buffer",
+    )
+    pbCompressedTagReplPolicy = Param.BaseReplacementPolicy(
+        FIFORP(), "Compressed tag array replacement policy for prefetch buffer"
     )
 
 
