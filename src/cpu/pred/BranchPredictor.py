@@ -151,6 +151,8 @@ class MultiLevelBTB(BranchTargetBuffer):
     cxx_class = "gem5::branch_prediction::MultiLevelBTB"
     cxx_header = "cpu/pred/multilevel_btb.hh"
 
+    tagBits = Param.Unsigned(16, "Size of the BTB tags, in bits")
+
     # L1 BTB configuration
     l1NumEntries = Param.Unsigned(128, "Number of L1 BTB entries")
     l1Associativity = Param.Unsigned(8, "L1 BTB associativity")
@@ -163,6 +165,7 @@ class MultiLevelBTB(BranchTargetBuffer):
             assoc=Parent.l1Associativity,
             num_entries=Parent.l1NumEntries,
             set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.tagBits,
             numThreads=1,
         ),
         "L1 BTB indexing policy",
@@ -176,10 +179,12 @@ class MultiLevelBTB(BranchTargetBuffer):
             assoc=8,
             num_entries=Parent.pBufferSize,
             set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.tagBits,
             numThreads=1,
         ),
         "Indexing policy of prefetch buffer",
     )
+
     # L2 BTB configuration
     l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
     l2Associativity = Param.Unsigned(8, "L2 BTB associativity")
@@ -192,6 +197,7 @@ class MultiLevelBTB(BranchTargetBuffer):
             assoc=Parent.l2Associativity,
             num_entries=Parent.l2NumEntries,
             set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.tagBits,
             numThreads=1,
         ),
         "L2 BTB indexing policy",
