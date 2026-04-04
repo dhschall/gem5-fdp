@@ -1633,7 +1633,7 @@ MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken,
             return;
         }
 
-        if (backwardLoopExit && isBackward) {
+        if (backwardLoopExit && isBackward && taken && doPfTarget && doPfThrough) {
             doPfTarget = false;
             doPfThrough = true;
             multilevelstats.pfTriggerBwExit++;

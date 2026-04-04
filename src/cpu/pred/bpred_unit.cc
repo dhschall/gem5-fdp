@@ -283,7 +283,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
                     } else if (cbp_latency == Cycles(2)) {
                         stats.l1btbHitOverridePred++;
                     }
-                } else if (btb_res.latency == Cycles(4)) {
+                } else if (btb_res.latency == Cycles(3)) {
                     if (cbp_latency == Cycles(0)) {
                         stats.l2btbHitBasePred++;
                     } else if (cbp_latency == Cycles(2)) {
@@ -293,7 +293,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
             } else{
                 if (btb_res.latency == Cycles(0)) {
                     stats.l1btbHitBasePred++;
-                } else if (btb_res.latency == Cycles(4)) {
+                } else if (btb_res.latency == Cycles(3)) {
                     stats.l2btbHitBasePred++;
                 }
             }
