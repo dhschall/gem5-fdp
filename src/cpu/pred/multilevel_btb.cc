@@ -310,7 +310,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
 {
     DPRINTF(BTB, "%s(pc=%#x)\n", __func__, instPC);
     if (!deferredPrefetchQueue.empty()) {
-        processDeferredPrefetchQueue(tid);
+        processDeferredPrefetchQueue(tid, instPC);
     }
 
 
@@ -1600,7 +1600,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
 }
 
 void
-MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid)
+MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid, Addr demandPC)
 {
     auto it = deferredPrefetchQueue.begin();
     while (it != deferredPrefetchQueue.end()) {
@@ -1614,7 +1614,7 @@ MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid)
 
             BTBEntry *l2_pf = l2btb.findEntry({pc, it->tid});
             // Give priority to demand access
-            if (it->issueTime != curCycle()) {
+            if (!(it->issueTime == curCycle() && pc == demandPC)) {
                 if (l2_pf) {
                     Cycles arrival = it->issueTime + l2Latency;
                     enqueuePrefetch(pc, it->tid, l2_pf, arrival,

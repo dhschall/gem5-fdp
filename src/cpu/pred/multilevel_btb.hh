@@ -297,7 +297,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
 
     /** Process deferred prefetches whose issueTime has passed. */
-    void processDeferredPrefetchQueue(ThreadID tid);
+    void processDeferredPrefetchQueue(ThreadID tid, Addr demandPC);
 
     /** Enqueue a prefetch into the in-flight queue. */
     void enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
