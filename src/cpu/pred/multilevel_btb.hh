@@ -152,6 +152,13 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar compressedTagFalsePositives;
         statistics::Formula compressedTagFalsePositiveRate;
 
+        // the false negative rate
+        statistics::Scalar compressedTagFalseNegatives;
+        statistics::Formula compressedTagFalseNegativeRate;
+
+        // alias counter
+        statistics::Scalar compressedTagAliases;
+
         // Policy 11: Shadow Statistics (indexed by BranchType)
         statistics::Vector shadowOverlaps;    // Hit in BOTH Real and Shadow
         statistics::Vector spatialOnlyHits;   // Hit in Real, Miss in Shadow

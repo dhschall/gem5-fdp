@@ -41,6 +41,9 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(compressedTagChecks, statistics::units::Count::get(), "Number of compressed tag array checks"),
       ADD_STAT(compressedTagFalsePositives, statistics::units::Count::get(), "Compressed tag array false positives"),
       ADD_STAT(compressedTagFalsePositiveRate, statistics::units::Ratio::get(), "Compressed tag array false positive rate"),
+      ADD_STAT(compressedTagFalseNegatives, statistics::units::Count::get(), "Compressed tag array false negatives"),
+      ADD_STAT(compressedTagFalseNegativeRate, statistics::units::Ratio::get(), "Compressed tag array false negative rate"),
+      ADD_STAT(compressedTagAliases, statistics::units::Count::get(), "Compressed tag array aliases"),
       ADD_STAT(shadowOverlaps, statistics::units::Count::get(), "Hit in BOTH Real and Shadow"),
       ADD_STAT(spatialOnlyHits, statistics::units::Count::get(), "Hit in Real, Miss in Shadow"),
       ADD_STAT(markovOnlyHits, statistics::units::Count::get(), "Miss in Real, Hit in Shadow"),
@@ -136,6 +139,12 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     compressedTagFalsePositives.flags(total);
     compressedTagFalsePositiveRate = compressedTagFalsePositives / compressedTagChecks;
     compressedTagFalsePositiveRate.precision(4);
+
+    compressedTagFalseNegatives.flags(total);
+    compressedTagFalseNegativeRate = compressedTagFalseNegatives / compressedTagChecks;
+    compressedTagFalseNegativeRate.precision(4);
+
+    compressedTagAliases.flags(total);
 
     numBranchesPerPrefetch.init(0, 64, 1);
 }
@@ -1643,13 +1652,21 @@ MultiLevelBTB::l1ApproxContains(Addr pc, ThreadID tid)
         return l1btb.findEntry({pc, tid}) != nullptr;
 
     bool approxHit = l1CompressedTags.findEntry({pc, tid}) != nullptr;
-    if (approxHit) {
-        multilevelstats.compressedTagChecks++;
-        bool exactHit = l1btb.findEntry({pc, tid}) != nullptr;
-        if (!exactHit) {
-            multilevelstats.compressedTagFalsePositives++;
-        }
+    bool exactHit = l1btb.findEntry({pc, tid}) != nullptr;
+
+    multilevelstats.compressedTagChecks++;
+    if (approxHit && !exactHit) {
+        multilevelstats.compressedTagFalsePositives++;
+    } else if (!approxHit && exactHit) {
+        multilevelstats.compressedTagFalseNegatives++;
     }
+
+    auto comp_entry = l1CompressedTags.findEntry({pc, tid});
+    auto full_entry = l1btb.findEntry({pc, tid});
+    if (comp_entry && full_entry && comp_entry->getBranchAddr() != full_entry->getBranchAddr()) {
+        multilevelstats.compressedTagAliases++;
+    }
+
     return approxHit;
 }
 
@@ -1661,13 +1678,21 @@ MultiLevelBTB::pbApproxContains(Addr pc, ThreadID tid)
         return pBuffer.findEntry({pc, tid}) != nullptr;
 
     bool approxHit = pbCompressedTags.findEntry({pc, tid}) != nullptr;
-    if (approxHit) {
-        multilevelstats.compressedTagChecks++;
-        bool exactHit = pBuffer.findEntry({pc, tid}) != nullptr;
-        if (!exactHit) {
-            multilevelstats.compressedTagFalsePositives++;
-        }
+    bool exactHit = pBuffer.findEntry({pc, tid}) != nullptr;
+
+    multilevelstats.compressedTagChecks++;
+    if (approxHit && !exactHit) {
+        multilevelstats.compressedTagFalsePositives++;
+    } else if (!approxHit && exactHit) {
+        multilevelstats.compressedTagFalseNegatives++;
     }
+
+    auto comp_entry = pbCompressedTags.findEntry({pc, tid});
+    auto full_entry = pBuffer.findEntry({pc, tid});
+    if (comp_entry && full_entry && comp_entry->getBranchAddr() != full_entry->getBranchAddr()) {
+        multilevelstats.compressedTagAliases++;
+    }
+
     return approxHit;
 }
 
