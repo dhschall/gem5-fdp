@@ -287,8 +287,9 @@ class MultiLevelBTB : public BranchTargetBuffer
     bool l1ApproxContains(Addr pc, ThreadID tid);
     bool pbApproxContains(Addr pc, ThreadID tid);
 
-    void l1CompressedTagSync(Addr pc, ThreadID tid);
-    void pbCompressedTagSync(Addr pc, ThreadID tid, bool is_insert);
+    enum class TagAction { Hit, Insert, Invalidate };
+    void l1CompressedTagSync(Addr pc, ThreadID tid, TagAction action);
+    void pbCompressedTagSync(Addr pc, ThreadID tid, TagAction action);
 
     void performShadowLookup(ThreadID tid, Addr instPC, BranchType type);
 
