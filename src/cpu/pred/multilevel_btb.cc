@@ -1643,7 +1643,6 @@ void
 MultiLevelBTB::processDeferredPrefetchQueue()
 {
     schedule(pfqEvent, clockEdge(Cycles(1)));
-
     if (!deferredPrefetchQueue.empty()) {
         std::vector<uint64_t> activeChains;
         for (const auto& entry : deferredPrefetchQueue) {
@@ -1701,7 +1700,7 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                     chainEntry->remainingPrefetches--;
                     Addr targetAddr = l2_pf->target->instAddr();
                     Addr fallThrough = pc + minInstSize;
-                    Cycles nextBaseLatency = arrival;
+                    Cycles nextBaseLatency = (arrival > curCycle()) ? (arrival - curCycle()) : Cycles(0);
                     BranchType l2PfType = getBranchType(l2_pf->inst);
 
                     if (l2_pf->getPrefetchTarget()) {
