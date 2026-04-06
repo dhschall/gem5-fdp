@@ -68,7 +68,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(pfTriggerBwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerFwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerCondAlt, statistics::units::Ratio::get(), "number of L2 updates"),
-
+      ADD_STAT(prefetchesPerTrigger, statistics::units::Count::get(), "Number of prefetches generated per trigger"),
+      ADD_STAT(parallelChains, statistics::units::Count::get(), "Number of parallel prefetch chains active"),
 
       btb(btb)
 {
@@ -147,6 +148,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     compressedTagAliases.flags(total);
 
     numBranchesPerPrefetch.init(0, 64, 1);
+    prefetchesPerTrigger.init(0, 512, 4); // Buckets from 0 to 512 with step 4
+    parallelChains.init(0, 128, 1);       // Buckets from 0 to 128 with step 1
 }
 
 void
@@ -606,12 +609,21 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         prevBwBranch.is_bw = isBackward;
         prevBwBranch.is_l2_miss = false;
 
-        if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type);
-            baseLatency = baseLatency + Cycles(1);
+        if (doPfTarget || doPfThrough) {
+            uint64_t currentChainId = nextChainId++;
+            unsigned prefetchesGen = 0;
+
+            if (doPfTarget) {
+                prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                baseLatency = baseLatency + Cycles(1);
+            }
+            if (doPfThrough)
+                prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                
+            if (prefetchesGen > 0) {
+                multilevelstats.prefetchesPerTrigger.sample(prefetchesGen);
+            }
         }
-        if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type);
     }
 
     if (prefetchOnL1Hit && finalMarkov) {
@@ -762,14 +774,24 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
 
         bool triggeredByPBHit = !isInFlight || coveredCycle > Cycles(0);
         auto baseLatency = remainingTime;
-        if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                effectiveDepth, baseLatency, type);
-            baseLatency = baseLatency + Cycles(1);
+        if (doPfTarget || doPfThrough) {
+            uint64_t currentChainId = nextChainId++;
+            unsigned prefetchesGen = 0;
+            
+            if (doPfTarget) {
+                prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
+                    effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                baseLatency = baseLatency + Cycles(1);
+            }
+            if (doPfThrough) {
+                prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
+                    effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+            }
+            
+            if (prefetchesGen > 0) {
+                multilevelstats.prefetchesPerTrigger.sample(prefetchesGen);
+            }
         }
-        if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                effectiveDepth, baseLatency, type);
     } 
     pBuffer.invalidate(pB_entry);
     pbCompressedTagSync(instPC, tid, TagAction::Invalidate);
@@ -1012,14 +1034,24 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         prevBwBranch.is_bw = isBackward;
         prevBwBranch.is_l2_miss = true;
 
-        if (doPfTarget) {
-            prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
-                baseLatency, type);
-            baseLatency = baseLatency + Cycles(1);
+        if (doPfTarget || doPfThrough) {
+            uint64_t currentChainId = nextChainId++;
+            unsigned prefetchesGen = 0;
+            
+            if (doPfTarget) {
+                prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
+                    baseLatency, type, currentChainId, &prefetchesGen);
+                baseLatency = baseLatency + Cycles(1);
+            }
+            if (doPfThrough) {
+                prefetchViaBBMap(tid, fallThrough, false, false, effectiveDepth,
+                    baseLatency, type, currentChainId, &prefetchesGen);
+            }
+            
+            if (prefetchesGen > 0) {
+                multilevelstats.prefetchesPerTrigger.sample(prefetchesGen);
+            }
         }
-        if (doPfThrough)
-            prefetchViaBBMap(tid, fallThrough, false, false, effectiveDepth,
-                baseLatency, type);
     }
 
 
@@ -1546,7 +1578,7 @@ void
 MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                                 bool isTakenPath, bool triggeredByPBHit,
                                 int depth, Cycles baseLatency,
-                                BranchType triggerType)
+                                BranchType triggerType, uint64_t chainId, unsigned *prefetchesGenerated)
 {
     auto it = bbMap_->find(lookupAddr);
     if (it == bbMap_->end())
@@ -1580,6 +1612,11 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     dfEntry.triggeredByPBHit = triggeredByPBHit;
     dfEntry.takenPrefetched = isTakenPath;
     dfEntry.triggerType = triggerType;
+    dfEntry.chainId = chainId;
+
+    if (prefetchesGenerated) {
+        (*prefetchesGenerated)++;
+    }
 
     // Sorted insertion by issueTime (ascending)
     auto pos = std::lower_bound(deferredPrefetchQueue.begin(),
@@ -1601,12 +1638,12 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
         BranchType l2PfType = getBranchType(l2_pf->inst);
             if (l2_pf->getPrefetchTarget()) {
                 prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                             depth - 1, nextLatency, l2PfType);
+                             depth - 1, nextLatency, l2PfType, chainId, prefetchesGenerated);
                 nextLatency = nextLatency + Cycles(1);
             }
             if (l2_pf->getPrefetchThrough()) {
                 prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                             depth - 1, nextLatency, l2PfType);
+                             depth - 1, nextLatency, l2PfType, chainId, prefetchesGenerated);
         }
     }
 }
@@ -1614,6 +1651,16 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
 void
 MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid, Addr demandPC)
 {
+    if (!deferredPrefetchQueue.empty()) {
+        std::vector<uint64_t> activeChains;
+        for (const auto& entry : deferredPrefetchQueue) {
+            if (entry.chainId != 0 && std::find(activeChains.begin(), activeChains.end(), entry.chainId) == activeChains.end()) {
+                activeChains.push_back(entry.chainId);
+            }
+        }
+        multilevelstats.parallelChains.sample(activeChains.size());
+    }
+
     auto it = deferredPrefetchQueue.begin();
     while (it != deferredPrefetchQueue.end()) {
         if (!noPrefetchLatency && it->issueTime > curCycle())

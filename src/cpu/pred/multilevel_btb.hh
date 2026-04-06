@@ -195,6 +195,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar pfTriggerFwExit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerCondAlt;  // branch not in L1 at commit, found in L2
 
+        statistics::Distribution prefetchesPerTrigger;
+        statistics::Distribution parallelChains;
 
         MultiLevelBTB *btb;
 
@@ -243,8 +245,10 @@ class MultiLevelBTB : public BranchTargetBuffer
         bool triggeredByPBHit = false;
         bool takenPrefetched = false;
         BranchType triggerType = BranchType::NoBranch;
+        uint64_t chainId = 0;
     };
     std::vector<DeferredPrefetchEntry> deferredPrefetchQueue;
+    uint64_t nextChainId = 1;
 
     friend struct MultiLevelBTBStats;
 
@@ -347,10 +351,11 @@ class MultiLevelBTB : public BranchTargetBuffer
      * @param isTakenPath true → takenPathPrefetches stat; false → notTakenPathPrefetches.
      * @param baseLatency Cumulative latency for depth > 1 prefetches.
      */
-    void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath,
+     void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath,
                           bool triggeredByPBHit, int depth=1,
                           Cycles baseLatency = Cycles(0),
-                          BranchType triggerType = BranchType::NoBranch);
+                          BranchType triggerType = BranchType::NoBranch,
+                          uint64_t chainId = 0, unsigned *prefetchesGenerated = nullptr);
 
 };
 } // namespace gem5::branch_prediction
