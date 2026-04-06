@@ -70,7 +70,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool prefetchOnlyCB;
     const bool prefetchOnlyUB;
     const bool togetherArrive;
-    const bool prefetchBothForCall;
     const bool prefetchOnL1Hit;
     const bool prefetchOnPrefetchHit;
     const bool cleanBitsOnL1Promotion;

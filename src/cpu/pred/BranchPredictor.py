@@ -226,10 +226,6 @@ class MultiLevelBTB(BranchTargetBuffer):
 
     prefetchOnlyUB = Param.Bool(False, "Only prefetch unconditional branches")
 
-    prefetchBothForCall = Param.Bool(
-        False, "Prefetch both directions for Call"
-    )
-
     prefetchOnL1Hit = Param.Bool(
         False, "Use prefetch bits to prefetch on L1 hit"
     )

@@ -186,7 +186,6 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchOnlyCB(p.prefetchOnlyCB),
       prefetchOnlyUB(p.prefetchOnlyUB),
       togetherArrive(p.togetherArrive),
-      prefetchBothForCall(p.prefetchBothForCall),
       prefetchOnL1Hit(p.prefetchOnL1Hit),
       prefetchOnPrefetchHit(p.prefetchOnPrefetchHit),
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
@@ -487,9 +486,6 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
 
     if (usesPrefetchBitPolicy() && !l1_existing) {
         l1_victim->setPrefetchTarget(true);
-        if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-            l1_victim->setPrefetchThrough(true);
-        }
     }
 
     if (l1PrefetchPolicy == 11) {
@@ -519,9 +515,6 @@ MultiLevelBTB::update2(ThreadID tid, Addr instPC,
         if (usesPrefetchBitPolicy()) {
             entry->setPrefetchTarget(true);
             entry->setPrefetchThrough(false);
-            if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-                entry->setPrefetchThrough(true);
-            }
         }
     }
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
@@ -544,9 +537,6 @@ MultiLevelBTB::update2(ThreadID tid, Addr instPC,
         if (usesPrefetchBitPolicy()) {
             entry->setPrefetchTarget(true);
             entry->setPrefetchThrough(false);
-            if (prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-                entry->setPrefetchThrough(true);
-            }
         }
     }
     entry->update(target, inst);
@@ -1358,9 +1348,6 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
             // Accumulative: only set bits to 1, never clear
             if (actuallyTaken) {
                 l1_entry->setPrefetchTarget(true);
-                if ( prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-                    l1_entry->setPrefetchThrough(true);
-                }
             } else {
                 l1_entry->setPrefetchThrough(true);
             }
@@ -1386,9 +1373,6 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
         if (!cleanBitsOnL1Promotion) {
             if (actuallyTaken) {
                 l2_entry->setPrefetchTarget(true);
-                if ( prefetchBothForCall && (type == BranchType::CallDirect || type == BranchType::CallIndirect)) {
-                    l2_entry->setPrefetchThrough(true);
-                }
             } else {
                 l2_entry->setPrefetchThrough(true);
             }
