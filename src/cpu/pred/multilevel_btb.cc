@@ -241,7 +241,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
 void
 MultiLevelBTB::startup()
 {
-    schedule(pfqEvent, clockEdge());
+    schedule(pfqEvent, clockEdge(Cycles(1)));
 }
 
 void
@@ -1654,42 +1654,47 @@ MultiLevelBTB::processDeferredPrefetchQueue()
         multilevelstats.parallelChains.sample(activeChains.size());
     }
 
-    auto it = deferredPrefetchQueue.begin();
-    while (it != deferredPrefetchQueue.end()) {
-        if (!noPrefetchLatency && it->issueTime > curCycle())
+    auto readyEnd = deferredPrefetchQueue.begin();
+    while (readyEnd != deferredPrefetchQueue.end()) {
+        if (!noPrefetchLatency && readyEnd->issueTime > curCycle())
             break;
+        ++readyEnd;
+    }
 
-        Addr pc = it->pc;
+    std::vector<DeferredPrefetchEntry> readyEntries(deferredPrefetchQueue.begin(), readyEnd);
+    deferredPrefetchQueue.erase(deferredPrefetchQueue.begin(), readyEnd);
+
+    for (auto& entry : readyEntries) {
+        Addr pc = entry.pc;
         bool validChain = true;
         ActiveChainEntry* chainEntry = nullptr;
 
-        if (it->chainId != 0 && maxChainTrackerEntries > 0) {
-            int tableIdx = it->chainId % maxChainTrackerEntries;
+        if (entry.chainId != 0 && maxChainTrackerEntries > 0) {
+            int tableIdx = entry.chainId % maxChainTrackerEntries;
             chainEntry = &chainTable[tableIdx];
-            if (chainEntry->chainId != it->chainId) {
+            if (chainEntry->chainId != entry.chainId) {
                 validChain = false;
             }
         }
 
         if (!validChain) {
-            it = deferredPrefetchQueue.erase(it);
             continue;
         }
 
-        bool hit = l1ApproxContains(pc, it->tid) || pbApproxContains(pc, it->tid);
+        bool hit = l1ApproxContains(pc, entry.tid) || pbApproxContains(pc, entry.tid);
 
         if (hit && chainEntry && killFullChainOnL1Hit) {
             chainEntry->remainingPrefetches = 0;
         }
 
         if (!hit) {
-            BTBEntry *l2_pf = l2btb.findEntry({pc, it->tid});
+            BTBEntry *l2_pf = l2btb.findEntry({pc, entry.tid});
             if (l2_pf) {
-                Cycles arrival = it->issueTime + l2Latency;
-                enqueuePrefetch(pc, it->tid, l2_pf, arrival,
-                               it->toL1, it->triggeredByPBHit,
-                               0, it->takenPrefetched,
-                               it->triggerType);
+                Cycles arrival = entry.issueTime + l2Latency;
+                enqueuePrefetch(pc, entry.tid, l2_pf, arrival,
+                               entry.toL1, entry.triggeredByPBHit,
+                               0, entry.takenPrefetched,
+                               entry.triggerType);
                 multilevelstats.pfL2LookupHit++;
 
                 if (chainEntry && chainEntry->remainingPrefetches > 0) {
@@ -1700,21 +1705,19 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                     BranchType l2PfType = getBranchType(l2_pf->inst);
 
                     if (l2_pf->getPrefetchTarget()) {
-                        prefetchViaBBMap(it->tid, targetAddr, true, it->triggeredByPBHit,
-                                     1, nextBaseLatency, l2PfType, it->chainId, nullptr);
+                        prefetchViaBBMap(entry.tid, targetAddr, true, entry.triggeredByPBHit,
+                                     1, nextBaseLatency, l2PfType, entry.chainId, nullptr);
                         nextBaseLatency += Cycles(1);
                     }
                     if (l2_pf->getPrefetchThrough()) {
-                        prefetchViaBBMap(it->tid, fallThrough, false, it->triggeredByPBHit,
-                                     1, nextBaseLatency, l2PfType, it->chainId, nullptr);
+                        prefetchViaBBMap(entry.tid, fallThrough, false, entry.triggeredByPBHit,
+                                     1, nextBaseLatency, l2PfType, entry.chainId, nullptr);
                     }
                 }
             } else {
                 multilevelstats.pfL2LookupMiss++;
             }
         }
-
-        it = deferredPrefetchQueue.erase(it);
     }
 }
 
