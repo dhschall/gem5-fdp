@@ -191,6 +191,8 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
       noPrefetchLatency(p.noPrefetchLatency),
       prefetchDepth(p.prefetchDepth),
+      killFullChainOnL1Hit(p.killFullChainOnL1Hit),
+      maxChainTrackerEntries(p.maxChainTrackerEntries),
       depthOnlyCall(p.depthOnlyCall),
       prefetchOnlyForward(p.prefetchOnlyForward),
       finalMarkov(p.finalMarkov),
@@ -223,14 +225,23 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
             BTBEntry(genTagExtractor(p.compressedTagIndexingPolicy))),
       pbCompressedTags("pbCompressedTags", p.pBufferSize, 8,
             p.pbCompressedTagReplPolicy, p.pbCompressedTagIndexingPolicy,
-            BTBEntry(genTagExtractor(p.pbCompressedTagIndexingPolicy)))
+            BTBEntry(genTagExtractor(p.pbCompressedTagIndexingPolicy))),
+      pfqEvent([this]{ processDeferredPrefetchQueue(); }, name())
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
 
+    chainTable.resize(maxChainTrackerEntries);
+
     if (!isPowerOf2(p.l1NumEntries) || !isPowerOf2(p.l2NumEntries)) {
         fatal("BTB entries must be power of 2!");
     }
+}
+
+void
+MultiLevelBTB::startup()
+{
+    schedule(pfqEvent, clockEdge());
 }
 
 void
@@ -244,6 +255,10 @@ MultiLevelBTB::memInvalidate()
     l1CompressedTags.clear();
     pbCompressedTags.clear();
     deferredPrefetchQueue.clear();
+    for (auto& entry : chainTable) {
+        entry.chainId = 0;
+        entry.remainingPrefetches = 0;
+    }
 }
 
 void
@@ -320,9 +335,6 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                                  bool taken, Addr blockStartAddr, bool basePrediction)
 {
     DPRINTF(BTB, "%s(pc=%#x)\n", __func__, instPC);
-    if (!deferredPrefetchQueue.empty()) {
-        processDeferredPrefetchQueue(tid, instPC);
-    }
 
 
     stats.lookups[type]++;
@@ -601,6 +613,11 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
 
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
+            if (maxChainTrackerEntries > 0) {
+                int tableIdx = currentChainId % maxChainTrackerEntries;
+                chainTable[tableIdx].chainId = currentChainId;
+                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
+            }
             unsigned prefetchesGen = 0;
 
             if (doPfTarget) {
@@ -766,6 +783,11 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         auto baseLatency = remainingTime;
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
+            if (maxChainTrackerEntries > 0) {
+                int tableIdx = currentChainId % maxChainTrackerEntries;
+                chainTable[tableIdx].chainId = currentChainId;
+                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
+            }
             unsigned prefetchesGen = 0;
             
             if (doPfTarget) {
@@ -1026,6 +1048,11 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
+            if (maxChainTrackerEntries > 0) {
+                int tableIdx = currentChainId % maxChainTrackerEntries;
+                chainTable[tableIdx].chainId = currentChainId;
+                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
+            }
             unsigned prefetchesGen = 0;
             
             if (doPfTarget) {
@@ -1610,31 +1637,13 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                                     return a.issueTime < b.issueTime;
                                 });
     deferredPrefetchQueue.insert(pos, dfEntry);
-
-    if (depth > 1) {
-        Addr targetAddr = l2_pf->target->instAddr();
-        Addr fallThrough = pfPC + minInstSize;
-        Cycles nextLatency = baseLatency + l2Latency;
-        if (togetherArrive) {
-            nextLatency = baseLatency;
-        }
-
-        BranchType l2PfType = getBranchType(l2_pf->inst);
-            if (l2_pf->getPrefetchTarget()) {
-                prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                             depth - 1, nextLatency, l2PfType, chainId, prefetchesGenerated);
-                nextLatency = nextLatency + Cycles(1);
-            }
-            if (l2_pf->getPrefetchThrough()) {
-                prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                             depth - 1, nextLatency, l2PfType, chainId, prefetchesGenerated);
-        }
-    }
 }
 
 void
-MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid, Addr demandPC)
+MultiLevelBTB::processDeferredPrefetchQueue()
 {
+    schedule(pfqEvent, clockEdge());
+
     if (!deferredPrefetchQueue.empty()) {
         std::vector<uint64_t> activeChains;
         for (const auto& entry : deferredPrefetchQueue) {
@@ -1651,23 +1660,57 @@ MultiLevelBTB::processDeferredPrefetchQueue(ThreadID tid, Addr demandPC)
             break;
 
         Addr pc = it->pc;
+        bool validChain = true;
+        ActiveChainEntry* chainEntry = nullptr;
 
-        if (!l1ApproxContains(pc, it->tid) &&
-            !pbApproxContains(pc, it->tid)) {
+        if (it->chainId != 0 && maxChainTrackerEntries > 0) {
+            int tableIdx = it->chainId % maxChainTrackerEntries;
+            chainEntry = &chainTable[tableIdx];
+            if (chainEntry->chainId != it->chainId) {
+                validChain = false;
+            }
+        }
 
+        if (!validChain) {
+            it = deferredPrefetchQueue.erase(it);
+            continue;
+        }
+
+        bool hit = l1ApproxContains(pc, it->tid) || pbApproxContains(pc, it->tid);
+
+        if (hit && chainEntry && killFullChainOnL1Hit) {
+            chainEntry->remainingPrefetches = 0;
+        }
+
+        if (!hit) {
             BTBEntry *l2_pf = l2btb.findEntry({pc, it->tid});
-            // Give priority to demand access
-            if (!(it->issueTime == curCycle() && pc == demandPC)) {
-                if (l2_pf) {
-                    Cycles arrival = it->issueTime + l2Latency;
-                    enqueuePrefetch(pc, it->tid, l2_pf, arrival,
-                                   it->toL1, it->triggeredByPBHit,
-                                   0, it->takenPrefetched,
-                                   it->triggerType);
-                    multilevelstats.pfL2LookupHit++;
-                } else {
-                    multilevelstats.pfL2LookupMiss++;
+            if (l2_pf) {
+                Cycles arrival = it->issueTime + l2Latency;
+                enqueuePrefetch(pc, it->tid, l2_pf, arrival,
+                               it->toL1, it->triggeredByPBHit,
+                               0, it->takenPrefetched,
+                               it->triggerType);
+                multilevelstats.pfL2LookupHit++;
+
+                if (chainEntry && chainEntry->remainingPrefetches > 0) {
+                    chainEntry->remainingPrefetches--;
+                    Addr targetAddr = l2_pf->target->instAddr();
+                    Addr fallThrough = pc + minInstSize;
+                    Cycles nextBaseLatency = arrival;
+                    BranchType l2PfType = getBranchType(l2_pf->inst);
+
+                    if (l2_pf->getPrefetchTarget()) {
+                        prefetchViaBBMap(it->tid, targetAddr, true, it->triggeredByPBHit,
+                                     1, nextBaseLatency, l2PfType, it->chainId, nullptr);
+                        nextBaseLatency += Cycles(1);
+                    }
+                    if (l2_pf->getPrefetchThrough()) {
+                        prefetchViaBBMap(it->tid, fallThrough, false, it->triggeredByPBHit,
+                                     1, nextBaseLatency, l2PfType, it->chainId, nullptr);
+                    }
                 }
+            } else {
+                multilevelstats.pfL2LookupMiss++;
             }
         }
 

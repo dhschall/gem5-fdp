@@ -51,6 +51,8 @@ class MultiLevelBTB : public BranchTargetBuffer
                              Addr targetAddr, unsigned instSize, bool actuallyTaken, bool wasL2Hit);
     void trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTaken, BranchType type);
 
+    void startup() override;
+
   private:
     ConditionalPredictor *cPred = nullptr;
     const std::unordered_map<Addr, Addr> *bbMap_ = nullptr;
@@ -75,6 +77,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool cleanBitsOnL1Promotion;
     const bool noPrefetchLatency;
     const unsigned prefetchDepth;
+    const bool killFullChainOnL1Hit;
+    const unsigned maxChainTrackerEntries;
     const bool depthOnlyCall;
     const bool prefetchOnlyForward;
     const bool finalMarkov;
@@ -249,6 +253,12 @@ class MultiLevelBTB : public BranchTargetBuffer
     std::vector<DeferredPrefetchEntry> deferredPrefetchQueue;
     uint64_t nextChainId = 1;
 
+    struct ActiveChainEntry {
+        uint64_t chainId = 0;
+        unsigned remainingPrefetches = 0;
+    };
+    std::vector<ActiveChainEntry> chainTable;
+
     friend struct MultiLevelBTBStats;
 
     /**
@@ -308,7 +318,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     void prefetchShadowMarkovSuccessor(ThreadID tid, Addr pc, unsigned numSuccessors, BranchType predType);
 
     /** Process deferred prefetches whose issueTime has passed. */
-    void processDeferredPrefetchQueue(ThreadID tid, Addr demandPC);
+    void processDeferredPrefetchQueue();
+    EventFunctionWrapper pfqEvent;
 
     /** Enqueue a prefetch into the in-flight queue. */
     void enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
