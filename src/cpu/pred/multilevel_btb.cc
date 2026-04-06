@@ -1642,7 +1642,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
 void
 MultiLevelBTB::processDeferredPrefetchQueue()
 {
-    schedule(pfqEvent, clockEdge());
+    schedule(pfqEvent, clockEdge(Cycles(1)));
 
     if (!deferredPrefetchQueue.empty()) {
         std::vector<uint64_t> activeChains;
