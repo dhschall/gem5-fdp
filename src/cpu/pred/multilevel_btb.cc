@@ -2,6 +2,7 @@
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/BTB.hh"
+#include "sim/eventq.hh"
 #include <algorithm>
 
 namespace gem5::branch_prediction
@@ -68,6 +69,10 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(pfTriggerBwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerFwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerCondAlt, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(skipDuetoDemand, statistics::units::Count::get(),
+               "Prefetch entries dropped: demand access to same PC"),
+      ADD_STAT(skipDuetoPresence, statistics::units::Count::get(),
+               "Prefetch entries skipped: PC already present in L1 or pBuffer"),
       ADD_STAT(prefetchesPerTrigger, statistics::units::Count::get(), "Number of prefetches generated per trigger"),
       ADD_STAT(parallelChains, statistics::units::Count::get(), "Number of parallel prefetch chains active"),
 
@@ -148,8 +153,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     compressedTagAliases.flags(total);
 
     numBranchesPerPrefetch.init(0, 64, 1);
-    prefetchesPerTrigger.init(0, 512, 4); // Buckets from 0 to 512 with step 4
-    parallelChains.init(0, 128, 1);       // Buckets from 0 to 128 with step 1
+    prefetchesPerTrigger.init(0, 64, 1); // Buckets from 0 to 512 with step 4
+    parallelChains.init(0, 32, 1);       // Buckets from 0 to 128 with step 1
 }
 
 void
@@ -226,16 +231,15 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       pbCompressedTags("pbCompressedTags", p.pBufferSize, 8,
             p.pbCompressedTagReplPolicy, p.pbCompressedTagIndexingPolicy,
             BTBEntry(genTagExtractor(p.pbCompressedTagIndexingPolicy))),
-      pfqEvent([this]{ processDeferredPrefetchQueue(); }, name())
+      pfqEvent([this]{ processDeferredPrefetchQueue(); }, name(),
+               false, Event::CPU_Tick_Pri + 1)
 {
     DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
             p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
 
     chainTable.resize(maxChainTrackerEntries);
 
-    if (!isPowerOf2(p.l1NumEntries) || !isPowerOf2(p.l2NumEntries)) {
-        fatal("BTB entries must be power of 2!");
-    }
+    
 }
 
 void
@@ -335,6 +339,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
                                  bool taken, Addr blockStartAddr, bool basePrediction)
 {
     DPRINTF(BTB, "%s(pc=%#x)\n", __func__, instPC);
+    recordDemandLookup(instPC);
 
 
     stats.lookups[type]++;
@@ -1675,10 +1680,20 @@ MultiLevelBTB::processDeferredPrefetchQueue()
             continue;
         }
 
+        // Skip prefetch if the same PC is being demand-accessed this cycle.
+        if (isDemandAccess(pc)) {
+            if (chainEntry && killFullChainOnL1Hit) {
+                chainEntry->remainingPrefetches = 0;
+            }
+            multilevelstats.skipDuetoDemand++;
+            continue;
+        }
+
         bool hit = l1ApproxContains(pc, entry.tid) || pbApproxContains(pc, entry.tid);
 
         if (hit && chainEntry && killFullChainOnL1Hit) {
             chainEntry->remainingPrefetches = 0;
+            multilevelstats.skipDuetoPresence++;
         }
 
         if (!hit) {
@@ -1713,6 +1728,7 @@ MultiLevelBTB::processDeferredPrefetchQueue()
             }
         }
     }
+    currentCycleDemand.clear();
 }
 
 bool

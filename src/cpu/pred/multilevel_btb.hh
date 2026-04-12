@@ -7,6 +7,7 @@
 #include "cpu/pred/btb_entry.hh"
 #include "params/MultiLevelBTB.hh"
 #include <deque>
+#include <unordered_set>
 #include <vector>
 
 namespace gem5::branch_prediction
@@ -198,6 +199,9 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar pfTriggerFwExit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerCondAlt;  // branch not in L1 at commit, found in L2
 
+        statistics::Scalar skipDuetoDemand;
+        statistics::Scalar skipDuetoPresence;
+
         statistics::Distribution prefetchesPerTrigger;
         statistics::Distribution parallelChains;
 
@@ -258,6 +262,16 @@ class MultiLevelBTB : public BranchTargetBuffer
         unsigned remainingPrefetches = 0;
     };
     std::vector<ActiveChainEntry> chainTable;
+
+    std::unordered_set<Addr> currentCycleDemand;
+
+    void recordDemandLookup(Addr pc) {
+        currentCycleDemand.insert(pc);
+    }
+
+    bool isDemandAccess(Addr pc) const {
+        return currentCycleDemand.find(pc) != currentCycleDemand.end();
+    }
 
     friend struct MultiLevelBTBStats;
 
