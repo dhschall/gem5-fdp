@@ -126,11 +126,11 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
         markovOnlyHitsByPredType.subname(i, enums::BranchTypeStrings[i]);
     }
     // Unified prefetch coverage formula
-    prefetchCoverage = prefetchHits.total() / (prefetchHits.total() + l1MissL2Hits);
+    prefetchCoverage = sum(prefetchHits) / (sum(prefetchHits) + l1MissL2Hits);
     prefetchCoverage.precision(3);
 
     // pBuffer useless rate
-    pBufferUselessRate = uselessPrefetches.total() / totalPrefetches;
+    pBufferUselessRate = sum(uselessPrefetches) / totalPrefetches;
     pBufferUselessRate.precision(3);
 
     // L1 useless prefetch rate (for pBuffer-installed entries)
@@ -618,21 +618,14 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
 
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
-            if (maxChainTrackerEntries > 0) {
-                int tableIdx = currentChainId % maxChainTrackerEntries;
-                auto issuedPF = effectiveDepth - chainTable[tableIdx].remainingPrefetches;
-                multilevelstats.prefetchesPerTrigger.sample(issuedPF);
-                chainTable[tableIdx].chainId = currentChainId;
-                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
-            }
-            unsigned prefetchesGen = 0;
 
             if (doPfTarget) {
-                prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type, currentChainId, true);
                 baseLatency = baseLatency + Cycles(1);
             }
-            if (doPfThrough)
-                prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+            if (doPfThrough) {
+                prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type, currentChainId, true);
+            }
         }
     }
 
@@ -786,23 +779,15 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         auto baseLatency = remainingTime;
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
-            if (maxChainTrackerEntries > 0) {
-                int tableIdx = currentChainId % maxChainTrackerEntries;
-                auto issuedPF = effectiveDepth - chainTable[tableIdx].remainingPrefetches;
-                multilevelstats.prefetchesPerTrigger.sample(issuedPF);
-                chainTable[tableIdx].chainId = currentChainId;
-                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
-            }
-            unsigned prefetchesGen = 0;
             
             if (doPfTarget) {
                 prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                    effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                    effectiveDepth, baseLatency, type, currentChainId, true);
                 baseLatency = baseLatency + Cycles(1);
             }
             if (doPfThrough) {
                 prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                    effectiveDepth, baseLatency, type, currentChainId, &prefetchesGen);
+                    effectiveDepth, baseLatency, type, currentChainId, true);
             }
         }
     } 
@@ -1049,25 +1034,16 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
         if (doPfTarget || doPfThrough) {
             uint64_t currentChainId = nextChainId++;
-            if (maxChainTrackerEntries > 0) {
-                int tableIdx = currentChainId % maxChainTrackerEntries;
-                auto issuedPF = effectiveDepth - chainTable[tableIdx].remainingPrefetches;
-                multilevelstats.prefetchesPerTrigger.sample(issuedPF);
-                chainTable[tableIdx].chainId = currentChainId;
-                chainTable[tableIdx].remainingPrefetches = effectiveDepth;
-            }
-            unsigned prefetchesGen = 0;
             
             if (doPfTarget) {
                 prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
-                    baseLatency, type, currentChainId, &prefetchesGen);
+                    baseLatency, type, currentChainId, true);
                 baseLatency = baseLatency + Cycles(1);
             }
             if (doPfThrough) {
                 prefetchViaBBMap(tid, fallThrough, false, false, effectiveDepth,
-                    baseLatency, type, currentChainId, &prefetchesGen);
+                    baseLatency, type, currentChainId, true);
             }
-            
         }
     }
 
@@ -1589,7 +1565,8 @@ void
 MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                                 bool isTakenPath, bool triggeredByPBHit,
                                 int depth, Cycles baseLatency,
-                                BranchType triggerType, uint64_t chainId, unsigned *prefetchesGenerated)
+                                BranchType triggerType, uint64_t chainId,
+                                bool allocateChain)
 {
     auto it = bbMap_->find(lookupAddr);
     if (it == bbMap_->end())
@@ -1624,10 +1601,8 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     dfEntry.takenPrefetched = isTakenPath;
     dfEntry.triggerType = triggerType;
     dfEntry.chainId = chainId;
-
-    if (prefetchesGenerated) {
-        (*prefetchesGenerated)++;
-    }
+    dfEntry.allocateChain = allocateChain;
+    dfEntry.depth = depth;
 
     // Sorted insertion by issueTime (ascending)
     auto pos = std::lower_bound(deferredPrefetchQueue.begin(),
@@ -1672,7 +1647,9 @@ MultiLevelBTB::processDeferredPrefetchQueue()
             int tableIdx = entry.chainId % maxChainTrackerEntries;
             chainEntry = &chainTable[tableIdx];
             if (chainEntry->chainId != entry.chainId) {
-                validChain = false;
+                if (!entry.allocateChain) {
+                    validChain = false;
+                }
             }
         }
 
@@ -1690,10 +1667,8 @@ MultiLevelBTB::processDeferredPrefetchQueue()
         }
 
         bool hit = l1ApproxContains(pc, entry.tid) || pbApproxContains(pc, entry.tid);
-
         if (hit && chainEntry && killFullChainOnL1Hit) {
             chainEntry->remainingPrefetches = 0;
-            multilevelstats.skipDuetoPresence++;
         }
 
         if (!hit) {
@@ -1706,6 +1681,17 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                                entry.triggerType);
                 multilevelstats.pfL2LookupHit++;
 
+                if (entry.allocateChain && maxChainTrackerEntries > 0) {
+                    int tableIdx = entry.chainId % maxChainTrackerEntries;
+                    if (chainTable[tableIdx].chainId != entry.chainId) {
+                        auto issuedPF = entry.depth - chainTable[tableIdx].remainingPrefetches;
+                        multilevelstats.prefetchesPerTrigger.sample(issuedPF);
+                        chainTable[tableIdx].chainId = entry.chainId;
+                        chainTable[tableIdx].remainingPrefetches = entry.depth;
+                    }
+                    chainEntry = &chainTable[tableIdx];
+                }
+
                 if (chainEntry && chainEntry->remainingPrefetches > 0) {
                     chainEntry->remainingPrefetches--;
                     Addr targetAddr = l2_pf->target->instAddr();
@@ -1715,17 +1701,19 @@ MultiLevelBTB::processDeferredPrefetchQueue()
 
                     if (l2_pf->getPrefetchTarget()) {
                         prefetchViaBBMap(entry.tid, targetAddr, true, entry.triggeredByPBHit,
-                                     1, nextBaseLatency, l2PfType, entry.chainId, nullptr);
+                                     1, nextBaseLatency, l2PfType, entry.chainId);
                         nextBaseLatency += Cycles(1);
                     }
                     if (l2_pf->getPrefetchThrough()) {
                         prefetchViaBBMap(entry.tid, fallThrough, false, entry.triggeredByPBHit,
-                                     1, nextBaseLatency, l2PfType, entry.chainId, nullptr);
+                                     1, nextBaseLatency, l2PfType, entry.chainId);
                     }
                 }
             } else {
                 multilevelstats.pfL2LookupMiss++;
             }
+        }else {
+            multilevelstats.skipDuetoPresence++;
         }
     }
     currentCycleDemand.clear();

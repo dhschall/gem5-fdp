@@ -253,6 +253,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         bool takenPrefetched = false;
         BranchType triggerType = BranchType::NoBranch;
         uint64_t chainId = 0;
+        bool allocateChain = false;
+        unsigned depth = 0;
     };
     std::vector<DeferredPrefetchEntry> deferredPrefetchQueue;
     uint64_t nextChainId = 1;
@@ -376,10 +378,11 @@ class MultiLevelBTB : public BranchTargetBuffer
      * @param baseLatency Cumulative latency for depth > 1 prefetches.
      */
      void prefetchViaBBMap(ThreadID tid, Addr lookupAddr, bool isTakenPath,
-                          bool triggeredByPBHit, int depth=1,
-                          Cycles baseLatency = Cycles(0),
-                          BranchType triggerType = BranchType::NoBranch,
-                          uint64_t chainId = 0, unsigned *prefetchesGenerated = nullptr);
+                           bool triggeredByPBHit, int depth=1,
+                           Cycles baseLatency = Cycles(0),
+                           BranchType triggerType = BranchType::NoBranch,
+                           uint64_t chainId = 0,
+                           bool allocateChain = false);
 
 };
 } // namespace gem5::branch_prediction
