@@ -201,6 +201,18 @@ class MultiLevelBTB : public BranchTargetBuffer
 
         statistics::Scalar skipDuetoDemand;
         statistics::Scalar skipDuetoPresence;
+        statistics::Scalar enqueueDeferred;
+        statistics::Formula skipDuetoDemandRatio;
+        statistics::Formula skipDuetoPresenceRatio;
+
+        // Chain early termination reason stats
+        statistics::Scalar chainEndEvicted;      // chain slot evicted by newer chain
+        statistics::Scalar chainEndDemand;        // chain killed by demand access
+        statistics::Scalar chainEndPresence;      // chain killed by L1/PB hit
+        statistics::Scalar chainEndL2Miss;        // chain step failed due to L2 miss
+        statistics::Scalar chainEndRetFilter;     // chain step filtered by limitRet
+        statistics::Scalar chainEndNonEntry;
+        statistics::Scalar chainEndDepthExhaust;  // chain reached remaining depth 0 naturally
 
         statistics::Distribution prefetchesPerTrigger;
         statistics::Distribution parallelChains;
@@ -259,11 +271,26 @@ class MultiLevelBTB : public BranchTargetBuffer
     std::vector<DeferredPrefetchEntry> deferredPrefetchQueue;
     uint64_t nextChainId = 1;
 
+    enum class ChainEndReason {
+        None = 0,
+        Evicted,        // chain slot evicted by newer chain
+        Demand,         // chain killed by demand access
+        Presence,       // chain killed by L1/PB hit
+        L2Miss,         // L2 miss for prefetch target
+        RetFilter,      // filtered by limitRet (Return type)
+        DepthExhaust,   // remaining depth reached 0 naturally
+    };
+
     struct ActiveChainEntry {
         uint64_t chainId = 0;
         unsigned remainingPrefetches = 0;
+        ChainEndReason lastEndReason = ChainEndReason::None;
     };
     std::vector<ActiveChainEntry> chainTable;
+
+    /** Check if chain has no more in-flight entries and record end reason. */
+    bool isChainDead(uint64_t chainId) const;
+    void recordChainEnd(ActiveChainEntry &chain);
 
     std::unordered_set<Addr> currentCycleDemand;
 

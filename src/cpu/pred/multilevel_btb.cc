@@ -73,6 +73,26 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
                "Prefetch entries dropped: demand access to same PC"),
       ADD_STAT(skipDuetoPresence, statistics::units::Count::get(),
                "Prefetch entries skipped: PC already present in L1 or pBuffer"),
+      ADD_STAT(enqueueDeferred, statistics::units::Count::get(),
+               "Total deferred prefetch entries processed (denominator for skip ratios)"),
+      ADD_STAT(skipDuetoDemandRatio, statistics::units::Ratio::get(),
+               "skipDuetoDemand / enqueueDeferred"),
+      ADD_STAT(skipDuetoPresenceRatio, statistics::units::Ratio::get(),
+               "skipDuetoPresence / enqueueDeferred"),
+      ADD_STAT(chainEndEvicted, statistics::units::Count::get(),
+               "Chain ended early: slot evicted by newer chain"),
+      ADD_STAT(chainEndDemand, statistics::units::Count::get(),
+               "Chain ended early: killed by demand access to same PC"),
+      ADD_STAT(chainEndPresence, statistics::units::Count::get(),
+               "Chain ended early: killed by L1/PB presence"),
+      ADD_STAT(chainEndL2Miss, statistics::units::Count::get(),
+               "Chain ended early: L2 miss for prefetch target"),
+      ADD_STAT(chainEndRetFilter, statistics::units::Count::get(),
+               "Chain ended early: filtered by limitRet (Return type)"),
+      ADD_STAT(chainEndNonEntry, statistics::units::Count::get(),
+               "Might be ended by non-BTBEntry blocks"),
+      ADD_STAT(chainEndDepthExhaust, statistics::units::Count::get(),
+               "Chain ended: remaining depth reached 0"),
       ADD_STAT(prefetchesPerTrigger, statistics::units::Count::get(), "Number of prefetches generated per trigger"),
       ADD_STAT(parallelChains, statistics::units::Count::get(), "Number of parallel prefetch chains active"),
 
@@ -151,6 +171,11 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     compressedTagFalseNegativeRate.precision(4);
 
     compressedTagAliases.flags(total);
+
+    skipDuetoDemandRatio = skipDuetoDemand / enqueueDeferred;
+    skipDuetoDemandRatio.precision(4);
+    skipDuetoPresenceRatio = skipDuetoPresence / enqueueDeferred;
+    skipDuetoPresenceRatio.precision(4);
 
     numBranchesPerPrefetch.init(0, 64, 1);
     prefetchesPerTrigger.init(0, 64, 1); // Buckets from 0 to 512 with step 4
@@ -262,6 +287,7 @@ MultiLevelBTB::memInvalidate()
     for (auto& entry : chainTable) {
         entry.chainId = 0;
         entry.remainingPrefetches = 0;
+        entry.lastEndReason = ChainEndReason::None;
     }
 }
 
@@ -1561,6 +1587,46 @@ MultiLevelBTB::recordPrevBlockInfo(ThreadID tid, Addr instPC, Addr targetAddr)
     prev.valid = true;
 }
 
+bool
+MultiLevelBTB::isChainDead(uint64_t chainId) const
+{
+    for (const auto& entry : deferredPrefetchQueue) {
+        if (entry.chainId == chainId)
+            return false;
+    }
+    return true;
+}
+
+void
+MultiLevelBTB::recordChainEnd(ActiveChainEntry &chain)
+{
+    switch (chain.lastEndReason) {
+        case ChainEndReason::Evicted:
+            multilevelstats.chainEndEvicted++;
+            break;
+        case ChainEndReason::Demand:
+            multilevelstats.chainEndDemand++;
+            break;
+        case ChainEndReason::Presence:
+            multilevelstats.chainEndPresence++;
+            break;
+        case ChainEndReason::L2Miss:
+            multilevelstats.chainEndL2Miss++;
+            break;
+        case ChainEndReason::RetFilter:
+            multilevelstats.chainEndRetFilter++;
+            break;
+        case ChainEndReason::DepthExhaust:
+            multilevelstats.chainEndDepthExhaust++;
+            break;
+        case ChainEndReason::None:
+            multilevelstats.chainEndNonEntry++;
+            break;
+    }
+    // Reset after recording
+    chain.lastEndReason = ChainEndReason::None;
+}
+
 void
 MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
                                 bool isTakenPath, bool triggeredByPBHit,
@@ -1575,19 +1641,13 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     Addr pfPC = it->second;
 
     BTBEntry *l2_pf = l2btb.findEntry({pfPC, tid});
-    if (!l2_pf)
+    // Kill the trigger if L2-miss
+    if (!l2_pf && allocateChain)
         return;
     if (limitRet && triggerType == BranchType::Return) {
         return;
     }
-    if (trainBitsOnCommit) {
-        if (prefetchOnlyCB && l2_pf->inst && !l2_pf->inst->isCondCtrl()) {
-            return;
-        }
-        if (prefetchOnlyUB && l2_pf->inst && !l2_pf->inst->isUncondCtrl()) {
-            return;
-        }
-    }
+
     baseLatency = baseLatency + Cycles(1);
     Cycles issueTime = curCycle() + baseLatency;
 
@@ -1622,6 +1682,11 @@ MultiLevelBTB::processDeferredPrefetchQueue()
         std::vector<uint64_t> activeChains;
         for (const auto& entry : deferredPrefetchQueue) {
             if (entry.chainId != 0 && std::find(activeChains.begin(), activeChains.end(), entry.chainId) == activeChains.end()) {
+                if (maxChainTrackerEntries > 0) {
+                    int tableIdx = entry.chainId % maxChainTrackerEntries;
+                    if (chainTable[tableIdx].chainId != entry.chainId)
+                        continue;  
+                }
                 activeChains.push_back(entry.chainId);
             }
         }
@@ -1650,6 +1715,8 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                 if (!entry.allocateChain) {
                     validChain = false;
                 }
+            } else if (chainEntry->remainingPrefetches == 0) {
+                validChain = false;
             }
         }
 
@@ -1657,18 +1724,20 @@ MultiLevelBTB::processDeferredPrefetchQueue()
             continue;
         }
 
+        multilevelstats.enqueueDeferred++;
+
         // Skip prefetch if the same PC is being demand-accessed this cycle.
         if (isDemandAccess(pc)) {
-            if (chainEntry && killFullChainOnL1Hit) {
-                chainEntry->remainingPrefetches = 0;
-            }
             multilevelstats.skipDuetoDemand++;
+            if (!entry.allocateChain) {
+                chainEntry->lastEndReason = ChainEndReason::Demand;
+            }
             continue;
         }
 
         bool hit = l1ApproxContains(pc, entry.tid) || pbApproxContains(pc, entry.tid);
-        if (hit && chainEntry && killFullChainOnL1Hit) {
-            chainEntry->remainingPrefetches = 0;
+        if (hit && chainEntry && !entry.allocateChain) {
+            chainEntry->lastEndReason = ChainEndReason::Presence;
         }
 
         if (!hit) {
@@ -1684,38 +1753,64 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                 if (entry.allocateChain && maxChainTrackerEntries > 0) {
                     int tableIdx = entry.chainId % maxChainTrackerEntries;
                     if (chainTable[tableIdx].chainId != entry.chainId) {
-                        auto issuedPF = entry.depth - chainTable[tableIdx].remainingPrefetches;
-                        multilevelstats.prefetchesPerTrigger.sample(issuedPF);
+                        // Old chain is being evicted — record stats
+                        auto& oldChain = chainTable[tableIdx];
+                        if (oldChain.chainId != 0) {
+                            bool dead = isChainDead(oldChain.chainId);
+                            if (dead || oldChain.remainingPrefetches == 0) {
+                                // Chain is dead and has a specific end reason
+                                recordChainEnd(oldChain);
+                            } else {
+                                // Chain still has in-flight entries but slot is stolen
+                                multilevelstats.chainEndEvicted++;
+                            }
+                            auto issuedPF = entry.depth - oldChain.remainingPrefetches;
+                            multilevelstats.prefetchesPerTrigger.sample(issuedPF);
+                        }
+                        
                         chainTable[tableIdx].chainId = entry.chainId;
                         chainTable[tableIdx].remainingPrefetches = entry.depth;
+                        chainTable[tableIdx].lastEndReason = ChainEndReason::None;
                     }
                     chainEntry = &chainTable[tableIdx];
                 }
 
                 if (chainEntry && chainEntry->remainingPrefetches > 0) {
                     chainEntry->remainingPrefetches--;
+                    bool completedChain = false;
+                    if (chainEntry->remainingPrefetches == 0) {
+                        chainEntry->lastEndReason = ChainEndReason::DepthExhaust;
+                        completedChain = true;
+                    }
                     Addr targetAddr = l2_pf->target->instAddr();
                     Addr fallThrough = pc + minInstSize;
                     Cycles nextBaseLatency = (arrival > curCycle()) ? (arrival - curCycle()) : Cycles(0);
                     BranchType l2PfType = getBranchType(l2_pf->inst);
 
-                    if (l2_pf->getPrefetchTarget()) {
+                    if (l2_pf->getPrefetchTarget() && !completedChain) {
                         prefetchViaBBMap(entry.tid, targetAddr, true, entry.triggeredByPBHit,
                                      1, nextBaseLatency, l2PfType, entry.chainId);
                         nextBaseLatency += Cycles(1);
+                        if (limitRet && l2PfType == BranchType::Return) {
+                            chainEntry->lastEndReason = ChainEndReason::RetFilter;
+                        }
                     }
-                    if (l2_pf->getPrefetchThrough()) {
+                    if (l2_pf->getPrefetchThrough() && !completedChain) {
                         prefetchViaBBMap(entry.tid, fallThrough, false, entry.triggeredByPBHit,
                                      1, nextBaseLatency, l2PfType, entry.chainId);
                     }
                 }
             } else {
                 multilevelstats.pfL2LookupMiss++;
+                if (chainEntry && !entry.allocateChain) {
+                    chainEntry->lastEndReason = ChainEndReason::L2Miss;
+                }
             }
-        }else {
+        } else {
             multilevelstats.skipDuetoPresence++;
         }
     }
+
     currentCycleDemand.clear();
 }
 
