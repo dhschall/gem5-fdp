@@ -62,6 +62,7 @@ struct BTBLookupResult
   bool l1Hit;
   bool pBufferHit;    // Hit specifically in pBuffer (Policy 4)
   bool l2Hit;
+  bool l3Hit;
   bool prefetchHit;   // Hit on a prefetched entry (either in L1 or pBuffer)
   bool predMatch;
   bool taken;
@@ -72,12 +73,13 @@ struct BTBLookupResult
                   bool _l1Hit = false,
                   bool _pBufferHit = false,
                   bool _l2Hit = false,
+                  bool _l3Hit = false,
                   bool _prefetchHit = false,
                   bool _predMatch = false,
                   bool _taken = false,
                   BranchType _prefetchTriggerType = BranchType::NoBranch)
       : target(_target), latency(_latency), l1Hit(_l1Hit), pBufferHit(_pBufferHit),
-        l2Hit(_l2Hit), prefetchHit(_prefetchHit), predMatch(_predMatch), taken(_taken),
+        l2Hit(_l2Hit), l3Hit(_l3Hit), prefetchHit(_prefetchHit), predMatch(_predMatch), taken(_taken),
         prefetchTriggerType(_prefetchTriggerType) {}
 };
 

@@ -662,7 +662,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     // }
 
     return BTBLookupResult(l1_entry->target.get(), l1Latency,
-                           true, false, false, isPrefetchHit, predMatch, l1_entry->getDir(), l1_entry->getPrefetchTriggerType());
+                           true, false, false, false, isPrefetchHit, predMatch, l1_entry->getDir(), l1_entry->getPrefetchTriggerType());
 }
 
 
@@ -815,7 +815,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
             instPC, isInFlight, (int)coveredCycle);
 
     return BTBLookupResult(l1_victim->target.get(), remainingTime,
-                           false, true, false, true, false, l1_victim->getDir(), triggerType);
+                           false, true, false, false, true, false, l1_victim->getDir(), triggerType);
 }
 
 //=============================================================================
@@ -1045,7 +1045,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
             instPC, l2Latency);
 
     return BTBLookupResult(l2_entry->target.get(), l2Latency,
-                           false, false, true, false, false, l2_entry->getDir());
+                           false, false, true, false, false, false, l2_entry->getDir());
 }
 
 
@@ -1069,7 +1069,7 @@ MultiLevelBTB::handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
             instPC, l3Latency);
 
     return BTBLookupResult(l3_entry->target.get(), l3Latency,
-                           false, false, true, false, false, l3_entry->getDir());
+                           false, false, false, true, false, false, l3_entry->getDir());
 }
 
 void

@@ -272,6 +272,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
         if (isMultiLevelBTB) {
             hist->l1btbHit = btb_res.l1Hit;
             hist->l2btbHit = btb_res.l2Hit;
+            hist->l3btbHit = btb_res.l3Hit;
             hist->pBufferHit = btb_res.pBufferHit;
             hist->prefetchHit = btb_res.prefetchHit;
             hist->prefetchTriggerType = btb_res.prefetchTriggerType;
@@ -567,6 +568,8 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
             stats.l1btbHits++;
         } else if (hist->l2btbHit) {
             stats.l2btbHits++;
+        } else if (hist->l3btbHit) {
+            stats.l3btbHits++;
         }
 
         // Track committed prefetch hits
