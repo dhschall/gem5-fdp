@@ -261,10 +261,6 @@ class MultiLevelBTB(BranchTargetBuffer):
     prefetchDepth = Param.Unsigned(
         1, "Prefetch depth for prefetch-bits prefetcher"
     )
-    
-    killFullChainOnL1Hit = Param.Bool(
-        False, "Kill the full prefetch chain if hit in PB/L1"
-    )
 
     maxChainTrackerEntries = Param.Unsigned(
         4, "Max number of active chains in the chain tracker table"

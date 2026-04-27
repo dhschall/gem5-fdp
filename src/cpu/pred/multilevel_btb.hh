@@ -78,7 +78,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool cleanBitsOnL1Promotion;
     const bool noPrefetchLatency;
     const unsigned prefetchDepth;
-    const bool killFullChainOnL1Hit;
     const unsigned maxChainTrackerEntries;
     const bool depthOnlyCall;
     const bool prefetchOnlyForward;

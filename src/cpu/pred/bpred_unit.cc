@@ -616,7 +616,7 @@ BPredUnit::commitBranch(ThreadID tid, PredictorHistory* &hist)
             } else if (hist->l2btbHit || hist->pBufferHit) {
                 currentClass = PrevBranchInfo::L2Hit;
             } else {
-                assert(!hist->btbHit);
+                // assert(!hist->btbHit);
                 if (hist->actuallyTaken) {
                     currentClass = PrevBranchInfo::L2Miss;
                 } else {

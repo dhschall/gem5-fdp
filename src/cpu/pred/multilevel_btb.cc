@@ -230,7 +230,6 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       cleanBitsOnL1Promotion(p.cleanBitsOnL1Promotion),
       noPrefetchLatency(p.noPrefetchLatency),
       prefetchDepth(p.prefetchDepth),
-      killFullChainOnL1Hit(p.killFullChainOnL1Hit),
       maxChainTrackerEntries(p.maxChainTrackerEntries),
       depthOnlyCall(p.depthOnlyCall),
       prefetchOnlyForward(p.prefetchOnlyForward),
