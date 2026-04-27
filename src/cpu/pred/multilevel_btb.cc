@@ -18,6 +18,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist2HistoryPC, statistics::units::Count::get(), "Distance (PC - 2ndLastPC) for 2-history"),
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
+      ADD_STAT(l3Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L3"),
       ADD_STAT(uselessPrefetches, statistics::units::Count::get(), "Number of useless prefetches (L1 direct prefetch evicted)"),
       ADD_STAT(totalPrefetches, statistics::units::Count::get(), "Total number of prefetches"),
       ADD_STAT(shadowPrefetches, statistics::units::Count::get(), "Total number of shadow prefetches"),
@@ -61,6 +62,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(updatesL1hits, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(updatesL2hits, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(updatesL2miss, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(updatesL3hits, statistics::units::Ratio::get(), "number of L3 updates"),
+      ADD_STAT(updatesL3miss, statistics::units::Ratio::get(), "number of L3 updates"),
       ADD_STAT(pfIssued, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfL2LookupHit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfL2LookupMiss, statistics::units::Ratio::get(), "number of L2 updates"),
@@ -107,6 +110,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     dist2HistoryTarget.init(0).flags(total | pdf);
 
     l1MissL2Hits.flags(total);
+    l3Hits.flags(total);
     takenPathPrefetches.flags(total);
     notTakenPathPrefetches.flags(total);
     prefetchHitsFromTaken.init(enums::Num_BranchType).flags(total | pdf);
@@ -207,8 +211,13 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       l2btb("l2BTB", p.l2NumEntries, p.l2Associativity,
             p.l2ReplPolicy, p.l2IndexingPolicy,
             BTBEntry(genTagExtractor(p.l2IndexingPolicy))),
+      l3btb("l3BTB", p.l3NumEntries, p.l3Associativity,
+            p.l3ReplPolicy, p.l3IndexingPolicy,
+            BTBEntry(genTagExtractor(p.l3IndexingPolicy))),
       l1Latency(p.l1Latency),
       l2Latency(p.l2Latency),
+      l3Latency(p.l3Latency),
+      enableL3(p.enableL3),
       minInstSize(p.minInstSize),
       l1PrefetchPolicy(p.l1PrefetchPolicy),
       trainBitsOnLookup(p.trainBitsOnLookup),
@@ -231,7 +240,6 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       markovUseRecency(p.markovUseRecency),
       updateDirOnlyL1(p.updateDirOnlyL1),
       inclusive(p.inclusive),
-      newUpdate(p.newUpdate),
       newPBits(p.newPBits),
       onlyCall(p.onlyCall),
       onlyCallAndBackward(p.onlyCallAndBackward),
@@ -259,8 +267,8 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       pfqEvent([this]{ processDeferredPrefetchQueue(); }, name(),
                false, Event::CPU_Tick_Pri + 1)
 {
-    DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles)\n",
-            p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency);
+    DPRINTF(BTB, "MultiLevelBTB: Creating L1(%d entries, %d cycles) + L2(%d entries, %d cycles) + L3(%d entries, %d cycles)\n",
+            p.l1NumEntries, p.l1Latency, p.l2NumEntries, p.l2Latency, p.l3NumEntries, p.l3Latency);
 
     chainTable.resize(maxChainTrackerEntries);
 
@@ -278,6 +286,7 @@ MultiLevelBTB::memInvalidate()
 {
     l1btb.clear();
     l2btb.clear();
+    if (enableL3) l3btb.clear();
     pBuffer.clear();
     shadowL1BTB.clear();
     shadowPBuffer.clear();
@@ -349,6 +358,13 @@ MultiLevelBTB::valid(ThreadID tid, Addr instPC)
     if(l2_entry != nullptr) {
         DPRINTF(BTB, "L2 BTB valid for PC %#x\n", instPC);
         return true;
+    }
+    if (enableL3) {
+        BTBEntry *l3_entry = l3btb.findEntry({instPC, tid});
+        if(l3_entry != nullptr) {
+            DPRINTF(BTB, "L3 BTB valid for PC %#x\n", instPC);
+            return true;
+        }
     }
     return false;
 }
@@ -426,17 +442,23 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
         // trainBitsOnLookup: record current block info (from L2 entry)
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l2_entry->target->instAddr());
-        // if (newUpdate)
-        //     return handleL2Hit2(tid, instPC, l2_entry, type, taken);
         return handleL2Hit(tid, instPC, l2_entry, type, taken);
     }
 
-    // Miss in both l1 and l2. Actually, the progrem will never get here.
-    stats.misses[type]++;
-    prevBwBranch.is_bw = false;
-    prevBwBranch.is_l2_miss = false;
-    DPRINTF(BTB, "BTB miss for PC %#x\n", instPC);
-    return BTBLookupResult(nullptr, l1Latency + l2Latency, false, false, false);
+    // ==========================================================================
+    // Step 4: L3 BTB lookup
+    // ==========================================================================
+    if (enableL3) {
+        BTBEntry *l3_entry = l3btb.accessEntry({instPC, tid});
+        if (l3_entry != nullptr) {
+            if (trainBitsOnLookup && blockStartAddr != 0)
+                recordPrevBlockInfo(tid, instPC, l3_entry->target->instAddr());
+            return handleL3Hit(tid, instPC, l3_entry, type, taken);
+        }
+    }
+
+    // The progrem will never get here, otherwise there is bug.
+    panic("There is bug in bpu->BTBValid(tid, br_addr) from bac.cc");
 }
 
 const StaticInstPtr
@@ -454,6 +476,12 @@ MultiLevelBTB::getInst(ThreadID tid, Addr instPC)
     BTBEntry *l2_entry = l2btb.findEntry({instPC, tid});
     if (l2_entry) {
         return l2_entry->inst;
+    }
+    if (enableL3) {
+        BTBEntry *l3_entry = l3btb.findEntry({instPC, tid});
+        if (l3_entry) {
+            return l3_entry->inst;
+        }
     }
     return nullptr;
 }
@@ -486,62 +514,17 @@ MultiLevelBTB::updateDirection(ThreadID tid, Addr inst_pc, bool taken)
     if (entry) {
         entry->updateDir(taken);
     }
+    if (enableL3) {
+        entry = l3btb.findEntry({inst_pc, tid});
+        if (entry) {
+            entry->updateDir(taken);
+        }
+    }
 }
 
 
 void
 MultiLevelBTB::update(ThreadID tid, Addr instPC,
-                      const PCStateBase &target,
-                      BranchType type, StaticInstPtr inst)
-{
-    if (newUpdate) {
-        update2(tid, instPC, target, type, inst);
-        return;
-    }
-
-    stats.updates[type]++;
-
-
-    bool l1_existing = (l1btb.findEntry({instPC, tid}) != nullptr);
-    BTBEntry *l1_victim = l1btb.findVictim({instPC, tid});
-    if (!l1_existing) {
-        if (l1_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
-        } else if (l1_victim->isFromPBuffer()) {
-            multilevelstats.l1InstalledEvicted++;
-        }
-    }
-
-    // Inserting a new L1-entry, evict victim to L2
-    if (!l1_existing) {
-        writebackToL2(tid, l1_victim);
-    }
-
-    BTBEntry old_l1_state(*l1_victim);
-
-    l1btb.insertEntry({instPC, tid}, l1_victim);
-    l1_victim->update(target, inst);
-    l1CompressedTagSync(instPC, tid, TagAction::Insert);
-
-    if (l1_existing) {
-        l1_victim->copyState(old_l1_state);
-    }
-
-    if (usesPrefetchBitPolicy() && !l1_existing) {
-        l1_victim->setPrefetchTarget(true);
-    }
-
-    if (l1PrefetchPolicy == 11) {
-        BTBEntry *sL1_victim = shadowL1BTB.findVictim({instPC, tid});
-        shadowL1BTB.insertEntry({instPC, tid}, sL1_victim);
-        sL1_victim->update(target, inst);
-    }
-
-    DPRINTF(BTB, "Updated BTB for PC %#x -> %#x\n", instPC, target.instAddr());
-}
-
-void
-MultiLevelBTB::update2(ThreadID tid, Addr instPC,
                       const PCStateBase &target,
                       BranchType type, StaticInstPtr inst)
 {
@@ -737,25 +720,8 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // -------------------------------------------------------------------------
     // Promote entry from pBuffer to L1
     // -------------------------------------------------------------------------
-    BTBEntry *l1_victim;
-    if (newUpdate) {
-        l1_victim = freeUpL1Entry(tid, instPC);
-        l1_victim->update(*pB_entry);
-    } else {
-        l1_victim = l1btb.findVictim({instPC, tid});
-        writebackToL2(tid, l1_victim);
-
-        if (l1_victim->isPrefetched()) {
-            multilevelstats.uselessPrefetches[l1_victim->getPrefetchTriggerType()]++;
-        } else if (l1_victim->isFromPBuffer()) {
-            multilevelstats.l1InstalledEvicted++;
-        }
-
-        l1btb.insertEntry({instPC, tid}, l1_victim);
-        l1_victim->update(*pB_entry->target, pB_entry->inst);
-        l1_victim->copyDir(*pB_entry);
-        l1_victim->setFromPBuffer(true);
-    }
+    BTBEntry *l1_victim = freeUpL1Entry(tid, instPC);
+    l1_victim->update(*pB_entry);
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
 
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 11) {
@@ -1084,26 +1050,26 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
 
 BTBLookupResult
-MultiLevelBTB::handleL2Hit2(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
+MultiLevelBTB::handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
                            BranchType type, bool taken)
 {
-    multilevelstats.l1MissL2Hits++;
+    multilevelstats.l3Hits++;
 
-    // Access L2 to prevent replacing it.
-    l2btb.accessEntry(l2_entry);
-    DPRINTF(BTB, "%s(pc=%#x) -> L2[pc=%#x tgt=%#x]\n", __func__, instPC,
-            l2_entry->getBranchAddr(), l2_entry->target->instAddr());
+    // Access L3 to prevent replacing it.
+    l3btb.accessEntry(l3_entry);
+    DPRINTF(BTB, "%s(pc=%#x) -> L3[pc=%#x tgt=%#x]\n", __func__, instPC,
+            l3_entry->getBranchAddr(), l3_entry->target->instAddr());
 
     BTBEntry *l1_entry = freeUpL1Entry(tid, instPC);
-    assert(instPC == l2_entry->getBranchAddr()); // Ensure the write back has not modified the L2 entry.
+    assert(instPC == l3_entry->getBranchAddr()); // Ensure the write back has not modified the L3 entry.
 
-    l1_entry->update(*l2_entry);
+    l1_entry->update(*l3_entry);
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
-    DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
-            instPC, l2Latency);
+    DPRINTF(BTB, "L3 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
+            instPC, l3Latency);
 
-    return BTBLookupResult(l2_entry->target.get(), l2Latency,
-                           false, false, true, false, false, l2_entry->getDir());
+    return BTBLookupResult(l3_entry->target.get(), l3Latency,
+                           false, false, true, false, false, l3_entry->getDir());
 }
 
 void
@@ -1414,6 +1380,29 @@ MultiLevelBTB::trainPrefetchBitsOnCommit(ThreadID tid, Addr pc, bool actuallyTak
                 l2_entry->setPrefetchTarget(false);
             }
         }
+        return;
+    }
+
+    if (enableL3) {
+        BTBEntry *l3_entry = l3btb.findEntry({pc, tid});
+        if (l3_entry) {
+            multilevelstats.trainBitsL1Miss++;
+            if (!cleanBitsOnL1Promotion) {
+                if (actuallyTaken) {
+                    l3_entry->setPrefetchTarget(true);
+                } else {
+                    l3_entry->setPrefetchThrough(true);
+                }
+            } else {
+                if (actuallyTaken) {
+                    l3_entry->setPrefetchTarget(true);
+                    l3_entry->setPrefetchThrough(false);
+                } else {
+                    l3_entry->setPrefetchThrough(true);
+                    l3_entry->setPrefetchTarget(false);
+                }
+            }
+        }
     }
 }
 
@@ -1547,22 +1536,39 @@ MultiLevelBTB::freeUpL1Entry(ThreadID tid, Addr instPC)
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid}, false);
     if (l1_victim->isValid() && !inclusive) {
 
-        // @Yongjie add the useless prefetch statistics here.
-
         // Perform writeback
         DPRINTF(BTB, "Evict L1[pc=%#x %s]\n", l1_victim->getBranchAddr(), l1_victim->print());
 
         // Create a new entry in the L2
         BTBEntry *l2_victim = l2btb.findEntry({l1_victim->getBranchAddr(), tid});
         if (l2_victim) {
+            l2btb.accessEntry(l2_victim);
             DPRINTF(BTB, "Exists already in L2[pc=%#x %s]\n", l2_victim->getBranchAddr(), l2_victim->print());
             multilevelstats.updatesL2hits++;
         } else {
-            l2_victim = l2btb.findVictim({l1_victim->getBranchAddr(), tid});
-            if (l2_victim) {
+            l2_victim = l2btb.findVictim({l1_victim->getBranchAddr(), tid}, false);
+            if (l2_victim->isValid()) {
                 DPRINTF(BTB, "Evict L2[pc=%#x %s]\n", l2_victim->getBranchAddr(), l2_victim->print());
+                if (enableL3) {
+                    BTBEntry *l3_victim = l3btb.findEntry({l2_victim->getBranchAddr(), tid});
+                    if (l3_victim) {
+                        l3btb.accessEntry(l3_victim);
+                        DPRINTF(BTB, "Exists already in L3[pc=%#x %s]\n", l3_victim->getBranchAddr(), l3_victim->print());
+                        multilevelstats.updatesL3hits++;
+                    } else {
+                        l3_victim = l3btb.findVictim({l2_victim->getBranchAddr(), tid});
+                        if (l3_victim) {
+                            DPRINTF(BTB, "Evict L3[pc=%#x %s]\n", l3_victim->getBranchAddr(), l3_victim->print());
+                        }
+                        l3btb.insertEntry({l2_victim->getBranchAddr(), tid}, l3_victim);
+                        multilevelstats.updatesL3miss++;
+                    }
+                    l3_victim->update(*l2_victim);
+                    DPRINTF(BTB, "Updated L3[pc=%#x, tgt=%#x] %s\n",
+                            l3_victim->getBranchAddr(), l3_victim->target->instAddr(), l3_victim->print());
+                }
             }
-
+            l2_victim->invalidate();
             l2btb.insertEntry({l1_victim->getBranchAddr(), tid}, l2_victim);
             multilevelstats.updatesL2miss++;
         }

@@ -188,7 +188,7 @@ class MultiLevelBTB(BranchTargetBuffer):
     # L2 BTB configuration
     l2NumEntries = Param.Unsigned(4096, "Number of L2 BTB entries")
     l2Associativity = Param.Unsigned(8, "L2 BTB associativity")
-    l2Latency = Param.Cycles(4, "L2 BTB access latency in cycles")
+    l2Latency = Param.Cycles(3, "L2 BTB access latency in cycles")
     l2ReplPolicy = Param.BaseReplacementPolicy(
         LRURP(), "L2 BTB replacement policy"
     )
@@ -201,6 +201,24 @@ class MultiLevelBTB(BranchTargetBuffer):
             numThreads=1,
         ),
         "L2 BTB indexing policy",
+    )
+
+    enableL3 = Param.Bool(False, "Enable L3 BTB")
+    l3NumEntries = Param.Unsigned(16384, "Number of L3 BTB entries")
+    l3Associativity = Param.Unsigned(8, "L3 BTB associativity")
+    l3Latency = Param.Cycles(3, "L3 BTB access latency in cycles")
+    l3ReplPolicy = Param.BaseReplacementPolicy(
+        LRURP(), "L3 BTB replacement policy"
+    )
+    l3IndexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.l3Associativity,
+            num_entries=Parent.l3NumEntries,
+            set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.tagBits,
+            numThreads=1,
+        ),
+        "L3 BTB indexing policy",
     )
 
     minInstSize = Param.Unsigned(
@@ -282,10 +300,6 @@ class MultiLevelBTB(BranchTargetBuffer):
     )
     inclusive = Param.Bool(
         False,
-        "Only update direction/PBits in L1 BTB",
-    )
-    newUpdate = Param.Bool(
-        True,
         "Only update direction/PBits in L1 BTB",
     )
     newPBits = Param.Bool(

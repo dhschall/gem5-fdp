@@ -36,9 +36,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;
-    void update2(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
-                BranchType type = BranchType::NoBranch,
-                StaticInstPtr inst = nullptr);
 
     void updateDirection(ThreadID tid, Addr inst_pc, bool taken) override;
 
@@ -63,9 +60,12 @@ class MultiLevelBTB : public BranchTargetBuffer
     AssociativeCache<BTBEntry> pBuffer;
 
     AssociativeCache<BTBEntry> l2btb;
+    AssociativeCache<BTBEntry> l3btb;
 
     const Cycles l1Latency;
     const Cycles l2Latency;
+    const Cycles l3Latency;
+    const bool enableL3;
     const unsigned minInstSize;
     const unsigned l1PrefetchPolicy;
     const bool trainBitsOnLookup;
@@ -88,7 +88,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool markovUseRecency;
     const bool updateDirOnlyL1;
     const bool inclusive;
-    const bool newUpdate;
     const bool newPBits;
     const bool onlyCall;
     const bool onlyCallAndBackward;
@@ -121,6 +120,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::SparseHistogram dist2HistoryTarget;
 
         statistics::Scalar l1MissL2Hits;
+        statistics::Scalar l3Hits;
         statistics::Vector uselessPrefetches;
         statistics::Scalar totalPrefetches;
         statistics::Scalar shadowPrefetches;
@@ -189,6 +189,9 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar updatesL1hits;  // branch not in L1 at commit, found in L2
         statistics::Scalar updatesL2hits;  // branch not in L1 at commit, found in L2
         statistics::Scalar updatesL2miss;  // branch not in L1 at commit, found in L2
+
+        statistics::Scalar updatesL3hits;  // branch not in L1 at commit, found in L3
+        statistics::Scalar updatesL3miss;  // branch not in L1 at commit, found in L3
 
         statistics::Scalar pfIssued;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfL2LookupHit;  // branch not in L1 at commit, found in L2
@@ -327,7 +330,8 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     BTBLookupResult handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
                                 BranchType type, bool taken);
-    BTBLookupResult handleL2Hit2(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
+
+    BTBLookupResult handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
                                 BranchType type, bool taken);
 
     /**
