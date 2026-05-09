@@ -50,7 +50,7 @@ class Process(SimObject):
                             table in an architecture-specific format",
     )
     kvmInSE = Param.Bool("false", "initialize the process for KvmCPU in SE")
-    maxStackSize = Param.MemorySize("64MiB", "maximum size of the stack")
+    maxStackSize = Param.MemorySize("2GiB", "maximum size of the stack")
     zeroPages = Param.Bool(
         True,
         "ensure all allocated pages are zero-filled. glibc malloc generally "
