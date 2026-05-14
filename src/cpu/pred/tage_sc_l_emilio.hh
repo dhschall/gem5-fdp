@@ -56,6 +56,9 @@ class TAGE_EMILIO: public ConditionalPredictor
                 const StaticInstPtr & inst, Addr target) override;
 
     void squash(ThreadID tid, void * &bp_history) override;
+
+    void branchPlaceholder(ThreadID tid, Addr pc, bool uncond, void * &bpHistory);
+
 };
 
 } // namespace branch_prediction

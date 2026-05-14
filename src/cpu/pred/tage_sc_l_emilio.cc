@@ -103,5 +103,18 @@ TAGE_EMILIO::updateHistories(ThreadID tid, Addr pc, bool uncond,
     tage.update_speculative_state(bi->id, pc, bi->br_type, taken, target);
 }
 
+void
+TAGE_EMILIO::branchPlaceholder(ThreadID tid, Addr pc, bool uncond,
+                                void *&bp_history)
+{
+    uint32_t id = tage.get_new_branch_id();
+    TageEmilioBranchInfo *bi = new TageEmilioBranchInfo();
+    bp_history = (void *)(bi);
+    bi->id = id;
+    bi->pc = pc;
+    bi->br_type.is_conditional = !uncond;
+    bi->br_type.is_indirect = false;
+}
+
 } // namespace branch_prediction
 } // namespace gem5

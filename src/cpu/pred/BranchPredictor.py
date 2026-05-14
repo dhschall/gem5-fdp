@@ -239,7 +239,7 @@ class BranchPredictor(SimObject):
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
     instShiftAmt = Param.Unsigned(
-        0,
+        2,
         "The `instShiftAmt` is intended for fixed size instruction sets "
         "(Arm,RISC-V) to shift the FULL PC by `n` bits (e.g. 2 for 4 byte "
         "instructions) as the two least significant bits are always zero and "

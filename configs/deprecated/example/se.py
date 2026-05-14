@@ -294,5 +294,8 @@ system.workload = SEWorkload.init_compatible(mp0_path)
 if args.wait_gdb:
     system.workload.wait_for_remote_gdb = True
 
+for i in range(np):
+    system.cpu[i].icache.prefetcher = FetchDirectedPrefetcher(use_virtual_addresses=True, cpu=system.cpu[i])
+    system.cpu[i].icache.prefetcher.registerMMU(system.cpu[i].mmu)
 root = Root(full_system=False, system=system)
 Simulation.run(args, root, system, FutureClass)
