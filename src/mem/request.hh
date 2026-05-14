@@ -103,6 +103,7 @@ class Request : public Extensible<Request>
 
     enum : FlagsType
     {
+        // clang-format off
         /**
          * Architecture specific flags.
          *
@@ -168,6 +169,8 @@ class Request : public Extensible<Request>
         EVICT_NEXT                  = 0x04000000,
         /** The request should be marked with ACQUIRE. */
         ACQUIRE                     = 0x00020000,
+        /** The request should be marked with ACQUIRE_PC. */
+        ACQUIRE_PC                  = 0x00002000,
         /** The request should be marked with RELEASE. */
         RELEASE                     = 0x00040000,
 
@@ -255,7 +258,11 @@ class Request : public Extensible<Request>
          * These flags are *not* cleared when a Request object is
          * reused (assigned a new address).
          */
-        STICKY_FLAGS = INST_FETCH
+        STICKY_FLAGS = INST_FETCH,
+        /** TLBI_EXT_SYNC_COMP seems to be the largest value
+            of FlagsType, so HAS_NO_ADDR's value is that << 1 */
+        HAS_NO_ADDR                = 0x0001000000000000,
+        // clang-format on
     };
     static const FlagsType STORE_NO_DATA = CACHE_BLOCK_ZERO |
         CLEAN | INVALIDATE;
@@ -341,9 +348,6 @@ class Request : public Extensible<Request>
 
     using LocalAccessor =
         std::function<Cycles(ThreadContext *tc, Packet *pkt)>;
-
-    /* Flag set when a packet passes through Ruby */
-    bool handledByRuby = false;
 
   private:
     typedef uint16_t PrivateFlagsType;
@@ -473,6 +477,8 @@ class Request : public Extensible<Request>
     /** The cause for HTM transaction abort */
     HtmFailureFaultCause _htmAbortCause = HtmFailureFaultCause::INVALID;
 
+    bool _isGPUFuncAccess;
+
   public:
 
     /**
@@ -493,6 +499,7 @@ class Request : public Extensible<Request>
         _flags.set(flags);
         privateFlags.set(VALID_PADDR|VALID_SIZE);
         _byteEnable = std::vector<bool>(size, true);
+        _isGPUFuncAccess = false;
     }
 
     Request(Addr vaddr, unsigned size, Flags flags,
@@ -502,6 +509,7 @@ class Request : public Extensible<Request>
         setVirt(vaddr, size, flags, id, pc, std::move(atomic_op));
         setContext(cid);
         _byteEnable = std::vector<bool>(size, true);
+        _isGPUFuncAccess = false;
     }
 
     Request(const Request& other)
@@ -590,7 +598,6 @@ class Request : public Extensible<Request>
         translateDelta = 0;
         atomicOpFunctor = std::move(amo_op);
         _localAccessor = nullptr;
-        handledByRuby = false;
     }
 
     /**
@@ -1017,6 +1024,7 @@ class Request : public Extensible<Request>
     bool isUncacheable() const { return _flags.isSet(UNCACHEABLE); }
     bool isStrictlyOrdered() const { return _flags.isSet(STRICT_ORDER); }
     bool isInstFetch() const { return _flags.isSet(INST_FETCH); }
+    bool hasNoAddr() const { return _flags.isSet(HAS_NO_ADDR); }
     bool
     isPrefetch() const
     {
@@ -1039,7 +1047,6 @@ class Request : public Extensible<Request>
     bool isKernel() const { return _flags.isSet(KERNEL); }
     bool isAtomicReturn() const { return _flags.isSet(ATOMIC_RETURN_OP); }
     bool isAtomicNoReturn() const { return _flags.isSet(ATOMIC_NO_RETURN_OP); }
-    bool wasHandledByRuby() const { return handledByRuby; };
     // hardware transactional memory
     bool isHTMStart() const { return _flags.isSet(HTM_START); }
     bool isHTMCommit() const { return _flags.isSet(HTM_COMMIT); }
@@ -1083,7 +1090,11 @@ class Request : public Extensible<Request>
     Flags getDest() const { return _flags & DST_BITS; }
 
     bool isAcquire() const { return _cacheCoherenceFlags.isSet(ACQUIRE); }
-
+    bool
+    isAcquirePC() const
+    {
+        return _cacheCoherenceFlags.isSet(ACQUIRE_PC);
+    }
 
     /**
      * Accessor functions for the cache bypass flags. The cache bypass
@@ -1125,6 +1136,17 @@ class Request : public Extensible<Request>
     bool isCacheInvalidate() const { return _flags.isSet(INVALIDATE); }
     bool isCacheMaintenance() const { return _flags.isSet(CLEAN|INVALIDATE); }
     /** @} */
+
+    void
+    setGPUFuncAccess(bool flag) {
+        _isGPUFuncAccess = flag;
+    }
+
+    bool
+    getGPUFuncAccess()
+    {
+        return _isGPUFuncAccess;
+    }
 };
 
 } // namespace gem5

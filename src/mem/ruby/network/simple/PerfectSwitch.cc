@@ -268,7 +268,8 @@ PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int vnet)
                     buffer->getIncomingLink(), vnet, outgoing, vnet);
 
             out_port.buffers[vnet]->enqueue(msg_ptr, current_time,
-                                           out_port.latency);
+                out_port.latency, m_switch->getNetPtr()->getRandomization(),
+                m_switch->getNetPtr()->getWarmupEnabled());
         }
     }
 }
@@ -303,16 +304,6 @@ PerfectSwitch::storeEventInfo(int info)
 {
     m_pending_message_count[info]++;
 }
-
-void
-PerfectSwitch::clearStats()
-{
-}
-void
-PerfectSwitch::collateStats()
-{
-}
-
 
 void
 PerfectSwitch::print(std::ostream& out) const

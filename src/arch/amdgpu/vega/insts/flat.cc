@@ -58,8 +58,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -114,8 +116,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -170,8 +174,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -257,8 +263,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -314,8 +322,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -332,21 +342,33 @@ namespace VegaISA
     void
     Inst_FLAT__FLAT_LOAD_DWORDX2::initiateAcc(GPUDynInstPtr gpuDynInst)
     {
-        initMemRead<VecElemU64>(gpuDynInst);
+        initMemRead<2>(gpuDynInst);
     } // initiateAcc
 
     void
     Inst_FLAT__FLAT_LOAD_DWORDX2::completeAcc(GPUDynInstPtr gpuDynInst)
     {
-        VecOperandU64 vdst(gpuDynInst, extData.VDST);
+        VecOperandU32 vdst0(gpuDynInst, extData.VDST);
+        VecOperandU32 vdst1(gpuDynInst, extData.VDST + 1);
 
         for (int lane = 0; lane < NumVecElemPerVecReg; ++lane) {
-            if (gpuDynInst->exec_mask[lane]) {
-                vdst[lane] = (reinterpret_cast<VecElemU64*>(
+            if (gpuDynInst->exec_mask[lane] && !isFlatScratch()) {
+                vdst0[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane * 2];
+                vdst1[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane * 2 + 1];
+            } else if (gpuDynInst->exec_mask[lane] && isFlatScratch()) {
+                // Unswizzle the data opposite of swizzleData. See swizzleData
+                // in src/arch/amdgpu/vega/insts/op_encodings.hh for details.
+                vdst0[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane];
+                vdst1[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + NumVecElemPerVecReg];
             }
         }
-        vdst.write();
+
+        vdst0.write();
+        vdst1.write();
     } // completeAcc
     // --- Inst_FLAT__FLAT_LOAD_DWORDX3 class methods ---
 
@@ -371,8 +393,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -400,13 +424,22 @@ namespace VegaISA
         VecOperandU32 vdst2(gpuDynInst, extData.VDST + 2);
 
         for (int lane = 0; lane < NumVecElemPerVecReg; ++lane) {
-            if (gpuDynInst->exec_mask[lane]) {
+            if (gpuDynInst->exec_mask[lane] && !isFlatScratch()) {
                 vdst0[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane * 3];
                 vdst1[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane * 3 + 1];
                 vdst2[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane * 3 + 2];
+            } else if (gpuDynInst->exec_mask[lane] && isFlatScratch()) {
+                // Unswizzle the data opposite of swizzleData. See swizzleData
+                // in src/arch/amdgpu/vega/insts/op_encodings.hh for details.
+                vdst0[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane];
+                vdst1[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + NumVecElemPerVecReg];
+                vdst2[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + 2*NumVecElemPerVecReg];
             }
         }
 
@@ -437,8 +470,10 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             return;
         }
@@ -467,7 +502,7 @@ namespace VegaISA
         VecOperandU32 vdst3(gpuDynInst, extData.VDST + 3);
 
         for (int lane = 0; lane < NumVecElemPerVecReg; ++lane) {
-            if (gpuDynInst->exec_mask[lane]) {
+            if (gpuDynInst->exec_mask[lane] && !isFlatScratch()) {
                 vdst0[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane * 4];
                 vdst1[lane] = (reinterpret_cast<VecElemU32*>(
@@ -476,6 +511,17 @@ namespace VegaISA
                     gpuDynInst->d_data))[lane * 4 + 2];
                 vdst3[lane] = (reinterpret_cast<VecElemU32*>(
                     gpuDynInst->d_data))[lane * 4 + 3];
+            } else if (gpuDynInst->exec_mask[lane] && isFlatScratch()) {
+                // Unswizzle the data opposite of swizzleData. See swizzleData
+                // in src/arch/amdgpu/vega/insts/op_encodings.hh for details.
+                vdst0[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane];
+                vdst1[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + NumVecElemPerVecReg];
+                vdst2[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + 2*NumVecElemPerVecReg];
+                vdst3[lane] = (reinterpret_cast<VecElemU32*>(
+                    gpuDynInst->d_data))[lane + 3*NumVecElemPerVecReg];
             }
         }
 
@@ -506,10 +552,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -565,10 +614,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -625,10 +677,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -684,10 +739,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -744,10 +802,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -774,7 +835,7 @@ namespace VegaISA
     void
     Inst_FLAT__FLAT_STORE_DWORDX2::initiateAcc(GPUDynInstPtr gpuDynInst)
     {
-        initMemWrite<VecElemU64>(gpuDynInst);
+        initMemWrite<2>(gpuDynInst);
     } // initiateAcc
 
     void
@@ -804,10 +865,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -872,10 +936,13 @@ namespace VegaISA
 
         if (gpuDynInst->exec_mask.none()) {
             wf->decVMemInstsIssued();
+            wf->untrackVMemInst(gpuDynInst);
             if (isFlat()) {
                 wf->decLGKMInstsIssued();
+                wf->untrackLGKMInst(gpuDynInst);
             }
             wf->decExpInstsIssued();
+            wf->untrackExpInst(gpuDynInst);
             return;
         }
 
@@ -920,6 +987,246 @@ namespace VegaISA
     void
     Inst_FLAT__FLAT_STORE_DWORDX4::completeAcc(GPUDynInstPtr gpuDynInst)
     {
+    } // completeAcc
+    // --- Inst_FLAT__FLAT_LOAD_LDS_UBYTE class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_UBYTE::
+        Inst_FLAT__FLAT_LOAD_LDS_UBYTE(InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_ubyte")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal() || isFlatScratch());
+    } // Inst_FLAT__FLAT_LOAD_LDS_UBYTE
+
+    Inst_FLAT__FLAT_LOAD_LDS_UBYTE::~Inst_FLAT__FLAT_LOAD_LDS_UBYTE()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_UBYTE
+
+    // --- description from .arch file ---
+    // Untyped buffer load unsigned byte (zero extend to VGPR destination).
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_UBYTE::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_UBYTE::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<VecElemU8>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_UBYTE::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        // Align to dword.
+        ldsComplete<1>(gpuDynInst);
+    } // execute
+    // --- Inst_FLAT__FLAT_LOAD_LDS_SBYTE class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_SBYTE::
+        Inst_FLAT__FLAT_LOAD_LDS_SBYTE(InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_sbyte")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal() || isFlatScratch());
+    } // Inst_FLAT__FLAT_LOAD_LDS_SBYTE
+
+    Inst_FLAT__FLAT_LOAD_LDS_SBYTE::~Inst_FLAT__FLAT_LOAD_LDS_SBYTE()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_SBYTE
+
+    // --- description from .arch file ---
+    // Untyped buffer load signed byte (sign extend to VGPR destination).
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SBYTE::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SBYTE::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<VecElemI8>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SBYTE::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        // Align to dword.
+        ldsComplete<1, 8>(gpuDynInst);
+    } // execute
+    // --- Inst_FLAT__FLAT_LOAD_LDS_USHORT class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_USHORT::
+        Inst_FLAT__FLAT_LOAD_LDS_USHORT(InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_ushort")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal() || isFlatScratch());
+    } // Inst_FLAT__FLAT_LOAD_LDS_USHORT
+
+    Inst_FLAT__FLAT_LOAD_LDS_USHORT::~Inst_FLAT__FLAT_LOAD_LDS_USHORT()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_USHORT
+
+    // --- description from .arch file ---
+    // Untyped buffer load unsigned short (zero extend to VGPR destination).
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_USHORT::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_USHORT::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<VecElemU16>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_USHORT::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        // Align to dword.
+        ldsComplete<1>(gpuDynInst);
+    } // execute
+
+    // --- Inst_FLAT__FLAT_LOAD_LDS_SSHORT class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_SSHORT::
+        Inst_FLAT__FLAT_LOAD_LDS_SSHORT(InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_sshort")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal() || isFlatScratch());
+    } // Inst_FLAT__FLAT_LOAD_LDS_SSHORT
+
+    Inst_FLAT__FLAT_LOAD_LDS_SSHORT::~Inst_FLAT__FLAT_LOAD_LDS_SSHORT()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_SSHORT
+
+    // --- description from .arch file ---
+    // Untyped buffer load signed short (sign extend to VGPR destination).
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SSHORT::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SSHORT::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<VecElemI16>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_SSHORT::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        // Align to dword.
+        ldsComplete<1, 16>(gpuDynInst);
+    } // execute
+    // --- Inst_FLAT__FLAT_LOAD_LDS_DWORD class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORD::
+        Inst_FLAT__FLAT_LOAD_LDS_DWORD(InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_dword")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal() || isFlatScratch());
+    } // Inst_FLAT__FLAT_LOAD_LDS_DWORD
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORD::~Inst_FLAT__FLAT_LOAD_LDS_DWORD()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_DWORD
+
+    // --- description from .arch file ---
+    // Untyped buffer load dword.
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORD::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORD::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<VecElemU32>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORD::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        ldsComplete<1>(gpuDynInst);
     } // completeAcc
     // --- Inst_FLAT__FLAT_ATOMIC_SWAP class methods ---
 
@@ -2159,6 +2466,134 @@ namespace VegaISA
     Inst_FLAT__FLAT_ATOMIC_MAX_F64::completeAcc(GPUDynInstPtr gpuDynInst)
     {
         atomicComplete<VecOperandF64, VecElemF64>(gpuDynInst);
+    } // completeAcc
+    // --- Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16 class methods ---
+
+    Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16::Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16(
+        InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_atomic_pk_add_bf16")
+    {
+        setFlag(AtomicPkAddBF16);
+
+        // MI300 spec: "Float atomics must set SC[0]=0 (no return value)."
+        panic_if(instData.GLC, "Saw float atomic with return set!");
+
+        setFlag(AtomicNoReturn);
+    } // Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16
+
+    Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16::~Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16()
+    {
+    } // ~Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16
+
+    void
+    Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16::execute(GPUDynInstPtr gpuDynInst)
+    {
+        atomicExecute<ConstVecOperandU32, VecElemU32>(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initAtomicAccess<VecElemU32>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_ATOMIC_PK_ADD_BF16::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+    } // completeAcc
+    // --- Inst_FLAT__FLAT_LOAD_LDS_DWORDX3 class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX3::Inst_FLAT__FLAT_LOAD_LDS_DWORDX3(
+          InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_dwordx3")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal());
+    } // Inst_FLAT__FLAT_LOAD_LDS_DWORDX3
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX3::~Inst_FLAT__FLAT_LOAD_LDS_DWORDX3()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_DWORDX3
+
+    // --- description from .arch file ---
+    // Untyped buffer load 3 dwords.
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX3::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX3::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<3>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX3::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        ldsComplete<3>(gpuDynInst);
+    } // completeAcc
+    // --- Inst_FLAT__FLAT_LOAD_LDS_DWORDX4 class methods ---
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX4::Inst_FLAT__FLAT_LOAD_LDS_DWORDX4(
+          InFmt_FLAT *iFmt)
+        : Inst_FLAT(iFmt, "flat_load_lds_dwordx4")
+    {
+        setFlag(Load);
+
+        assert(isFlatGlobal());
+    } // Inst_FLAT__FLAT_LOAD_LDS_DWORDX4
+
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX4::~Inst_FLAT__FLAT_LOAD_LDS_DWORDX4()
+    {
+    } // ~Inst_FLAT__FLAT_LOAD_LDS_DWORDX4
+
+    // --- description from .arch file ---
+    // Untyped buffer load 4 dwords.
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX4::execute(GPUDynInstPtr gpuDynInst)
+    {
+        Wavefront *wf = gpuDynInst->wavefront();
+
+        if (gpuDynInst->exec_mask.none()) {
+            wf->decVMemInstsIssued();
+            return;
+        }
+
+        gpuDynInst->execUnitId = wf->execUnitId;
+        gpuDynInst->latency.init(gpuDynInst->computeUnit());
+        gpuDynInst->latency.set(gpuDynInst->computeUnit()->clockPeriod());
+
+        calcAddr(gpuDynInst, extData.ADDR, extData.SADDR, instData.OFFSET);
+
+        issueRequestHelper(gpuDynInst);
+    } // execute
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX4::initiateAcc(GPUDynInstPtr gpuDynInst)
+    {
+        initMemRead<4>(gpuDynInst);
+    } // initiateAcc
+
+    void
+    Inst_FLAT__FLAT_LOAD_LDS_DWORDX4::completeAcc(GPUDynInstPtr gpuDynInst)
+    {
+        ldsComplete<4>(gpuDynInst);
     } // completeAcc
 } // namespace VegaISA
 } // namespace gem5

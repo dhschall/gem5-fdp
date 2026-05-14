@@ -46,7 +46,6 @@ from m5.objects.ClockedObject import ClockedObject
 from m5.objects.CPUTracers import ExeTracer
 from m5.objects.InstTracer import InstTracer
 from m5.objects.Platform import Platform
-from m5.objects.ResetPort import ResetResponsePort
 from m5.objects.SubSystem import SubSystem
 from m5.objects.XBar import L2XBar
 from m5.params import *
@@ -154,6 +153,13 @@ class BaseCPU(ClockedObject):
     )
 
     model_reset = ResetResponsePort("Generic reset for the CPU")
+
+    cpu_idle_pins = VectorIntSourcePin(
+        "This signal indicates the thread context of CPU is idle. Should be "
+        "equal to the numThreads or keep empty to ignore idle signals. If the "
+        "user specifies cpu_idle_pins less than numThreads. The ContextId "
+        "greater than the size of cpu_idle_pins will be ignored."
+    )
 
     tracer = Param.InstTracer(default_tracer, "Instruction tracer")
 

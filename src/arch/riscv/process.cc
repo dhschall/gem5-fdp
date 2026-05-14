@@ -44,7 +44,6 @@
 #include "base/loader/elf_object.hh"
 #include "base/loader/object_file.hh"
 #include "base/logging.hh"
-#include "base/random.hh"
 #include "cpu/thread_context.hh"
 #include "debug/Stack.hh"
 #include "mem/page_table.hh"
@@ -74,7 +73,7 @@ RiscvProcess64::RiscvProcess64(const ProcessParams &params,
         RiscvProcess(params, objFile)
 {
     const Addr stack_base = 0x7FFFFFFFFFFFFFFFL;
-    const Addr max_stack_size = 8 * 1024 * 1024;
+    const Addr max_stack_size = params.maxStackSize;
     const Addr next_thread_stack_base = stack_base - max_stack_size;
     const Addr brk_point = roundUp(image.maxAddr(), PageBytes);
     const Addr mmap_end = 0x4000000000000000L;
@@ -87,7 +86,7 @@ RiscvProcess32::RiscvProcess32(const ProcessParams &params,
         RiscvProcess(params, objFile)
 {
     const Addr stack_base = 0x7FFFFFFF;
-    const Addr max_stack_size = 8 * 1024 * 1024;
+    const Addr max_stack_size = params.maxStackSize;
     const Addr next_thread_stack_base = stack_base - max_stack_size;
     const Addr brk_point = roundUp(image.maxAddr(), PageBytes);
     const Addr mmap_end = 0x40000000L;
@@ -172,7 +171,7 @@ RiscvProcess::argsInit(int pageSize)
     memState->setStackMin(memState->getStackMin() - RandomBytes);
     uint8_t at_random[RandomBytes];
     std::generate(std::begin(at_random), std::end(at_random),
-                  [&]{ return random_mt.random(0, 0xFF); });
+                  [&]{ return rng->random(0, 0xFF); });
     initVirtMem->writeBlob(memState->getStackMin(), at_random, RandomBytes);
 
     // Copy argv to stack

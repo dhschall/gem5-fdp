@@ -275,8 +275,6 @@ class ROB
     /** Pointer to the CPU. */
     CPU *cpu;
 
-    unsigned depCheckShift;
-
     /** Active Threads in CPU */
     std::list<ThreadID> *activeThreads;
 
@@ -292,8 +290,11 @@ class ROB
     /** ROB List of Instructions */
     std::list<DynInstPtr> instList[MaxThreads];
 
-    /** Number of instructions that can be squashed in a single cycle. */
-    unsigned squashWidth;
+    /** Number of instructions that can be squashed in a single cycle.
+     * A negative number means all instructions are squashed instantly
+     * within on cycle
+     */
+    const std::optional<unsigned> squashWidth;
 
   public:
     /** Iterator pointing to the instruction which is the last instruction
@@ -333,7 +334,6 @@ class ROB
     /** Number of active threads. */
     ThreadID numThreads;
 
-
     struct ROBStats : public statistics::Group
     {
         ROBStats(statistics::Group *parent);
@@ -342,14 +342,6 @@ class ROB
         statistics::Scalar reads;
         // The number of rob_writes
         statistics::Scalar writes;
-
-        statistics::Scalar squashedLoads;
-        statistics::Scalar squashedRMWLoads;
-        statistics::Scalar squashedRMWALoads;
-
-        statistics::Scalar squashedStores;
-        statistics::Scalar squashedRMWStores;
-        statistics::Scalar squashedRMWAStores;
     } stats;
 };
 

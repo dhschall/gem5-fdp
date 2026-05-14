@@ -35,33 +35,68 @@ public:
 
     ITTAGE(const ITTAGEParams &params);
 
-    // New Interface
+    // IndirectPredictor interface
     void reset();
-    const PCStateBase* lookup(ThreadID tid, InstSeqNum sn, PCStateBase& pc, void * &i_history);
+
+    // Changed: pc parameter is now Addr (was PCStateBase&) to match the
+    // updated IndirectPredictor::lookup signature in indirect.hh.
+    const PCStateBase* lookup(ThreadID tid, InstSeqNum sn, Addr pc,
+                              void * &i_history) override;
+
     void update(ThreadID tid, InstSeqNum sn, Addr pc, bool squash,
                 bool taken, const PCStateBase& target,
-                BranchType br_type, void * &i_history);
-    void squash(ThreadID tid, InstSeqNum sn, void * &i_history);
-    void commit(ThreadID tid, InstSeqNum sn, void * &i_history);
+                BranchType br_type, void * &i_history) override;
 
-    // Old Interface
+    void squash(ThreadID tid, InstSeqNum sn, void * &i_history) override;
+    void commit(ThreadID tid, InstSeqNum sn, void * &i_history) override;
+
+private:
+    // ---------------------------------------------------------------
+    // Internal helpers (formerly the "Old Interface" public methods).
+    // These are no longer part of the IndirectPredictor contract; they
+    // are implementation details called by the four methods above.
+    // ---------------------------------------------------------------
+
+    struct HistoryEntry {
+        HistoryEntry(Addr br_addr, Addr tgt_addr, InstSeqNum seq_num)
+            : pcAddr(br_addr),
+              targetAddr(tgt_addr),
+              seqNum(seq_num)
+        {
+        }
+        Addr pcAddr;
+        Addr targetAddr;
+        InstSeqNum seqNum;
+    };
+
+    /** Direct table lookup; fills br_target on a hit. Returns true on hit. */
     bool lookup(Addr br_addr, PCStateBase& br_target, ThreadID tid);
-    void recordIndirect(Addr br_addr, Addr tgt_addr, InstSeqNum seq_num, ThreadID tid);
+
+    void recordIndirect(Addr br_addr, Addr tgt_addr,
+                        InstSeqNum seq_num, ThreadID tid);
     void commit(InstSeqNum seq_num, ThreadID tid, void * indirect_history);
     void squash(InstSeqNum seq_num, ThreadID tid);
-    void recordTarget(InstSeqNum seq_num, void * indirect_history, const PCStateBase &target, ThreadID tid);
+    void recordTarget(InstSeqNum seq_num, void * indirect_history,
+                      const PCStateBase &target, ThreadID tid);
     void genIndirectInfo(ThreadID tid, void* & indirect_history);
     void updateDirectionInfo(ThreadID tid, bool actually_taken);
     void deleteIndirectInfo(ThreadID tid, void * indirect_history);
-    void changeDirectionPrediction(ThreadID tid, void * indirect_history, bool actually_taken);
+    void changeDirectionPrediction(ThreadID tid, void * indirect_history,
+                                   bool actually_taken);
 
-private:
-    bool lookup_helper(Addr,bitset&, PCStateBase&, PCStateBase&, ThreadID, int&, int&, int&, int&, int&, bool&);
+    // Core table-search helper used by lookup() and recordTarget().
+    bool lookup_helper(Addr, bitset&, PCStateBase&, PCStateBase&, ThreadID,
+                       int&, int&, int&, int&, int&, bool&);
+
+    void commitHistoryEntry(const HistoryEntry &entry,
+                            bitset *ghr, ThreadID tid);
+
     uint64_t getCSR1(bitset& ghr, int table);
     uint64_t getCSR2(bitset& ghr, int table);
     uint64_t getAddrFold(uint64_t address, int table);
     uint64_t getTag(Addr pc, bitset& ghr, int table);
     uint64_t getTableGhrLen(int table);
+
     const unsigned pathLength;
     const unsigned numPredictors;
     const unsigned simpleBTBSize;
@@ -73,7 +108,6 @@ private:
     int reset_counter;
     std::vector<std::unique_ptr<PCStateBase>> previous_target;
     std::vector<std::vector<std::unique_ptr<PCStateBase>> >base_predictor;
-
 
     struct TCnts{
         uint32_t lookuphit;
@@ -88,7 +122,7 @@ private:
         ITTAGEStats(statistics::Group* parent);
     }ittagestats;
 
-    
+
     struct IPredEntry {
         Addr tag = 0;
         std::unique_ptr<PCStateBase> target;
@@ -99,20 +133,6 @@ private:
     // the second level: predictor
     // the third level: index
     std::vector<std::vector<std::vector<IPredEntry> > >targetCache;
-
-    struct HistoryEntry {
-        HistoryEntry(Addr br_addr, Addr tgt_addr, InstSeqNum seq_num)
-            : pcAddr(br_addr),
-              targetAddr(tgt_addr),
-              seqNum(seq_num)
-        {
-        }
-        Addr pcAddr;
-        Addr targetAddr;
-        InstSeqNum seqNum;
-    };
-
-    void commitHistoryEntry(const HistoryEntry &entry, bitset *ghr, ThreadID tid);
 
     struct ThreadInfo {
         ThreadInfo() : headHistEntry(0), ghr(0) {}

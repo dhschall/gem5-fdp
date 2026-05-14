@@ -191,6 +191,12 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
     modelResetPort.onChange([this](const bool &new_val) {
         setReset(new_val);
     });
+
+    for (int i = 0; i < params().port_cpu_idle_pins_connection_count; i++) {
+        cpuIdlePins.emplace_back(new IntSourcePin<BaseCPU>(
+            csprintf("%s.cpu_idle_pins[%d]", name(), i), i, this));
+    }
+
     // create a stat group object for each thread on this core
     fetchStats.reserve(numThreads);
     executeStats.reserve(numThreads);
@@ -213,6 +219,10 @@ BaseCPU::BaseCPU(const Params &p, bool is_checker)
         CommitCPUStats* commitStatptr = new CommitCPUStats(this, i);
         commitStatptr->ipc = commitStatptr->numInsts / baseStats.numCycles;
         commitStatptr->cpi = baseStats.numCycles / commitStatptr->numInsts;
+        commitStatptr->ratioUserInsts = commitStatptr->numUserInsts /
+            commitStatptr->numInsts;
+        commitStatptr->ratioUserOps = commitStatptr->numUserOps /
+            commitStatptr->numOps;
         commitStats.emplace_back(commitStatptr);
     }
 }
@@ -227,6 +237,12 @@ BaseCPU::~BaseCPU()
 {
 }
 
+ThreadID
+BaseCPU::contextToThread(ContextID cid)
+{
+    return static_cast<ThreadID>(cid - threadContexts[0]->contextId());
+}
+
 void
 BaseCPU::postInterrupt(ThreadID tid, int int_num, int index)
 {
@@ -234,7 +250,11 @@ BaseCPU::postInterrupt(ThreadID tid, int int_num, int index)
     // Only wake up syscall emulation if it is not waiting on a futex.
     // This is to model the fact that instructions such as ARM SEV
     // should wake up a WFE sleep, but not a futex syscall WAIT.
-    if (FullSystem || !system->futexMap.is_waiting(threadContexts[tid]))
+    //
+    // For RISC-V, the WFI sleep wake up is implementation defined.
+    // The SiFive WFI wake up the hart only if mip & mie != 0
+    if ((FullSystem && interrupts[tid]->isWakeUp()) ||
+        (!FullSystem && !system->futexMap.is_waiting(threadContexts[tid])))
         wakeup(tid);
 }
 
@@ -463,6 +483,8 @@ BaseCPU::getPort(const std::string &if_name, PortID idx)
         return getInstPort();
     else if (if_name == "model_reset")
         return modelResetPort;
+    else if (if_name == "cpu_idle_pins")
+        return *cpuIdlePins[idx];
     else
         return ClockedObject::getPort(if_name, idx);
 }
@@ -537,6 +559,11 @@ BaseCPU::activateContext(ThreadID thread_num)
 
     DPRINTF(Thread, "activate contextId %d\n",
             threadContexts[thread_num]->contextId());
+
+    if (thread_num < cpuIdlePins.size()) {
+        cpuIdlePins[thread_num]->lower();
+    }
+
     // Squash enter power gating event while cpu gets activated
     if (enterPwrGatingEvent.scheduled())
         deschedule(enterPwrGatingEvent);
@@ -551,6 +578,11 @@ BaseCPU::suspendContext(ThreadID thread_num)
 {
     DPRINTF(Thread, "suspend contextId %d\n",
             threadContexts[thread_num]->contextId());
+
+    if (thread_num < cpuIdlePins.size()) {
+        cpuIdlePins[thread_num]->raise();
+    }
+
     // Check if all threads are suspended
     for (auto t : threadContexts) {
         if (t->status() != ThreadContext::Suspended) {
@@ -676,8 +708,8 @@ BaseCPU::setReset(bool state)
             tc->getIsaPtr()->resetThread();
             // reset the decoder in case it had partially decoded something,
             tc->getDecoderPtr()->reset();
-            // flush the TLBs,
-            tc->getMMUPtr()->flushAll();
+            // reset MMU,
+            tc->getMMUPtr()->reset();
             // Clear any interrupts,
             interrupts[tc->threadId()]->clearAll();
             // and finally reenable execution.
@@ -837,13 +869,13 @@ BaseCPU::GlobalStats::GlobalStats(statistics::Group *parent)
              "Simulator op (including micro ops) rate (op/s)")
 {
     simInsts
-        .functor(BaseCPU::numSimulatedInsts)
+        .functor(BaseCPU::GlobalStats::numSimulatedInsts)
         .precision(0)
         .prereq(simInsts)
         ;
 
     simOps
-        .functor(BaseCPU::numSimulatedOps)
+        .functor(BaseCPU::GlobalStats::numSimulatedOps)
         .precision(0)
         .prereq(simOps)
         ;
@@ -985,47 +1017,55 @@ ExecuteCPUStats::ExecuteCPUStats(statistics::Group *parent, int thread_id)
         .prereq(numVecRegWrites);
 }
 
-BaseCPU::
-CommitCPUStats::CommitCPUStats(statistics::Group *parent, int thread_id)
+BaseCPU::CommitCPUStats::CommitCPUStats(statistics::Group *parent,
+                                        int thread_id)
     : statistics::Group(parent, csprintf("commitStats%i", thread_id).c_str()),
-    ADD_STAT(numInsts, statistics::units::Count::get(),
-             "Number of instructions committed (thread level)"),
-    ADD_STAT(numOps, statistics::units::Count::get(),
-             "Number of ops (including micro ops) committed (thread level)"),
-    ADD_STAT(numInstsNotNOP, statistics::units::Count::get(),
-             "Number of instructions committed excluding NOPs or prefetches"),
-    ADD_STAT(numOpsNotNOP, statistics::units::Count::get(),
-             "Number of Ops (including micro ops) Simulated"),
-    ADD_STAT(cpi, statistics::units::Rate<
-                statistics::units::Cycle, statistics::units::Count>::get(),
-             "CPI: cycles per instruction (thread level)"),
-    ADD_STAT(ipc, statistics::units::Rate<
-                statistics::units::Count, statistics::units::Cycle>::get(),
-             "IPC: instructions per cycle (thread level)"),
-    ADD_STAT(numMemRefs, statistics::units::Count::get(),
-            "Number of memory references committed"),
-    ADD_STAT(numFpInsts, statistics::units::Count::get(),
-            "Number of float instructions"),
-    ADD_STAT(numIntInsts, statistics::units::Count::get(),
-            "Number of integer instructions"),
-    ADD_STAT(numLoadInsts, statistics::units::Count::get(),
-            "Number of load instructions"),
-    ADD_STAT(numRMWLoadInsts, statistics::units::Count::get(),
-             "Number of read-modify-write load instructions executed"),
-    ADD_STAT(numRMWALoadInsts, statistics::units::Count::get(),
-             "Number of atomic read-modify-write load instructions executed"),
-    ADD_STAT(numStoreInsts, statistics::units::Count::get(),
-            "Number of store instructions"),
-    ADD_STAT(numRMWStoreInsts, statistics::units::Count::get(),
-             "Number of read-modify-write store instructions executed"),
-    ADD_STAT(numRMWAStoreInsts, statistics::units::Count::get(),
-             "Number of atomic read-modify-write store instructions executed"),
-    ADD_STAT(numVecInsts, statistics::units::Count::get(),
-            "Number of vector instructions"),
-    ADD_STAT(committedInstType, statistics::units::Count::get(),
-            "Class of committed instruction."),
-    ADD_STAT(committedControl, statistics::units::Count::get(),
-             "Class of control type instructions committed")
+      ADD_STAT(numInsts, statistics::units::Count::get(),
+               "Number of instructions committed (thread level)"),
+      ADD_STAT(numOps, statistics::units::Count::get(),
+               "Number of ops (including micro ops) committed (thread level)"),
+      ADD_STAT(
+          numInstsNotNOP, statistics::units::Count::get(),
+          "Number of instructions committed excluding NOPs or prefetches"),
+      ADD_STAT(numOpsNotNOP, statistics::units::Count::get(),
+               "Number of Ops (including micro ops) Simulated"),
+      ADD_STAT(numUserInsts, statistics::units::Count::get(),
+               "Numbrer of instructions committed in user mode"),
+      ADD_STAT(numUserOps, statistics::units::Count::get(),
+               "Number of ops committed in user mode"),
+      ADD_STAT(ratioUserInsts, statistics::units::Ratio::get(),
+               "Ratio of instructions committed in user mode"),
+      ADD_STAT(ratioUserOps, statistics::units::Ratio::get(),
+               "Ratio of ops committed in user mode"),
+      ADD_STAT(cpi,
+               statistics::units::Rate<statistics::units::Cycle,
+                                       statistics::units::Count>::get(),
+               "CPI: cycles per instruction (thread level)"),
+      ADD_STAT(ipc,
+               statistics::units::Rate<statistics::units::Count,
+                                       statistics::units::Cycle>::get(),
+               "IPC: instructions per cycle (thread level)"),
+      ADD_STAT(numMemRefs, statistics::units::Count::get(),
+               "Number of memory references committed"),
+      ADD_STAT(numFpInsts, statistics::units::Count::get(),
+               "Number of float instructions"),
+      ADD_STAT(numIntInsts, statistics::units::Count::get(),
+               "Number of integer instructions"),
+      ADD_STAT(numLoadInsts, statistics::units::Count::get(),
+               "Number of load instructions"),
+      ADD_STAT(numStoreInsts, statistics::units::Count::get(),
+               "Number of store instructions"),
+      ADD_STAT(numVecInsts, statistics::units::Count::get(),
+               "Number of vector instructions"),
+      ADD_STAT(committedInstType, statistics::units::Count::get(),
+               "Class of committed instruction."),
+      ADD_STAT(committedControl, statistics::units::Count::get(),
+               "Class of control type instructions committed"),
+      ADD_STAT(functionCalls, statistics::units::Count::get(),
+               "Number of function calls committed"),
+      ADD_STAT(numCallsReturns, statistics::units::Count::get(),
+               "Number of function calls and returns committed")
+
 {
     numInsts
         .prereq(numInsts);

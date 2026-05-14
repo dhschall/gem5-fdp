@@ -33,9 +33,10 @@
 #include <unordered_set>
 
 #include "cpu/base.hh"
+#include "cpu/probes/pc_count_pair.hh"
+#include "debug/PcCountTracker.hh"
 #include "params/PcCountTrackerManager.hh"
 #include "sim/sim_exit.hh"
-#include "debug/PcCountTracker.hh"
 
 namespace gem5
 {
@@ -54,7 +55,7 @@ class PcCountTrackerManager : public SimObject {
     /** a counter that stores all the target PC addresses and the number
      * of times the target PC has been executed
      */
-    std::unordered_map<Addr, int> counter;
+    std::unordered_map<Addr, uint64_t> counter;
 
     /** a set that stores all the PC Count pairs that should raise an
      * exit event at
@@ -82,7 +83,7 @@ class PcCountTrackerManager : public SimObject {
      * @return the corresponding value of count for the inputted Program
      * Counter address
      */
-    int
+    uint64_t
     getPcCount(Addr pc) const
     {
         if (counter.find(pc) != counter.end()) {

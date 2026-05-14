@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2017, 2020 ARM Limited
+# Copyright (c) 2010, 2017, 2020, 2024-2025 Arm Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -44,7 +44,7 @@ from m5.SimObject import SimObject
 
 class IntALU(FUDesc):
     opList = [OpDesc(opClass="IntAlu")]
-    count = 14
+    count = 6
 
 
 class IntMultDiv(FUDesc):
@@ -53,7 +53,7 @@ class IntMultDiv(FUDesc):
         OpDesc(opClass="IntDiv", opLat=20, pipelined=False),
     ]
 
-    count = 10
+    count = 2
 
 
 class FP_ALU(FUDesc):
@@ -61,8 +61,9 @@ class FP_ALU(FUDesc):
         OpDesc(opClass="FloatAdd", opLat=2),
         OpDesc(opClass="FloatCmp", opLat=2),
         OpDesc(opClass="FloatCvt", opLat=2),
+        OpDesc(opClass="Bf16Cvt", opLat=2),
     ]
-    count = 12
+    count = 4
 
 
 class FP_MultDiv(FUDesc):
@@ -73,7 +74,7 @@ class FP_MultDiv(FUDesc):
         OpDesc(opClass="FloatDiv", opLat=12, pipelined=False),
         OpDesc(opClass="FloatSqrt", opLat=24, pipelined=False),
     ]
-    count = 10
+    count = 2
 
 
 class SIMD_Unit(FUDesc):
@@ -109,13 +110,46 @@ class SIMD_Unit(FUDesc):
         OpDesc(opClass="SimdExt"),
         OpDesc(opClass="SimdFloatExt"),
         OpDesc(opClass="SimdConfig"),
+        OpDesc(opClass="SimdDotProd"),
+        OpDesc(opClass="SimdAes"),
+        OpDesc(opClass="SimdAesMix"),
+        OpDesc(opClass="SimdSha1Hash"),
+        OpDesc(opClass="SimdSha1Hash2"),
+        OpDesc(opClass="SimdSha256Hash"),
+        OpDesc(opClass="SimdSha256Hash2"),
+        OpDesc(opClass="SimdShaSigma2"),
+        OpDesc(opClass="SimdShaSigma3"),
+        OpDesc(opClass="SimdSha3"),
+        OpDesc(opClass="SimdSm4e"),
+        OpDesc(opClass="SimdCrc"),
+        OpDesc(opClass="SimdBf16Add"),
+        OpDesc(opClass="SimdBf16Cmp"),
+        OpDesc(opClass="SimdBf16Cvt"),
+        OpDesc(opClass="SimdBf16DotProd"),
+        OpDesc(opClass="SimdBf16MatMultAcc"),
+        OpDesc(opClass="SimdBf16Mult"),
+        OpDesc(opClass="SimdBf16MultAcc"),
     ]
-    count = 12
+    count = 4
+
+
+class Matrix_Unit(FUDesc):
+    opList = [
+        OpDesc(opClass="Matrix"),
+        OpDesc(opClass="MatrixMov"),
+        OpDesc(opClass="MatrixOP"),
+    ]
+    count = 1
+
+
+class System_Unit(FUDesc):
+    opList = [OpDesc(opClass="System")]
+    count = 1
 
 
 class PredALU(FUDesc):
     opList = [OpDesc(opClass="SimdPredAlu")]
-    count = 6
+    count = 1
 
 
 class ReadPort(FUDesc):
@@ -124,10 +158,13 @@ class ReadPort(FUDesc):
         OpDesc(opClass="FloatMemRead"),
         OpDesc(opClass="SimdUnitStrideLoad"),
         OpDesc(opClass="SimdUnitStrideMaskLoad"),
+        OpDesc(opClass="SimdUnitStrideSegmentedLoad"),
         OpDesc(opClass="SimdStridedLoad"),
         OpDesc(opClass="SimdIndexedLoad"),
         OpDesc(opClass="SimdUnitStrideFaultOnlyFirstLoad"),
+        OpDesc(opClass="SimdUnitStrideSegmentedFaultOnlyFirstLoad"),
         OpDesc(opClass="SimdWholeRegisterLoad"),
+        OpDesc(opClass="SimdStrideSegmentedLoad"),
     ]
     count = 0
 
@@ -138,14 +175,16 @@ class WritePort(FUDesc):
         OpDesc(opClass="FloatMemWrite"),
         OpDesc(opClass="SimdUnitStrideStore"),
         OpDesc(opClass="SimdUnitStrideMaskStore"),
+        OpDesc(opClass="SimdUnitStrideSegmentedStore"),
         OpDesc(opClass="SimdStridedStore"),
         OpDesc(opClass="SimdIndexedStore"),
         OpDesc(opClass="SimdWholeRegisterStore"),
+        OpDesc(opClass="SimdStrideSegmentedStore"),
     ]
     count = 0
 
 
-class RdWrPort(FUDesc): 
+class RdWrPort(FUDesc):
     opList = [
         OpDesc(opClass="MemRead"),
         OpDesc(opClass="MemWrite"),
@@ -155,17 +194,17 @@ class RdWrPort(FUDesc):
         OpDesc(opClass="SimdUnitStrideStore"),
         OpDesc(opClass="SimdUnitStrideMaskLoad"),
         OpDesc(opClass="SimdUnitStrideMaskStore"),
+        OpDesc(opClass="SimdUnitStrideSegmentedLoad"),
+        OpDesc(opClass="SimdUnitStrideSegmentedStore"),
         OpDesc(opClass="SimdStridedLoad"),
         OpDesc(opClass="SimdStridedStore"),
         OpDesc(opClass="SimdIndexedLoad"),
         OpDesc(opClass="SimdIndexedStore"),
         OpDesc(opClass="SimdUnitStrideFaultOnlyFirstLoad"),
+        OpDesc(opClass="SimdUnitStrideSegmentedFaultOnlyFirstLoad"),
         OpDesc(opClass="SimdWholeRegisterLoad"),
         OpDesc(opClass="SimdWholeRegisterStore"),
+        OpDesc(opClass="SimdStrideSegmentedLoad"),
+        OpDesc(opClass="SimdStrideSegmentedStore"),
     ]
-    count = 12
-
-
-class IprPort(FUDesc):
-    opList = [OpDesc(opClass="IprAccess", opLat=3, pipelined=False)]
-    count = 1
+    count = 4

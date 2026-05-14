@@ -91,7 +91,6 @@ class InstructionQueue;
  * supports multiple cycle squashing, to model a ROB that can only
  * remove a certain number of instructions per cycle.
  */
-
 class Commit
 {
   public:
@@ -114,6 +113,7 @@ class Commit
         TrapPending,
         FetchTrapPending,
         SquashAfterPending, //< Committing instructions before a squash.
+        ThreadStatusMax
     };
 
   private:
@@ -470,10 +470,16 @@ class Commit
 
     struct CommitStats : public statistics::Group
     {
+        static std::string statusStrings[ThreadStatusMax];
+        static std::string statusDefinitions[ThreadStatusMax];
+
         CommitStats(CPU *cpu, Commit *commit);
         /** Stat for the total number of squashed instructions discarded by
          * commit.
          */
+        /** Stat for total number of cycles spent in each commit state */
+        statistics::Vector status;
+
         statistics::Scalar commitSquashedInsts;
         /** Stat for the total number of times commit has had to stall due
          * to a non-speculative instruction reaching the head of the ROB.
@@ -490,8 +496,6 @@ class Commit
         statistics::Vector amos;
         /** Total number of committed memory barriers. */
         statistics::Vector membars;
-        /** Total number of function calls */
-        statistics::Vector functionCalls;
         /** Committed instructions by instruction type (OpClass) */
         statistics::Vector2d committedInstType;
 

@@ -78,7 +78,7 @@ class IndirectPredictor : public SimObject
      *         otherwise a nullptr is returned.
      */
     virtual const PCStateBase* lookup(ThreadID tid, InstSeqNum sn,
-                                      PCStateBase& pc, void * &i_history) = 0;
+                                      Addr pc, void * &i_history) = 0;
 
     /**
      * Updates the indirect predictor with history information of a branch.

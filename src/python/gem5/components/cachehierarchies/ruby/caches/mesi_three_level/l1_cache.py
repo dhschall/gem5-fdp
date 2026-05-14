@@ -29,7 +29,7 @@ import math
 from m5.objects import (
     LRURP,
     ClockDomain,
-    L0Cache_Controller,
+    MESI_Three_Level_L0Cache_Controller,
     MessageBuffer,
     RubyCache,
     RubyPrefetcher,
@@ -42,7 +42,7 @@ from .....processors.abstract_core import AbstractCore
 
 # L0Cache_Controller is the ruby backend's terminology corresponding to
 # L1 cache in stdlib terms.
-class L1Cache(L0Cache_Controller):
+class L1Cache(MESI_Three_Level_L0Cache_Controller):
     _version = 0
 
     @classmethod
@@ -80,7 +80,7 @@ class L1Cache(L0Cache_Controller):
             replacement_policy=LRURP(),
         )
         self.clk_domain = clk_domain
-        self.prefetcher = RubyPrefetcher()
+        self.prefetcher = RubyPrefetcher(block_size=cache_line_size)
         self.send_evictions = core.requires_send_evicts()
         self.transitions_per_cycle = 32
         self.enable_prefetch = False
@@ -105,5 +105,5 @@ class L1Cache(L0Cache_Controller):
         # In stdlib terms, they are bufferToL2 and bufferFromL2 respectively.
         # These buffers are connections between L1 cache and L2 cache.
         # Later on, we'll need to connect those buffers to L2.
-        self.bufferToL1 = MessageBuffer()
-        self.bufferFromL1 = MessageBuffer()
+        self.bufferToL1 = MessageBuffer(ordered=True)
+        self.bufferFromL1 = MessageBuffer(ordered=True)

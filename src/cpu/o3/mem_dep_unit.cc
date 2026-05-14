@@ -26,8 +26,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/o3/mem_dep_unit.hh"
-
 #include <map>
 #include <memory>
 #include <vector>
@@ -37,6 +35,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/inst_queue.hh"
 #include "cpu/o3/limits.hh"
+#include "cpu/o3/mem_dep_unit.hh"
 #include "debug/MemDepUnit.hh"
 #include "params/BaseO3CPU.hh"
 
@@ -52,13 +51,13 @@ int MemDepUnit::MemDepEntry::memdep_insert = 0;
 int MemDepUnit::MemDepEntry::memdep_erase = 0;
 #endif
 
-MemDepUnit::MemDepUnit() : stats(nullptr), iqPtr(NULL) {}
+MemDepUnit::MemDepUnit() : iqPtr(NULL), stats(nullptr) {}
 
 MemDepUnit::MemDepUnit(const BaseO3CPUParams &params)
     : _name(params.name + ".memdepunit"),
       depPred(params, this),
-      stats(nullptr),
-      iqPtr(NULL)
+      iqPtr(NULL),
+      stats(nullptr)
 {
     DPRINTF(MemDepUnit, "Creating MemDepUnit object.\n");
 }
@@ -90,9 +89,10 @@ MemDepUnit::~MemDepUnit()
 void
 MemDepUnit::init(const BaseO3CPUParams &params, ThreadID tid, CPU *_cpu)
 {
+    _name = csprintf("%s.memDep%d", params.name, tid);
+
     DPRINTF(MemDepUnit, "Creating MemDepUnit %i object.\n",tid);
 
-    _name = csprintf("%s.memDep%d", params.name, tid);
     id = tid;
     cpu = _cpu;
 
@@ -306,7 +306,7 @@ MemDepUnit::insert(const DynInstPtr &inst, BranchHistory branchHistory)
 
             if (hash_it != memDepHash.end()) {
                 dependencies.push_back((*hash_it).second);
-                DPRINTF(MemDepUnit, "LoadBarrier found in HashMap.\n");
+                DPRINTF(MemDepUnit, "Producer found\n");
             }
         }
     }
@@ -340,8 +340,6 @@ MemDepUnit::insert(const DynInstPtr &inst, BranchHistory branchHistory)
             inst_entry->regsReady = true;
 
             moveToReady(inst_entry);
-
-            DPRINTF(MemDepUnit, "Also the Inst is ready to issue.\n");
         }
     } else {
         /* The current Instruction has some dependencies;
@@ -376,6 +374,7 @@ MemDepUnit::insert(const DynInstPtr &inst, BranchHistory branchHistory)
         }
     }
 
+    // for load-acquire store-release that could also be a barrier
     insertBarrierSN(inst);
 
     if (inst->isStore() || inst->isAtomic()) {
@@ -383,7 +382,7 @@ MemDepUnit::insert(const DynInstPtr &inst, BranchHistory branchHistory)
                 inst->pcState(), inst->seqNum);
 
         depPred.insertStore(inst->pcState().instAddr(), inst->seqNum,
-                            inst->threadNumber);
+                inst->threadNumber);
 
         ++stats.insertedStores;
     } else if (inst->isLoad()) {
@@ -454,9 +453,8 @@ MemDepUnit::regsReady(const DynInstPtr &inst)
 
         moveToReady(inst_entry);
     } else {
-        DPRINTF(MemDepUnit, "Instruction PC %#x [sn:%lli] still "
-                "waiting on memory dependency.\n",
-                inst_entry->inst->pcState().instAddr(), inst_entry->inst->seqNum);
+        DPRINTF(MemDepUnit, "Instruction still waiting on "
+                "memory dependency.\n");
     }
 }
 
@@ -563,52 +561,41 @@ MemDepUnit::wakeDependents(const DynInstPtr &inst)
 
     MemDepEntryPtr inst_entry = findInHash(inst);
 
-    /* By entering to this function, we release one dependency for
-       the dependent_inst
-       (Inst which was stopped from issuing due to one or
-       multiple dependencies.)
-
-       --> !! The dependent_inst is going to be woken up whenever
-       all the dependencies have been resolved. !!
-    */
-
     for (int i = 0; i < inst_entry->dependInsts.size(); ++i ) {
-        MemDepEntryPtr dependent_inst = inst_entry->dependInsts[i];
+        MemDepEntryPtr woken_inst = inst_entry->dependInsts[i];
 
-        if (!dependent_inst->inst) {
+        if (!woken_inst->inst) {
             // Potentially removed mem dep entries could be on this list
             continue;
         }
 
-        DPRINTF(MemDepUnit, "Inst PC: %#x [sn:%lli] is Releasing one "
-        "dependency for inst PC: %#x [sn:%lli].\n",
-        inst->pcState().instAddr(), inst->seqNum,
-        dependent_inst->inst->pcState().instAddr(),
-        dependent_inst->inst->seqNum);
+        DPRINTF(MemDepUnit, "Waking up a dependent inst, "
+                "[sn:%lli].\n",
+                woken_inst->inst->seqNum);
 
-        // release one dependency.
-        dependent_inst->memDeps--;
+        assert(woken_inst->memDeps > 0);
+        woken_inst->memDeps -= 1;
 
-        if (dependent_inst->memDeps == 0) {
-            if (dependent_inst->inst->memDepInfo.predicted && inst->isStore()) {
-                if (dependent_inst->inst->memDepInfo.predStoreAddrs.first == 0) {
-                    dependent_inst->inst->memDepInfo.predStoreAddrs.first = inst->effAddr;
-                    dependent_inst->inst->memDepInfo.predStoreSizes.first = inst->effSize;
+        if (woken_inst->memDeps == 0) {
+            if (woken_inst->inst->memDepInfo.predicted && inst->isStore()) {
+                if (woken_inst->inst->memDepInfo.predStoreAddrs.first == 0) {
+                    woken_inst->inst->memDepInfo.predStoreAddrs.first = inst->effAddr;
+                    woken_inst->inst->memDepInfo.predStoreSizes.first = inst->effSize;
                 }
                 else {
-                    dependent_inst->inst->memDepInfo.predStoreAddrs.second = inst->effAddr;
-                    dependent_inst->inst->memDepInfo.predStoreSizes.second = inst->effSize;
+                    woken_inst->inst->memDepInfo.predStoreAddrs.second = inst->effAddr;
+                    woken_inst->inst->memDepInfo.predStoreSizes.second = inst->effSize;
                 }
             }
-            if (dependent_inst->regsReady && !dependent_inst->squashed) {
+            if (woken_inst->regsReady && !woken_inst->squashed) {
                 DPRINTF(MemDepUnit, "Inst PC: %#x [sn:%lli] is just "
                         "woken up!!\n",
-                        dependent_inst->inst->pcState().instAddr(),
-                        dependent_inst->inst->seqNum);
+                        woken_inst->inst->pcState().instAddr(),
+                        woken_inst->inst->seqNum);
 
                 /** All the dependencies have been resolved & the
                     Registers are ready as well. */
-                moveToReady(dependent_inst);
+                moveToReady(woken_inst);
             }
         }
     }

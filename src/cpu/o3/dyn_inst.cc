@@ -73,7 +73,6 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
 #ifndef NDEBUG
     ++cpu->instcount;
 
-	/*
     if (cpu->instcount > 1500) {
 #ifdef GEM5_DEBUG
         cpu->dumpInsts();
@@ -81,7 +80,6 @@ DynInst::DynInst(const Arrays &arrays, const StaticInstPtr &static_inst,
 #endif
         assert(cpu->instcount <= 1500);
     }
-	*/
 
     DPRINTF(DynInst,
         "DynInst: [sn:%lli] Instruction created. Instcount for %s = %i\n",

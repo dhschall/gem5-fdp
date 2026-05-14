@@ -82,7 +82,6 @@ bool operator==(const BranchHistory a, const BranchHistory b);
 //unclear on what exactly this should be, choosing a reasonably high number for now
 #define MAX_BRANCH_HISTORY 128
 
-
 } // namespace o3
 } // namespace gem5
 

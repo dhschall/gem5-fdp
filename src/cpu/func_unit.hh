@@ -71,11 +71,10 @@ class OpDesc : public SimObject
     OpClass opClass;
     Cycles opLat;
     bool pipelined;
-    Cycles issue_latency;
 
     OpDesc(const OpDescParams &p)
         : SimObject(p), opClass(p.opClass), opLat(p.opLat),
-          pipelined(p.pipelined), issue_latency(p.issueLat) {};
+          pipelined(p.pipelined) {};
 };
 
 class FUDesc : public SimObject
@@ -87,9 +86,6 @@ class FUDesc : public SimObject
     FUDesc(const FUDescParams &p)
         : SimObject(p), opDescList(p.opList), number(p.count) {};
 };
-
-typedef std::vector<OpDesc *>::const_iterator OPDDiterator;
-typedef std::vector<FUDesc *>::const_iterator FUDDiterator;
 
 
 
@@ -106,7 +102,6 @@ class FuncUnit
     std::array<unsigned, Num_OpClasses> opLatencies;
     std::array<bool, Num_OpClasses> pipelined;
     std::bitset<Num_OpClasses> capabilityList;
-    std::array<unsigned, Num_OpClasses> issueLatencies;
 
   public:
     FuncUnit();
@@ -114,14 +109,13 @@ class FuncUnit
 
     std::string name;
 
-    void addCapability(OpClass cap, unsigned oplat, bool pipelined, unsigned issue_latency);
+    void addCapability(OpClass cap, unsigned oplat, bool pipelined);
 
     bool provides(OpClass capability);
     std::bitset<Num_OpClasses> capabilities();
 
     unsigned &opLatency(OpClass capability);
     bool isPipelined(OpClass capability);
-    unsigned &issueLatency(OpClass capability);
 };
 
 } // namespace gem5

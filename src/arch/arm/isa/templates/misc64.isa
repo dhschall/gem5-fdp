@@ -1,6 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2011,2017-2022 Arm Limited
+// Copyright (c) 2011,2017-2022,2024 Arm Limited
 // All rights reserved
 //
 // The license below extends only to copyright in the software and shall
@@ -303,6 +303,22 @@ class %(class_name)s : public %(base_class)s
 };
 }};
 
+def template AtDeclare {{
+class %(class_name)s : public %(base_class)s
+{
+  private:
+    ArmISA::MiscRegIndex dest2;
+    %(reg_idx_arr_decl)s;
+
+  public:
+    // Constructor
+    %(class_name)s(ExtMachInst machInst, MiscRegIndex _dest,
+            MiscRegIndex _dest2, RegIndex _op1);
+
+    Fault execute(ExecContext *, trace::InstRecord *) const override;
+};
+}};
+
 def template DvmDeclare {{
     /**
      * Static instruction class for "%(mnemonic)s".
@@ -315,7 +331,7 @@ def template DvmDeclare {{
 
       public:
         /// Constructor.
-        %(class_name)s(ExtMachInst machInst, bool dvm_enabled);
+        %(class_name)s(ExtMachInst machInst, uint64_t imm, bool dvm_enabled);
         Fault initiateAcc(ExecContext *, trace::InstRecord *) const override;
         Fault completeAcc(PacketPtr, ExecContext *,
                           trace::InstRecord *) const override;
@@ -339,9 +355,22 @@ def template DvmTlbiConstructor {{
     }
 }};
 
+def template AtConstructor {{
+    %(class_name)s::%(class_name)s(ExtMachInst machInst, MiscRegIndex _dest,
+                                   MiscRegIndex _dest2, RegIndex _op1) :
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s,
+                       _dest, _op1),
+        dest2(_dest2)
+    {
+        %(set_reg_idx_arr)s;
+        %(constructor)s;
+    }
+}};
+
 def template DvmConstructor {{
-    %(class_name)s::%(class_name)s(ExtMachInst machInst, bool dvm_enabled) :
-        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s),
+    %(class_name)s::%(class_name)s(ExtMachInst machInst, uint64_t imm,
+                                   bool dvm_enabled) :
+        %(base_class)s("%(mnemonic)s", machInst, %(op_class)s, imm),
         dvmEnabled(dvm_enabled)
     {
         %(set_reg_idx_arr)s;

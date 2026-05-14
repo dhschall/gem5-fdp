@@ -429,7 +429,7 @@ def template AtomicMemOpRMWCompleteAcc {{
 // LR/SC/AMO decode formats
 
 def format LoadReserved(memacc_code, postacc_code={{ }},
-        ea_code={{EA = rvZext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
+        ea_code={{EA = rvSext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''
     macro_inst_flags = []
     macro_iop = InstObjParams(name, Name, 'LoadReserved', macro_ea_code,
@@ -445,7 +445,7 @@ def format LoadReserved(memacc_code, postacc_code={{ }},
     iop = InstObjParams(name, Name, 'LoadReservedMicro',
         {'ea_code': ea_code, 'memacc_code': memacc_code,
         'postacc_code': postacc_code}, inst_flags)
-    mem_flags = ['Request::%s' % flag for flag in mem_flags]
+    mem_flags = ['(Request::%s)' % flag for flag in mem_flags]
     align_flag = getAlignFlag(iop)
     if align_flag:
         mem_flags.append(align_flag)
@@ -460,7 +460,7 @@ def format LoadReserved(memacc_code, postacc_code={{ }},
 }};
 
 def format StoreCond(memacc_code, postacc_code={{ }},
-        ea_code={{EA = rvZext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
+        ea_code={{EA = rvSext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''
     macro_inst_flags = []
     macro_iop = InstObjParams(name, Name, 'StoreCond', macro_ea_code,
@@ -476,7 +476,7 @@ def format StoreCond(memacc_code, postacc_code={{ }},
     iop = InstObjParams(name, Name, 'StoreCondMicro',
         {'ea_code': ea_code, 'memacc_code': memacc_code,
         'postacc_code': postacc_code}, inst_flags)
-    mem_flags = ['Request::%s' % flag for flag in mem_flags]
+    mem_flags = ['(Request::%s)' % flag for flag in mem_flags]
     align_flag = getAlignFlag(iop)
     if align_flag:
         mem_flags.append(align_flag)
@@ -491,7 +491,7 @@ def format StoreCond(memacc_code, postacc_code={{ }},
 }};
 
 def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
-        ea_code={{EA = rvZext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
+        ea_code={{EA = rvSext(Rs1);}}, mem_flags=[], inst_flags=[]) {{
     macro_ea_code = ''
     macro_inst_flags = []
     macro_iop = InstObjParams(name, Name, 'AtomicMemOp', macro_ea_code,
@@ -511,7 +511,7 @@ def format AtomicMemOp(memacc_code, amoop_code, postacc_code={{ }},
                              'amoop_code': amoop_code},
                             rmw_inst_flags)
 
-    rmw_mem_flags = ['Request::%s' % flag for flag in rmw_mem_flags]
+    rmw_mem_flags = ['(Request::%s)' % flag for flag in rmw_mem_flags]
     align_flag = getAlignFlag(rmw_iop)
     if align_flag:
         rmw_mem_flags.append(align_flag)

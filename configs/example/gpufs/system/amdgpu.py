@@ -37,6 +37,7 @@ def createGPU(system, args):
         cu_per_sqc=args.cu_per_sqc,
         timing=True,
         clk_domain=system.clk_domain,
+        progress_interval=args.gpu_progress_interval,
     )
 
     # VIPER GPU protocol implements release consistency at GPU side. So,
@@ -75,6 +76,14 @@ def createGPU(system, args):
                 execPolicy=args.CUExecPolicy,
                 localMemBarrier=args.LocalMemBarrier,
                 countPages=args.countPages,
+                memtime_latency=args.memtime_latency,
+                max_cu_tokens=args.max_cu_tokens,
+                vrf_lm_bus_latency=args.vrf_lm_bus_latency,
+                mem_req_latency=args.mem_req_latency,
+                mem_resp_latency=args.mem_resp_latency,
+                scalar_mem_req_latency=args.scalar_mem_req_latency,
+                scalar_mem_resp_latency=args.scalar_mem_resp_latency,
+                mfma_scale=args.mfma_scale,
                 localDataStore=LdsState(
                     banks=args.numLdsBanks,
                     bankConflictPenalty=args.ldsBankConflictPenalty,
@@ -173,10 +182,9 @@ def createGPU(system, args):
 
 
 def connectGPU(system, args):
-    system.pc.south_bridge.gpu = AMDGPUDevice(pci_func=0, pci_dev=8, pci_bus=0)
+    system.pc.south_bridge.gpu = AMDGPUDevice(pci_func=0, pci_dev=8)
 
-    system.pc.south_bridge.gpu.trace_file = args.gpu_mmio_trace
-    system.pc.south_bridge.gpu.rom_binary = args.gpu_rom
+    system.pc.south_bridge.gpu.ipt_binary = args.gpu_ipt
     system.pc.south_bridge.gpu.checkpoint_before_mmios = (
         args.checkpoint_before_mmios
     )
@@ -192,9 +200,15 @@ def connectGPU(system, args):
         system.pc.south_bridge.gpu.SubsystemVendorID = 0x1002
         system.pc.south_bridge.gpu.SubsystemID = 0x0C34
     elif args.gpu_device == "MI300X":
-        system.pc.south_bridge.gpu.DeviceID = 0x740F
+        system.pc.south_bridge.gpu.DeviceID = 0x74A1
         system.pc.south_bridge.gpu.SubsystemVendorID = 0x1002
         system.pc.south_bridge.gpu.SubsystemID = 0x0C34
+        system.pc.south_bridge.gpu.BAR5 = PciMemBar(size="2MiB")
+    elif args.gpu_device == "MI355X":
+        system.pc.south_bridge.gpu.DeviceID = 0x75A0
+        system.pc.south_bridge.gpu.SubsystemVendorID = 0x1002
+        system.pc.south_bridge.gpu.SubsystemID = 0x0C34
+        system.pc.south_bridge.gpu.BAR5 = PciMemBar(size="2MiB")
     elif args.gpu_device == "Vega10":
         system.pc.south_bridge.gpu.DeviceID = 0x6863
     else:
@@ -221,4 +235,4 @@ def connectGPU(system, args):
 
     # Set bit 6 to enable atomic requestor, meaning this device can request
     # atomics from other PCI devices.
-    system.pc.south_bridge.gpu.PXCAPDevCtrl2 = 0x00000040
+    system.pc.south_bridge.gpu.PXCAPDevCtrl2 = 0x0040

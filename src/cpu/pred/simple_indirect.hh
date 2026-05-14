@@ -61,7 +61,7 @@ class SimpleIndirectPredictor : public IndirectPredictor
     void reset() override;
 
     const PCStateBase * lookup(ThreadID tid, InstSeqNum sn,
-                                PCStateBase& pc, void * &iHistory) override;
+                                Addr pc, void * &iHistory) override;
     void update(ThreadID tid, InstSeqNum sn, Addr pc, bool squash,
                 bool taken, const PCStateBase& target,
                 BranchType br_type, void * &iHistory) override;

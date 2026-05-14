@@ -159,8 +159,6 @@ def macroop LIDT_16_P
 
 def macroop LTR_64_R
 {
-    .rmw
-
     .serialize_after
     chks reg, t0, TRCheck
     limm t4, 0, dataSize=8
@@ -178,8 +176,6 @@ def macroop LTR_64_R
 
 def macroop LTR_64_M
 {
-    .rmw
-    
     .serialize_after
     ld t5, seg, sib, disp, dataSize=2
     chks t5, t0, TRCheck
@@ -198,8 +194,6 @@ def macroop LTR_64_M
 
 def macroop LTR_64_P
 {
-    .rmw
-    
     .serialize_after
     rdip t7
     ld t5, seg, riprel, disp, dataSize=2
@@ -219,8 +213,6 @@ def macroop LTR_64_P
 
 def macroop LTR_R
 {
-    .rmw
-    
     .serialize_after
     chks reg, t0, TRCheck
     limm t4, 0, dataSize=8
@@ -235,8 +227,6 @@ def macroop LTR_R
 
 def macroop LTR_M
 {
-    .rmw
-    
     .serialize_after
     ld t5, seg, sib, disp, dataSize=2
     chks t5, t0, TRCheck

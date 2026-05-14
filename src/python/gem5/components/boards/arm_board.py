@@ -1,3 +1,15 @@
+# Copyright (c) 2025 Arm Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 2022 The Regents of the University of California
 # All rights reserved.
 #
@@ -28,13 +40,13 @@ import os
 from abc import ABCMeta
 from typing import (
     List,
+    Optional,
     Sequence,
     Tuple,
 )
 
 import m5
 from m5.objects import (
-    AddrRange,
     ArmDefaultRelease,
     ArmFsLinux,
     ArmRelease,
@@ -44,9 +56,10 @@ from m5.objects import (
     CowDiskImage,
     GenericTimer,
     IOXBar,
+    PciBus,
     PciVirtIO,
-    Port,
     RawDiskImage,
+    Root,
     SimObject,
     SrcClockDomain,
     Terminal,
@@ -56,6 +69,10 @@ from m5.objects import (
     VirtIOBlock,
     VncServer,
     VoltageDomain,
+)
+from m5.params import (
+    AddrRange,
+    Port,
 )
 
 from ...isas import ISA
@@ -273,12 +290,20 @@ class ArmBoard(ArmSystem, AbstractBoard, KernelDiskWorkload):
             self.realview.attachIO(self.iobus)
 
     @overrides(AbstractBoard)
-    def get_mem_ports(self) -> Sequence[Tuple[AddrRange, Port]]:
-        all_ports = [
-            (self.realview.bootmem.range, self.realview.bootmem.port),
-        ] + self.get_memory().get_mem_ports()
+    def get_mem_ranges(self) -> Sequence[AddrRange]:
+        return super().get_mem_ranges() + [self.realview.bootmem.range]
 
-        return all_ports
+    @overrides(AbstractBoard)
+    def get_mem_ports(self) -> Sequence[Tuple[AddrRange, Port]]:
+        # Note: Ruby needs to create a directory for the realview bootmem
+        if self.get_cache_hierarchy().is_ruby():
+            all_ports = [
+                (self.realview.bootmem.range, self.realview.bootmem.port),
+            ] + self.get_memory().get_mem_ports()
+
+            return all_ports
+
+        return super().get_mem_ports()
 
     @overrides(AbstractBoard)
     def has_io_bus(self) -> bool:
@@ -287,6 +312,14 @@ class ArmBoard(ArmSystem, AbstractBoard, KernelDiskWorkload):
     @overrides(AbstractBoard)
     def get_io_bus(self) -> IOXBar:
         return self.iobus
+
+    @overrides(AbstractBoard)
+    def has_pci_bus(self) -> bool:
+        return True
+
+    @overrides(AbstractBoard)
+    def get_pci_bus(self) -> PciBus:
+        return self.realview.pci_bus
 
     @overrides(AbstractBoard)
     def has_coherent_io(self) -> bool:
@@ -327,8 +360,8 @@ class ArmBoard(ArmSystem, AbstractBoard, KernelDiskWorkload):
         self.system_port = port
 
     @overrides(AbstractBoard)
-    def _pre_instantiate(self):
-        super()._pre_instantiate()
+    def _pre_instantiate(self, full_system: Optional[bool] = None) -> Root:
+        root = super()._pre_instantiate(full_system=full_system)
 
         # Add the PCI devices.
         self.pci_devices = self._pci_devices
@@ -346,6 +379,8 @@ class ArmBoard(ArmSystem, AbstractBoard, KernelDiskWorkload):
         # Calling generateDtb from class ArmSystem to add memory information to
         # the dtb file.
         self.generateDtb(self._get_dtb_filename())
+
+        return root
 
     def _get_dtb_filename(self) -> str:
         """Returns the ``dtb`` file location.
@@ -368,9 +403,7 @@ class ArmBoard(ArmSystem, AbstractBoard, KernelDiskWorkload):
 
         # For every PCI device, we need to get its dma_port so that we
         # can setup dma_controllers correctly.
-        self.realview.attachPciDevice(
-            pci_device, self.iobus, dma_ports=self.get_dma_ports()
-        )
+        self.realview.attachPciDevice(pci_device)
 
     @overrides(KernelDiskWorkload)
     def get_disk_device(self):

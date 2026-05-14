@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2023 Arm Limited
+ * Copyright (c) 2010-2025 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -41,17 +41,25 @@
 #ifndef __ARCH_ARM_REGS_MISC_HH__
 #define __ARCH_ARM_REGS_MISC_HH__
 
-#include <array>
-#include <bitset>
 #include <optional>
 #include <tuple>
 
 #include "arch/arm/regs/misc_types.hh"
 #include "arch/arm/types.hh"
 #include "base/compiler.hh"
-#include "cpu/reg_class.hh"
-#include "debug/MiscRegs.hh"
 #include "dev/arm/generic_timer_miscregs_types.hh"
+
+#define TLBI_VARIANTS(TLBI) \
+    TLBI, \
+    TLBI##NXS
+
+#define TLBI_CASE_VARIANTS(TLBI) \
+    case TLBI: \
+    case TLBI##NXS:
+
+#define TLBI_STR_VARIANTS(TLBI) \
+    #TLBI, \
+    #TLBI"nxs"
 
 namespace gem5
 {
@@ -364,6 +372,18 @@ namespace ArmISA
         MISCREG_PMCEID1,
         MISCREG_PMCCNTR,
         MISCREG_PMXEVTYPER,
+        MISCREG_PMEVCNTR0,
+        MISCREG_PMEVCNTR1,
+        MISCREG_PMEVCNTR2,
+        MISCREG_PMEVCNTR3,
+        MISCREG_PMEVCNTR4,
+        MISCREG_PMEVCNTR5,
+        MISCREG_PMEVTYPER0,
+        MISCREG_PMEVTYPER1,
+        MISCREG_PMEVTYPER2,
+        MISCREG_PMEVTYPER3,
+        MISCREG_PMEVTYPER4,
+        MISCREG_PMEVTYPER5,
         MISCREG_PMCCFILTR,
         MISCREG_PMXEVCNTR,
         MISCREG_PMUSERENR,
@@ -689,84 +709,84 @@ namespace ArmISA
         MISCREG_AT_S12E0W_Xt,
         MISCREG_AT_S1E3R_Xt,
         MISCREG_AT_S1E3W_Xt,
-        MISCREG_TLBI_VMALLE1IS,
-        MISCREG_TLBI_VMALLE1OS,
-        MISCREG_TLBI_VAE1IS,
-        MISCREG_TLBI_VAE1OS,
-        MISCREG_TLBI_ASIDE1IS,
-        MISCREG_TLBI_ASIDE1OS,
-        MISCREG_TLBI_VAAE1IS,
-        MISCREG_TLBI_VAAE1OS,
-        MISCREG_TLBI_VALE1IS,
-        MISCREG_TLBI_VALE1OS,
-        MISCREG_TLBI_VAALE1IS,
-        MISCREG_TLBI_VAALE1OS,
-        MISCREG_TLBI_VMALLE1,
-        MISCREG_TLBI_VAE1,
-        MISCREG_TLBI_ASIDE1,
-        MISCREG_TLBI_VAAE1,
-        MISCREG_TLBI_VALE1,
-        MISCREG_TLBI_VAALE1,
-        MISCREG_TLBI_IPAS2E1IS,
-        MISCREG_TLBI_IPAS2E1OS,
-        MISCREG_TLBI_IPAS2LE1IS,
-        MISCREG_TLBI_IPAS2LE1OS,
-        MISCREG_TLBI_ALLE2IS,
-        MISCREG_TLBI_ALLE2OS,
-        MISCREG_TLBI_VAE2IS,
-        MISCREG_TLBI_VAE2OS,
-        MISCREG_TLBI_ALLE1IS,
-        MISCREG_TLBI_ALLE1OS,
-        MISCREG_TLBI_VALE2IS,
-        MISCREG_TLBI_VALE2OS,
-        MISCREG_TLBI_VMALLS12E1IS,
-        MISCREG_TLBI_VMALLS12E1OS,
-        MISCREG_TLBI_IPAS2E1,
-        MISCREG_TLBI_IPAS2LE1,
-        MISCREG_TLBI_ALLE2,
-        MISCREG_TLBI_VAE2,
-        MISCREG_TLBI_ALLE1,
-        MISCREG_TLBI_VALE2,
-        MISCREG_TLBI_VMALLS12E1,
-        MISCREG_TLBI_ALLE3IS,
-        MISCREG_TLBI_ALLE3OS,
-        MISCREG_TLBI_VAE3IS,
-        MISCREG_TLBI_VAE3OS,
-        MISCREG_TLBI_VALE3IS,
-        MISCREG_TLBI_VALE3OS,
-        MISCREG_TLBI_ALLE3,
-        MISCREG_TLBI_VAE3,
-        MISCREG_TLBI_VALE3,
-        MISCREG_TLBI_RVAE1,
-        MISCREG_TLBI_RVAAE1,
-        MISCREG_TLBI_RVALE1,
-        MISCREG_TLBI_RVAALE1,
-        MISCREG_TLBI_RIPAS2E1,
-        MISCREG_TLBI_RIPAS2LE1,
-        MISCREG_TLBI_RVAE2,
-        MISCREG_TLBI_RVALE2,
-        MISCREG_TLBI_RVAE3,
-        MISCREG_TLBI_RVALE3,
-        MISCREG_TLBI_RVAE1IS,
-        MISCREG_TLBI_RVAAE1IS,
-        MISCREG_TLBI_RVALE1IS,
-        MISCREG_TLBI_RVAALE1IS,
-        MISCREG_TLBI_RIPAS2E1IS,
-        MISCREG_TLBI_RIPAS2LE1IS,
-        MISCREG_TLBI_RVAE2IS,
-        MISCREG_TLBI_RVALE2IS,
-        MISCREG_TLBI_RVAE3IS,
-        MISCREG_TLBI_RVALE3IS,
-        MISCREG_TLBI_RVAE1OS,
-        MISCREG_TLBI_RVAAE1OS,
-        MISCREG_TLBI_RVALE1OS,
-        MISCREG_TLBI_RVAALE1OS,
-        MISCREG_TLBI_RIPAS2E1OS,
-        MISCREG_TLBI_RIPAS2LE1OS,
-        MISCREG_TLBI_RVAE2OS,
-        MISCREG_TLBI_RVALE2OS,
-        MISCREG_TLBI_RVAE3OS,
-        MISCREG_TLBI_RVALE3OS,
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_ASIDE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_ASIDE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAAE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAAE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAALE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAALE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLE1),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE1),
+        TLBI_VARIANTS(MISCREG_TLBI_ASIDE1),
+        TLBI_VARIANTS(MISCREG_TLBI_VAAE1),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE1),
+        TLBI_VARIANTS(MISCREG_TLBI_VAALE1),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2E1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2E1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2LE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2LE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE2IS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE2OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE2IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE2OS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE2IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE2OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLS12E1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLS12E1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2E1),
+        TLBI_VARIANTS(MISCREG_TLBI_IPAS2LE1),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE2),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE2),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE1),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE2),
+        TLBI_VARIANTS(MISCREG_TLBI_VMALLS12E1),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE3IS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE3OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE3IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE3OS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE3IS),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE3OS),
+        TLBI_VARIANTS(MISCREG_TLBI_ALLE3),
+        TLBI_VARIANTS(MISCREG_TLBI_VAE3),
+        TLBI_VARIANTS(MISCREG_TLBI_VALE3),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE1),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAAE1),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE1),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAALE1),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2E1),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2LE1),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE2),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE2),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE3),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE3),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAAE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAALE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2E1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2LE1IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE2IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE2IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE3IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE3IS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAAE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAALE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2E1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RIPAS2LE1OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE2OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE2OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVAE3OS),
+        TLBI_VARIANTS(MISCREG_TLBI_RVALE3OS),
         MISCREG_PMINTENSET_EL1,
         MISCREG_PMINTENCLR_EL1,
         MISCREG_PMCR_EL0,
@@ -1141,6 +1161,7 @@ namespace ArmISA
         MISCREG_HFGWTR_EL2,
         MISCREG_HDFGRTR_EL2,
         MISCREG_HDFGWTR_EL2,
+        MISCREG_HAFGRTR_EL2,
 
         // FEAT_MPAM
         MISCREG_MPAMIDR_EL1,
@@ -1159,6 +1180,15 @@ namespace ArmISA
         MISCREG_MPAMVPM5_EL2,
         MISCREG_MPAMVPM6_EL2,
         MISCREG_MPAMVPM7_EL2,
+
+        // S1PIE
+        MISCREG_PIRE0_EL1,
+        MISCREG_PIRE0_EL2,
+        MISCREG_PIRE0_EL12,
+        MISCREG_PIR_EL1,
+        MISCREG_PIR_EL2,
+        MISCREG_PIR_EL3,
+        MISCREG_PIR_EL12,
 
         // NUM_PHYS_MISCREGS specifies the number of actual physical
         // registers, not considering the following pseudo-registers
@@ -1197,501 +1227,6 @@ namespace ArmISA
         // Total number of Misc Registers: Physical + Dummy
         NUM_MISCREGS
     };
-
-    enum MiscRegInfo
-    {
-        MISCREG_IMPLEMENTED,
-        MISCREG_UNVERIFIABLE,   // Does the value change on every read (e.g. a
-                                // arch generic counter)
-        MISCREG_UNSERIALIZE,    // Should the checkpointed value be restored?
-        MISCREG_WARN_NOT_FAIL,  // If MISCREG_IMPLEMENTED is deasserted, it
-                                // tells whether the instruction should raise a
-                                // warning or fail
-        MISCREG_MUTEX,  // True if the register corresponds to a pair of
-                        // mutually exclusive registers
-        MISCREG_BANKED,  // True if the register is banked between the two
-                         // security states, and this is the parent node of the
-                         // two banked registers
-        MISCREG_BANKED64, // True if the register is banked between the two
-                          // security states, and this is the parent node of
-                          // the two banked registers. Used in AA64 only.
-        MISCREG_BANKED_CHILD, // The entry is one of the child registers that
-                              // forms a banked set of regs (along with the
-                              // other child regs)
-
-        // Access permissions
-        // User mode
-        MISCREG_USR_NS_RD,
-        MISCREG_USR_NS_WR,
-        MISCREG_USR_S_RD,
-        MISCREG_USR_S_WR,
-        // Privileged modes other than hypervisor or monitor
-        MISCREG_PRI_NS_RD,
-        MISCREG_PRI_NS_WR,
-        MISCREG_PRI_S_RD,
-        MISCREG_PRI_S_WR,
-        // Hypervisor mode
-        MISCREG_HYP_NS_RD,
-        MISCREG_HYP_NS_WR,
-        MISCREG_HYP_S_RD,
-        MISCREG_HYP_S_WR,
-        // Monitor mode, SCR.NS == 0
-        MISCREG_MON_NS0_RD,
-        MISCREG_MON_NS0_WR,
-        // Monitor mode, SCR.NS == 1
-        MISCREG_MON_NS1_RD,
-        MISCREG_MON_NS1_WR,
-
-        NUM_MISCREG_INFOS
-    };
-
-    /** MiscReg metadata **/
-    struct MiscRegLUTEntry
-    {
-        uint32_t lower;  // Lower half mapped to this register
-        uint32_t upper;  // Upper half mapped to this register
-        uint64_t _reset; // value taken on reset (i.e. initialization)
-        uint64_t _res0;  // reserved
-        uint64_t _res1;  // reserved
-        uint64_t _raz;   // read as zero (fixed at 0)
-        uint64_t _rao;   // read as one (fixed at 1)
-        std::bitset<NUM_MISCREG_INFOS> info;
-
-        using FaultCB = std::function<
-            Fault(const MiscRegLUTEntry &entry, ThreadContext *tc,
-                  const MiscRegOp64 &inst)
-        >;
-
-        std::array<FaultCB, EL3 + 1> faultRead;
-        std::array<FaultCB, EL3 + 1> faultWrite;
-
-        Fault checkFault(ThreadContext *tc, const MiscRegOp64 &inst,
-            ExceptionLevel el);
-
-      protected:
-        template <MiscRegInfo Sec, MiscRegInfo NonSec>
-        static Fault defaultFault(const MiscRegLUTEntry &entry,
-            ThreadContext *tc, const MiscRegOp64 &inst);
-
-      public:
-        MiscRegLUTEntry() :
-            lower(0), upper(0),
-            _reset(0), _res0(0), _res1(0), _raz(0), _rao(0), info(0),
-            faultRead({defaultFault<MISCREG_USR_S_RD, MISCREG_USR_NS_RD>,
-                       defaultFault<MISCREG_PRI_S_RD, MISCREG_PRI_NS_RD>,
-                       defaultFault<MISCREG_HYP_S_RD, MISCREG_HYP_NS_RD>,
-                       defaultFault<MISCREG_MON_NS0_RD, MISCREG_MON_NS1_RD>}),
-            faultWrite({defaultFault<MISCREG_USR_S_WR, MISCREG_USR_NS_WR>,
-                        defaultFault<MISCREG_PRI_S_WR, MISCREG_PRI_NS_WR>,
-                        defaultFault<MISCREG_HYP_S_WR, MISCREG_HYP_NS_WR>,
-                        defaultFault<MISCREG_MON_NS0_WR, MISCREG_MON_NS1_WR>})
-        {}
-        uint64_t reset() const { return _reset; }
-        uint64_t res0()  const { return _res0; }
-        uint64_t res1()  const { return _res1; }
-        uint64_t raz()   const { return _raz; }
-        uint64_t rao()   const { return _rao; }
-        // raz/rao implies writes ignored
-        uint64_t wi()    const { return _raz | _rao; }
-    };
-
-    /** Metadata table accessible via the value of the register */
-    class MiscRegLUTEntryInitializer
-    {
-        struct MiscRegLUTEntry &entry;
-        typedef const MiscRegLUTEntryInitializer& chain;
-      public:
-        chain
-        mapsTo(uint32_t l, uint32_t u = 0) const
-        {
-            entry.lower = l;
-            entry.upper = u;
-            return *this;
-        }
-        chain
-        reset(uint64_t res_val) const
-        {
-            entry._reset = res_val;
-            return *this;
-        }
-        chain
-        res0(uint64_t mask) const
-        {
-            entry._res0 = mask;
-            return *this;
-        }
-        chain
-        res1(uint64_t mask) const
-        {
-            entry._res1 = mask;
-            return *this;
-        }
-        chain
-        raz(uint64_t mask = (uint64_t)-1) const
-        {
-            entry._raz  = mask;
-            return *this;
-        }
-        chain
-        rao(uint64_t mask = (uint64_t)-1) const
-        {
-            entry._rao  = mask;
-            return *this;
-        }
-        chain
-        implemented(bool v = true) const
-        {
-            entry.info[MISCREG_IMPLEMENTED] = v;
-            return *this;
-        }
-        chain
-        unimplemented() const
-        {
-            return implemented(false);
-        }
-        chain
-        unverifiable(bool v = true) const
-        {
-            entry.info[MISCREG_UNVERIFIABLE] = v;
-            return *this;
-        }
-        chain
-        unserialize(bool v = true) const
-        {
-            entry.info[MISCREG_UNSERIALIZE] = v;
-            return *this;
-        }
-        chain
-        warnNotFail(bool v = true) const
-        {
-            entry.info[MISCREG_WARN_NOT_FAIL] = v;
-            return *this;
-        }
-        chain
-        mutex(bool v = true) const
-        {
-            entry.info[MISCREG_MUTEX] = v;
-            return *this;
-        }
-        chain
-        banked(bool v = true) const
-        {
-            entry.info[MISCREG_BANKED] = v;
-            return *this;
-        }
-        chain
-        banked64(bool v = true) const
-        {
-            entry.info[MISCREG_BANKED64] = v;
-            return *this;
-        }
-        chain
-        bankedChild(bool v = true) const
-        {
-            entry.info[MISCREG_BANKED_CHILD] = v;
-            return *this;
-        }
-        chain
-        userNonSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_USR_NS_RD] = v;
-            return *this;
-        }
-        chain
-        userNonSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_USR_NS_WR] = v;
-            return *this;
-        }
-        chain
-        userSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_USR_S_RD] = v;
-            return *this;
-        }
-        chain
-        userSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_USR_S_WR] = v;
-            return *this;
-        }
-        chain
-        user(bool v = true) const
-        {
-            userNonSecureRead(v);
-            userNonSecureWrite(v);
-            userSecureRead(v);
-            userSecureWrite(v);
-            return *this;
-        }
-        chain
-        privNonSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_PRI_NS_RD] = v;
-            return *this;
-        }
-        chain
-        privNonSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_PRI_NS_WR] = v;
-            return *this;
-        }
-        chain
-        privNonSecure(bool v = true) const
-        {
-            privNonSecureRead(v);
-            privNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        privSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_PRI_S_RD] = v;
-            return *this;
-        }
-        chain
-        privSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_PRI_S_WR] = v;
-            return *this;
-        }
-        chain
-        privSecure(bool v = true) const
-        {
-            privSecureRead(v);
-            privSecureWrite(v);
-            return *this;
-        }
-        chain
-        priv(bool v = true) const
-        {
-            privSecure(v);
-            privNonSecure(v);
-            return *this;
-        }
-        chain
-        privRead(bool v = true) const
-        {
-            privSecureRead(v);
-            privNonSecureRead(v);
-            return *this;
-        }
-        chain
-        hypSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_HYP_S_RD] = v;
-            return *this;
-        }
-        chain
-        hypNonSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_HYP_NS_RD] = v;
-            return *this;
-        }
-        chain
-        hypRead(bool v = true) const
-        {
-            hypSecureRead(v);
-            hypNonSecureRead(v);
-            return *this;
-        }
-        chain
-        hypSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_HYP_S_WR] = v;
-            return *this;
-        }
-        chain
-        hypNonSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_HYP_NS_WR] = v;
-            return *this;
-        }
-        chain
-        hypWrite(bool v = true) const
-        {
-            hypSecureWrite(v);
-            hypNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        hypSecure(bool v = true) const
-        {
-            hypSecureRead(v);
-            hypSecureWrite(v);
-            return *this;
-        }
-        chain
-        hyp(bool v = true) const
-        {
-            hypRead(v);
-            hypWrite(v);
-            return *this;
-        }
-        chain
-        monSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_MON_NS0_RD] = v;
-            return *this;
-        }
-        chain
-        monSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_MON_NS0_WR] = v;
-            return *this;
-        }
-        chain
-        monNonSecureRead(bool v = true) const
-        {
-            entry.info[MISCREG_MON_NS1_RD] = v;
-            return *this;
-        }
-        chain
-        monNonSecureWrite(bool v = true) const
-        {
-            entry.info[MISCREG_MON_NS1_WR] = v;
-            return *this;
-        }
-        chain
-        mon(bool v = true) const
-        {
-            monSecureRead(v);
-            monSecureWrite(v);
-            monNonSecureRead(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        monWrite(bool v = true) const
-        {
-            monSecureWrite(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        monSecure(bool v = true) const
-        {
-            monSecureRead(v);
-            monSecureWrite(v);
-            return *this;
-        }
-        chain
-        monNonSecure(bool v = true) const
-        {
-            monNonSecureRead(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        allPrivileges(bool v = true) const
-        {
-            userNonSecureRead(v);
-            userNonSecureWrite(v);
-            userSecureRead(v);
-            userSecureWrite(v);
-            privNonSecureRead(v);
-            privNonSecureWrite(v);
-            privSecureRead(v);
-            privSecureWrite(v);
-            hypRead(v);
-            hypWrite(v);
-            monSecureRead(v);
-            monSecureWrite(v);
-            monNonSecureRead(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        nonSecure(bool v = true) const
-        {
-            userNonSecureRead(v);
-            userNonSecureWrite(v);
-            privNonSecureRead(v);
-            privNonSecureWrite(v);
-            hypRead(v);
-            hypWrite(v);
-            monNonSecureRead(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        secure(bool v = true) const
-        {
-            userSecureRead(v);
-            userSecureWrite(v);
-            privSecureRead(v);
-            privSecureWrite(v);
-            monSecureRead(v);
-            monSecureWrite(v);
-            return *this;
-        }
-        chain
-        reads(bool v) const
-        {
-            userNonSecureRead(v);
-            userSecureRead(v);
-            privNonSecureRead(v);
-            privSecureRead(v);
-            hypRead(v);
-            monSecureRead(v);
-            monNonSecureRead(v);
-            return *this;
-        }
-        chain
-        writes(bool v) const
-        {
-            userNonSecureWrite(v);
-            userSecureWrite(v);
-            privNonSecureWrite(v);
-            privSecureWrite(v);
-            hypWrite(v);
-            monSecureWrite(v);
-            monNonSecureWrite(v);
-            return *this;
-        }
-        chain
-        exceptUserMode() const
-        {
-            user(0);
-            return *this;
-        }
-        chain highest(ArmSystem *const sys) const;
-
-        chain
-        faultRead(ExceptionLevel el, MiscRegLUTEntry::FaultCB cb) const
-        {
-            entry.faultRead[el] = cb;
-            return *this;
-        }
-
-        chain
-        faultWrite(ExceptionLevel el, MiscRegLUTEntry::FaultCB cb) const
-        {
-            entry.faultWrite[el] = cb;
-            return *this;
-        }
-
-        chain
-        fault(ExceptionLevel el, MiscRegLUTEntry::FaultCB cb) const
-        {
-            return faultRead(el, cb).faultWrite(el, cb);
-        }
-
-        chain
-        fault(MiscRegLUTEntry::FaultCB cb) const
-        {
-            return fault(EL0, cb).fault(EL1, cb).fault(EL2, cb).fault(EL3, cb);
-        }
-
-        MiscRegLUTEntryInitializer(struct MiscRegLUTEntry &e)
-          : entry(e)
-        {
-            // force unimplemented registers to be thusly declared
-            implemented(1).unserialize(1);
-        }
-    };
-
-    extern std::vector<struct MiscRegLUTEntry> lookUpMiscReg;
 
     struct MiscRegNum32
     {
@@ -1811,6 +1346,15 @@ namespace ArmISA
     // Decodes 64-bit CP15 registers accessible through MCRR/MRRC instructions
     MiscRegIndex decodeCP15Reg64(unsigned crm, unsigned opc1);
 
+    // Decodes the register index to access based on the fields used in a MSR
+    // or MRS instruction
+    bool decodeMrsMsrBankedReg(uint8_t sysM, bool r, bool &isIntReg,
+                               int &regIdx, CPSR cpsr, SCR scr, NSACR nsacr,
+                               bool checkSecurity = true);
+
+    // This wrapper function is used to turn the register index into a source
+    // parameter for the instruction. See Operands.isa
+    int decodeMrsMsrBankedIntRegIndex(uint8_t sysM, bool r);
 
     const char * const miscRegName[] = {
         "cpsr",
@@ -2113,6 +1657,18 @@ namespace ArmISA
         "pmceid1",
         "pmccntr",
         "pmxevtyper",
+        "pmevcntr0",
+        "pmevcntr1",
+        "pmevcntr2",
+        "pmevcntr3",
+        "pmevcntr4",
+        "pmevcntr5",
+        "pmevtyper0",
+        "pmevtyper1",
+        "pmevtyper2",
+        "pmevtyper3",
+        "pmevtyper4",
+        "pmevtyper5",
         "pmccfiltr",
         "pmxevcntr",
         "pmuserenr",
@@ -2436,84 +1992,84 @@ namespace ArmISA
         "at_s12e0w_xt",
         "at_s1e3r_xt",
         "at_s1e3w_xt",
-        "tlbi_vmalle1is",
-        "tlbi_vmalle1os",
-        "tlbi_vae1is",
-        "tlbi_vae1os",
-        "lbi_aside1is_xt",
-        "tlbi_aside1os",
-        "tlbi_vaae1is",
-        "tlbi_vaae1os",
-        "tlbi_vale1is",
-        "tlbi_vale1os",
-        "tlbi_vaale1is",
-        "tlbi_vaale1os",
-        "tlbi_vmalle1",
-        "tlbi_vae1",
-        "tlbi_aside1",
-        "tlbi_vaae1",
-        "tlbi_vale1",
-        "tlbi_vaale1",
-        "tlbi_ipas2e1is",
-        "tlbi_ipas2e1os",
-        "tlbi_ipas2le1is",
-        "tlbi_ipas2le1os",
-        "tlbi_alle2is",
-        "tlbi_alle2os",
-        "tlbi_vae2is",
-        "tlbi_vae2os",
-        "tlbi_alle1is",
-        "tlbi_alle1os",
-        "tlbi_vale2is",
-        "tlbi_vale2os",
-        "tlbi_vmalls12e1is",
-        "tlbi_vmalls12e1os",
-        "tlbi_ipas2e1",
-        "tlbi_ipas2le1",
-        "tlbi_alle2",
-        "tlbi_vae2",
-        "tlbi_alle1",
-        "tlbi_vale2",
-        "tlbi_vmalls12e1",
-        "tlbi_alle3is",
-        "tlbi_alle3os",
-        "tlbi_vae3is",
-        "tlbi_vae3os",
-        "tlbi_vale3is",
-        "tlbi_vale3os",
-        "tlbi_alle3",
-        "tlbi_vae3",
-        "tlbi_vale3",
-        "tlbi_rvae1",
-        "tlbi_rvaae1",
-        "tlbi_rvale1",
-        "tlbi_rvaale1",
-        "tlbi_ripas2e1",
-        "tlbi_ripas2le1",
-        "tlbi_rvae2",
-        "tlbi_rvale2",
-        "tlbi_rvae3",
-        "tlbi_rvale3",
-        "tlbi_rvae1is",
-        "tlbi_rvaae1is",
-        "tlbi_rvale1is",
-        "tlbi_rvaale1is",
-        "tlbi_ripas2e1is",
-        "tlbi_ripas2le1is",
-        "tlbi_rvae2is",
-        "tlbi_rvale2is",
-        "tlbi_rvae3is",
-        "tlbi_rvale3is",
-        "tlbi_rvae1os",
-        "tlbi_rvaae1os",
-        "tlbi_rvale1os",
-        "tlbi_rvaale1os",
-        "tlbi_ripas2e1os",
-        "tlbi_ripas2le1os",
-        "tlbi_rvae2os",
-        "tlbi_rvale2os",
-        "tlbi_rvae3os",
-        "tlbi_rvale3os",
+        TLBI_STR_VARIANTS(tlbi_vmalle1is),
+        TLBI_STR_VARIANTS(tlbi_vmalle1os),
+        TLBI_STR_VARIANTS(tlbi_vae1is),
+        TLBI_STR_VARIANTS(tlbi_vae1os),
+        TLBI_STR_VARIANTS(lbi_aside1is_xt),
+        TLBI_STR_VARIANTS(tlbi_aside1os),
+        TLBI_STR_VARIANTS(tlbi_vaae1is),
+        TLBI_STR_VARIANTS(tlbi_vaae1os),
+        TLBI_STR_VARIANTS(tlbi_vale1is),
+        TLBI_STR_VARIANTS(tlbi_vale1os),
+        TLBI_STR_VARIANTS(tlbi_vaale1is),
+        TLBI_STR_VARIANTS(tlbi_vaale1os),
+        TLBI_STR_VARIANTS(tlbi_vmalle1),
+        TLBI_STR_VARIANTS(tlbi_vae1),
+        TLBI_STR_VARIANTS(tlbi_aside1),
+        TLBI_STR_VARIANTS(tlbi_vaae1),
+        TLBI_STR_VARIANTS(tlbi_vale1),
+        TLBI_STR_VARIANTS(tlbi_vaale1),
+        TLBI_STR_VARIANTS(tlbi_ipas2e1is),
+        TLBI_STR_VARIANTS(tlbi_ipas2e1os),
+        TLBI_STR_VARIANTS(tlbi_ipas2le1is),
+        TLBI_STR_VARIANTS(tlbi_ipas2le1os),
+        TLBI_STR_VARIANTS(tlbi_alle2is),
+        TLBI_STR_VARIANTS(tlbi_alle2os),
+        TLBI_STR_VARIANTS(tlbi_vae2is),
+        TLBI_STR_VARIANTS(tlbi_vae2os),
+        TLBI_STR_VARIANTS(tlbi_alle1is),
+        TLBI_STR_VARIANTS(tlbi_alle1os),
+        TLBI_STR_VARIANTS(tlbi_vale2is),
+        TLBI_STR_VARIANTS(tlbi_vale2os),
+        TLBI_STR_VARIANTS(tlbi_vmalls12e1is),
+        TLBI_STR_VARIANTS(tlbi_vmalls12e1os),
+        TLBI_STR_VARIANTS(tlbi_ipas2e1),
+        TLBI_STR_VARIANTS(tlbi_ipas2le1),
+        TLBI_STR_VARIANTS(tlbi_alle2),
+        TLBI_STR_VARIANTS(tlbi_vae2),
+        TLBI_STR_VARIANTS(tlbi_alle1),
+        TLBI_STR_VARIANTS(tlbi_vale2),
+        TLBI_STR_VARIANTS(tlbi_vmalls12e1),
+        TLBI_STR_VARIANTS(tlbi_alle3is),
+        TLBI_STR_VARIANTS(tlbi_alle3os),
+        TLBI_STR_VARIANTS(tlbi_vae3is),
+        TLBI_STR_VARIANTS(tlbi_vae3os),
+        TLBI_STR_VARIANTS(tlbi_vale3is),
+        TLBI_STR_VARIANTS(tlbi_vale3os),
+        TLBI_STR_VARIANTS(tlbi_alle3),
+        TLBI_STR_VARIANTS(tlbi_vae3),
+        TLBI_STR_VARIANTS(tlbi_vale3),
+        TLBI_STR_VARIANTS(tlbi_rvae1),
+        TLBI_STR_VARIANTS(tlbi_rvaae1),
+        TLBI_STR_VARIANTS(tlbi_rvale1),
+        TLBI_STR_VARIANTS(tlbi_rvaale1),
+        TLBI_STR_VARIANTS(tlbi_ripas2e1),
+        TLBI_STR_VARIANTS(tlbi_ripas2le1),
+        TLBI_STR_VARIANTS(tlbi_rvae2),
+        TLBI_STR_VARIANTS(tlbi_rvale2),
+        TLBI_STR_VARIANTS(tlbi_rvae3),
+        TLBI_STR_VARIANTS(tlbi_rvale3),
+        TLBI_STR_VARIANTS(tlbi_rvae1is),
+        TLBI_STR_VARIANTS(tlbi_rvaae1is),
+        TLBI_STR_VARIANTS(tlbi_rvale1is),
+        TLBI_STR_VARIANTS(tlbi_rvaale1is),
+        TLBI_STR_VARIANTS(tlbi_ripas2e1is),
+        TLBI_STR_VARIANTS(tlbi_ripas2le1is),
+        TLBI_STR_VARIANTS(tlbi_rvae2is),
+        TLBI_STR_VARIANTS(tlbi_rvale2is),
+        TLBI_STR_VARIANTS(tlbi_rvae3is),
+        TLBI_STR_VARIANTS(tlbi_rvale3is),
+        TLBI_STR_VARIANTS(tlbi_rvae1os),
+        TLBI_STR_VARIANTS(tlbi_rvaae1os),
+        TLBI_STR_VARIANTS(tlbi_rvale1os),
+        TLBI_STR_VARIANTS(tlbi_rvaale1os),
+        TLBI_STR_VARIANTS(tlbi_ripas2e1os),
+        TLBI_STR_VARIANTS(tlbi_ripas2le1os),
+        TLBI_STR_VARIANTS(tlbi_rvae2os),
+        TLBI_STR_VARIANTS(tlbi_rvale2os),
+        TLBI_STR_VARIANTS(tlbi_rvae3os),
+        TLBI_STR_VARIANTS(tlbi_rvale3os),
         "pmintenset_el1",
         "pmintenclr_el1",
         "pmcr_el0",
@@ -2876,6 +2432,7 @@ namespace ArmISA
         "hfgwtr_el2",
         "hdfgrtr_el2",
         "hdfgwtr_el2",
+        "hafgrtr_el2",
 
         // FEAT_MPAM
         "mpamidr_el1",
@@ -2894,6 +2451,14 @@ namespace ArmISA
         "mpamvpm5_el2",
         "mpamvpm6_el2",
         "mpamvpm7_el2",
+
+        "pire0_el1",
+        "pire0_el2",
+        "pire0_el12",
+        "pir_el1",
+        "pir_el2",
+        "pir_el3",
+        "pir_el12",
 
         "num_phys_regs",
 
@@ -2922,23 +2487,6 @@ namespace ArmISA
     static_assert(sizeof(miscRegName) / sizeof(*miscRegName) == NUM_MISCREGS,
                   "The miscRegName array and NUM_MISCREGS are inconsistent.");
 
-    class MiscRegClassOps : public RegClassOps
-    {
-      public:
-        std::string
-        regName(const RegId &id) const override
-        {
-            return miscRegName[id.index()];
-        }
-    };
-
-    static inline MiscRegClassOps miscRegClassOps;
-
-    inline constexpr RegClass miscRegClass =
-        RegClass(MiscRegClass, MiscRegClassName, NUM_MISCREGS,
-                debug::MiscRegs).
-            ops(miscRegClassOps);
-
     // This mask selects bits of the CPSR that actually go in the CondCodes
     // integer register to allow renaming.
     static const uint32_t CondCodesMask   = 0xF00F0000;
@@ -2964,6 +2512,10 @@ namespace ArmISA
     static const uint32_t FpscrAhpMask = 0x04000000;
     // This mask selects the cumulative FP exception flags of the FPSCR.
     static const uint32_t FpscrExcMask = 0x0000009F;
+    // This mask selects FPCR bits from FPSCR.
+    static const uint32_t FpscrFpcrMask = 0x07FF9F00;
+    // This mask selects FPSR bits from FPSCR.
+    static const uint32_t FpscrFpsrMask = 0xF800009F;
 
     /**
      * Check for permission to read coprocessor registers.
@@ -3007,6 +2559,62 @@ namespace ArmISA
     Fault checkFaultAccessAArch64SysReg(MiscRegIndex reg, CPSR cpsr,
             ThreadContext *tc, const MiscRegOp64 &inst);
 
+    Fault mcrMrc15Trap(const MiscRegIndex miscReg, ExtMachInst machInst,
+                       ThreadContext *tc, uint32_t imm);
+    bool mcrMrc15TrapToHyp(const MiscRegIndex miscReg, ThreadContext *tc,
+                           uint32_t iss, ExceptionClass *ec = nullptr);
+
+    bool mcrMrc14TrapToHyp(const MiscRegIndex miscReg, ThreadContext *tc,
+                           uint32_t iss);
+
+    Fault mcrrMrrc15Trap(const MiscRegIndex miscReg, ExtMachInst machInst,
+                         ThreadContext *tc, uint32_t imm);
+    bool mcrrMrrc15TrapToHyp(const MiscRegIndex miscReg, ThreadContext *tc,
+                             uint32_t iss, ExceptionClass *ec = nullptr);
+
+    Fault AArch64AArch32SystemAccessTrap(const MiscRegIndex miscReg,
+                                         ExtMachInst machInst,
+                                         ThreadContext *tc, uint32_t imm,
+                                         ExceptionClass ec);
+    bool isAArch64AArch32SystemAccessTrapEL1(const MiscRegIndex miscReg,
+                                             ThreadContext *tc);
+    bool isAArch64AArch32SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                             ThreadContext *tc);
+    bool isGenericTimerHypTrap(const MiscRegIndex miscReg, ThreadContext *tc,
+                               ExceptionClass *ec);
+    bool condGenericTimerPhysHypTrap(const MiscRegIndex miscReg,
+                                     ThreadContext *tc);
+    bool isGenericTimerCommonEL0HypTrap(const MiscRegIndex miscReg,
+                                        ThreadContext *tc, ExceptionClass *ec);
+    bool isGenericTimerPhysHypTrap(const MiscRegIndex miscReg,
+                                   ThreadContext *tc, ExceptionClass *ec);
+    bool condGenericTimerPhysHypTrap(const MiscRegIndex miscReg,
+                                     ThreadContext *tc);
+    bool isGenericTimerSystemAccessTrapEL1(const MiscRegIndex miscReg,
+                                           ThreadContext *tc);
+    bool condGenericTimerSystemAccessTrapEL1(const MiscRegIndex miscReg,
+                                             ThreadContext *tc);
+    bool isGenericTimerSystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                           ThreadContext *tc);
+    bool isGenericTimerCommonEL0SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                    ThreadContext *tc);
+    bool isGenericTimerPhysEL0SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                  ThreadContext *tc);
+    bool isGenericTimerPhysEL1SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                  ThreadContext *tc);
+    bool isGenericTimerVirtSystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                               ThreadContext *tc);
+    bool
+    condGenericTimerCommonEL0SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                 ThreadContext *tc);
+    bool
+    condGenericTimerCommonEL1SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                 ThreadContext *tc);
+    bool condGenericTimerPhysEL1SystemAccessTrapEL2(const MiscRegIndex miscReg,
+                                                    ThreadContext *tc);
+    bool isGenericTimerSystemAccessTrapEL3(const MiscRegIndex miscReg,
+                                           ThreadContext *tc);
+
     // Uses just the scr.ns bit to pre flatten the misc regs. This is useful
     // for MCR/MRC instructions
     int
@@ -3029,6 +2637,9 @@ namespace ArmISA
 
     int
     unflattenMiscReg(int reg);
+
+    // Converting from the MISCREG_SP notation to the int_reg::Sp one
+    RegIndex spMapping(MiscRegIndex sp_idx);
 
 } // namespace ArmISA
 } // namespace gem5

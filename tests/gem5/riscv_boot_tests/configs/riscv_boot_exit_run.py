@@ -119,11 +119,11 @@ elif args.mem_system == "mesi_two_level":
 
     # Setup the cache hierarchy.
     cache_hierarchy = MESITwoLevelCacheHierarchy(
-        l1d_size="16kB",
+        l1d_size="16KiB",
         l1d_assoc=8,
-        l1i_size="16kB",
+        l1i_size="16KiB",
         l1i_assoc=8,
-        l2_size="256kB",
+        l2_size="256KiB",
         l2_assoc=16,
         num_l2_banks=1,
     )
@@ -163,9 +163,9 @@ board = RiscvBoard(
 
 # Set the workload.
 workload = obtain_resource(
-    "riscv-ubuntu-20.04-boot",
+    "riscv-ubuntu-24.04-boot",
     resource_directory=args.resource_directory,
-    resource_version="3.0.0",
+    resource_version="2.0.0",
 )
 board.set_workload(workload)
 

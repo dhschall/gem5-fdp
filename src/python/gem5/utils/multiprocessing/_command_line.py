@@ -70,12 +70,14 @@ def _gem5_args_for_multiprocessing(name):
     arguments = [
         # Keep the original outdir. This will be overridden by multisim
         f"--outdir={options.outdir}",
-        # Update the stdout and stderr names so we can see them.
+        # Update the stdout and stderr names so we can see them. These will be
+        # overridden by multisim
         f"--stdout-file={name}_{options.stdout_file}",
         f"--stderr-file={name}_{options.stderr_file}",
-        # Keep the stats file name. It will be in the new outdir
-        f"--stats-file={options.stats_file}",
     ]
+    # Keep the stats files names. They will be in the new outdir
+    for filepath in options.stats_file:
+        arguments.append(f"--stats-file={filepath}")
     if options.redirect_stdout:
         arguments.append("--redirect-stdout")
     if options.redirect_stderr:

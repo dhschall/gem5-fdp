@@ -35,10 +35,15 @@ from typing import (
 )
 
 from m5.objects import (
-    AddrRange,
+    AbstractMemory,
     MemCtrl,
-    Port,
+    MemInterface,
+    Root,
     SubSystem,
+)
+from m5.params import (
+    AddrRange,
+    Port,
 )
 
 from ..boards.abstract_board import AbstractBoard
@@ -49,6 +54,18 @@ class AbstractMemorySystem(SubSystem):
 
     def __init__(self) -> None:
         super().__init__()
+
+    def _pre_instantiate(self, root: Root) -> None:
+        """Called in the `AbstractBoard`'s `_pre_instantiate` method. This is
+        called after `connect_things`, after the creation of the root object
+        (which is passed in as an argument), but before `m5.instantiate`).
+
+        Subclasses should override this method to set up any connections.
+
+        At present there is no general task that must be specified here and is
+        default or applicable to all memory systems.
+        """
+        pass
 
     @abstractmethod
     def incorporate_memory(self, board: AbstractBoard) -> None:
@@ -63,7 +80,19 @@ class AbstractMemorySystem(SubSystem):
 
     @abstractmethod
     def get_memory_controllers(self) -> List[MemCtrl]:
-        """Get all of the memory controllers in this memory system."""
+        """Get all of the memory controllers in this memory system.
+
+        The "memory controller" is the object that has a port named "port"
+        that is the CPU-side port for the memory."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_mem_interfaces(self) -> List[AbstractMemory]:
+        """Get all memory interfaces in this memory system.
+        Useful when creating physical memory objects.
+
+        The "mem interface" is the object that is an AbstractMemory and
+        is used to create the backing store."""
         raise NotImplementedError
 
     @abstractmethod

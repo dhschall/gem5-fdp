@@ -36,6 +36,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from m5.objects.RubySystem import RubySystem
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import SimObject
@@ -49,3 +50,7 @@ class RubyDirectoryMemory(SimObject):
     addr_ranges = VectorParam.AddrRange(
         Parent.addr_ranges, "Address range this directory responds to"
     )
+    block_size = Param.UInt32(
+        "Size of a block in bytes. Usually same as cache line size."
+    )
+    ruby_system = Param.RubySystem(Parent.any, "")

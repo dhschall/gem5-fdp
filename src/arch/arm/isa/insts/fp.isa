@@ -1,6 +1,6 @@
 // -*- mode:c++ -*-
 
-// Copyright (c) 2010-2013,2016,2018-2019 ARM Limited
+// Copyright (c) 2010-2013,2016,2018-2019,2024-2025 ARM Limited
 // All rights reserved
 //
 // The license below extends only to copyright in the software and shall
@@ -467,9 +467,25 @@ let {{
     decoder_output = ""
     exec_output = ""
 
+    halfCode = vfpEnabledCheckCode + '''
+        [[maybe_unused]] FPSCR fpscr = fpVASimdFPSCRValue((FPSCR)FpscrExc);
+        uint16_t half_src1 = FpOp1_uw & 0xFFFF;
+        uint16_t half_src2 = (FpOp1_uw >> 16) & 0xFFFF;
+        static_assert(std::is_same_v<decltype(%(op1)s), uint16_t>,
+                      "operation triggers invalid implicit conversion");
+        static_assert(std::is_same_v<decltype(%(op2)s), uint16_t>,
+                      "operation triggers invalid implicit conversion");
+        uint16_t half_dest1 = %(op1)s;
+        uint16_t half_dest2 = %(op2)s;
+        FpDestP0_uw = (uint32_t)half_dest1 | ((uint32_t)half_dest2 << 16);
+        FpscrExc = fpscr;
+    '''
+
     singleSimpleCode = vfpEnabledCheckCode + '''
         [[maybe_unused]] FPSCR fpscr = (FPSCR) FpscrExc;
-        FpDest = %(op)s;
+        static_assert(std::is_same_v<decltype(%(op)s), uint32_t>,
+                      "operation triggers invalid implicit conversion");
+        FpDest_uw = %(op)s;
     '''
     singleCode = singleSimpleCode + '''
         FpscrExc = fpscr;
@@ -485,14 +501,18 @@ let {{
         finishVfp(fpscr, state, fpscr.fz);
         FpscrExc = fpscr;
     '''
-    singleBinOp = "binaryOp(fpscr, FpOp1, FpOp2," + \
-                "%(func)s, fpscr.fz, fpscr.dn, fpscr.rMode)"
-    singleUnaryOp = "unaryOp(fpscr, FpOp1, %(func)s, fpscr.fz, fpscr.rMode)"
+    singleBinOp = "floatToBits32(binaryOp(fpscr, FpOp1, FpOp2, " + \
+                  "%(func)s, fpscr.fz, fpscr.dn, fpscr.rMode))"
+    singleUnaryOp = "floatToBits32(unaryOp(fpscr, FpOp1, " + \
+                    "%(func)s, fpscr.fz, fpscr.rMode))"
     doubleCode = vfpEnabledCheckCode + '''
         [[maybe_unused]] FPSCR fpscr = (FPSCR) FpscrExc;
-        double dest = %(op)s;
-        FpDestP0_uw = dblLow(dest);
-        FpDestP1_uw = dblHi(dest);
+        uint64_t cOp1 = ((uint64_t)FpOp1P0_uw | ((uint64_t)FpOp1P1_uw << 32));
+        static_assert(std::is_same_v<decltype(%(op)s), uint64_t>,
+                      "operation triggers invalid implicit conversion");
+        uint64_t cDest = %(op)s;
+        FpDestP0_uw = (uint32_t)cDest;
+        FpDestP1_uw = (uint32_t)(cDest >> 32);
         FpscrExc = fpscr;
     '''
     doubleTernOp = vfpEnabledCheckCode + '''
@@ -509,25 +529,25 @@ let {{
         FpscrExc = fpscr;
     '''
     doubleBinOp = '''
-        binaryOp(fpscr, dbl(FpOp1P0_uw, FpOp1P1_uw),
-                        dbl(FpOp2P0_uw, FpOp2P1_uw),
-                        %(func)s, fpscr.fz, fpscr.dn, fpscr.rMode);
+        floatToBits64(binaryOp(fpscr, bitsToFloat64(cOp1),
+                               dbl(FpOp2P0_uw, FpOp2P1_uw),
+                               %(func)s, fpscr.fz, fpscr.dn, fpscr.rMode))
     '''
     doubleUnaryOp = '''
-        unaryOp(fpscr, dbl(FpOp1P0_uw, FpOp1P1_uw), %(func)s,
-                fpscr.fz, fpscr.rMode)
+        floatToBits64(unaryOp(fpscr, bitsToFloat64(cOp1), %(func)s,
+                              fpscr.fz, fpscr.rMode))
     '''
 
     def buildTernaryFpOp(Name, base, opClass, singleOp, doubleOp, paramStr):
         global header_output, decoder_output, exec_output
 
         code = singleTernOp % { "op": singleOp, "palam": paramStr }
-        sIop = ArmInstObjParams(Name.lower() + "s", Name + "S", base,
+        sIop = ArmInstObjParams(Name.lower() + ".f32", Name + "S", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
         code = doubleTernOp % { "op": doubleOp, "palam": paramStr }
-        dIop = ArmInstObjParams(Name.lower() + "d", Name + "D", base,
+        dIop = ArmInstObjParams(Name.lower() + ".f64", Name + "D", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
@@ -554,13 +574,13 @@ let {{
 
         code = singleCode % { "op": singleBinOp }
         code = code % { "func": singleOp }
-        sIop = ArmInstObjParams(name + "s", Name + "S", base,
+        sIop = ArmInstObjParams(name + ".f32", Name + "S", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
         code = doubleCode % { "op": doubleBinOp }
         code = code % { "func": doubleOp }
-        dIop = ArmInstObjParams(name + "d", Name + "D", base,
+        dIop = ArmInstObjParams(name + ".f64", Name + "D", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
@@ -649,13 +669,13 @@ let {{
 
         code = singleCode % { "op": singleUnaryOp }
         code = code % { "func": singleOp }
-        sIop = ArmInstObjParams(name + "s", Name + "S", base,
+        sIop = ArmInstObjParams(name + ".f32", Name + "S", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
         code = doubleCode % { "op": doubleUnaryOp }
         code = code % { "func": doubleOp }
-        dIop = ArmInstObjParams(name + "d", Name + "D", base,
+        dIop = ArmInstObjParams(name + ".f64", Name + "D", base,
                 { "code": code,
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
@@ -671,17 +691,21 @@ let {{
     buildUnaryFpOp("vsqrt", "Vsqrt", "FpRegRegOp", "SimdFloatSqrtOp", "sqrtf",
                    "sqrt")
 
-    def buildSimpleUnaryFpOp(name, Name, base, opClass, singleOp,
-                             doubleOp = None):
+    def buildSimpleUnaryFpOp(name, Name, base, opClass,
+                             halfOp1, halfOp2, singleOp, doubleOp):
         if doubleOp is None:
             doubleOp = singleOp
         global header_output, decoder_output, exec_output
 
-        sIop = ArmInstObjParams(name + "s", Name + "S", base,
+        hIop = ArmInstObjParams(name + ".f16", Name + "H", base,
+                { "code": halfCode % { "op1": halfOp1, "op2": halfOp2 },
+                  "predicate_test": predicateTest,
+                  "op_class": opClass }, [])
+        sIop = ArmInstObjParams(name + ".f32", Name + "S", base,
                 { "code": singleSimpleCode % { "op": singleOp },
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
-        dIop = ArmInstObjParams(name + "d", Name + "D", base,
+        dIop = ArmInstObjParams(name + ".f64", Name + "D", base,
                 { "code": doubleCode % { "op": doubleOp },
                   "predicate_test": predicateTest,
                   "op_class": opClass }, [])
@@ -689,34 +713,40 @@ let {{
         declareTempl = eval(base + "Declare");
         constructorTempl = eval(base + "Constructor");
 
-        for iop in sIop, dIop:
+        for iop in hIop, sIop, dIop:
             header_output += declareTempl.subst(iop)
             decoder_output += constructorTempl.subst(iop)
             exec_output += PredOpExecute.subst(iop)
 
     buildSimpleUnaryFpOp("vneg", "Vneg", "FpRegRegOp", "SimdFloatMiscOp",
-                         "-FpOp1", "-dbl(FpOp1P0_uw, FpOp1P1_uw)")
+                         "fplibNeg(half_src1)", "fplibNeg(half_src2)",
+                         "fplibNeg(FpOp1_uw)", "fplibNeg(cOp1)")
     buildSimpleUnaryFpOp("vabs", "Vabs", "FpRegRegOp", "SimdFloatMiscOp",
-                         "fabsf(FpOp1)", "fabs(dbl(FpOp1P0_uw, FpOp1P1_uw))")
-    buildSimpleUnaryFpOp("vrintp", "VRIntP", "FpRegRegOp", "SimdFloatMiscOp",
-        "fplibRoundInt<uint32_t>(FpOp1, FPRounding_POSINF, false, fpscr)",
-        "fplibRoundInt<uint64_t>(dbl(FpOp1P0_uw, FpOp1P1_uw), " \
-        "FPRounding_POSINF, false, fpscr)"
+                         "fplibAbs(half_src1)", "fplibAbs(half_src2)",
+                         "fplibAbs(FpOp1_uw)", "fplibAbs(cOp1)")
+    buildSimpleUnaryFpOp("vrintp", "VRIntP", "FpRegRegOp", "SimdCvtOp",
+        "fplibRoundInt<uint16_t>(half_src1, FPRounding_POSINF, false, fpscr)",
+        "fplibRoundInt<uint16_t>(half_src2, FPRounding_POSINF, false, fpscr)",
+        "fplibRoundInt<uint32_t>(FpOp1_uw, FPRounding_POSINF, false, fpscr)",
+        "fplibRoundInt<uint64_t>(cOp1, FPRounding_POSINF, false, fpscr)"
         )
-    buildSimpleUnaryFpOp("vrintm", "VRIntM", "FpRegRegOp", "SimdFloatMiscOp",
-        "fplibRoundInt<uint32_t>(FpOp1, FPRounding_NEGINF, false, fpscr)",
-        "fplibRoundInt<uint64_t>(dbl(FpOp1P0_uw, FpOp1P1_uw), " \
-        "FPRounding_NEGINF, false, fpscr)"
+    buildSimpleUnaryFpOp("vrintm", "VRIntM", "FpRegRegOp", "SimdCvtOp",
+        "fplibRoundInt<uint16_t>(half_src1, FPRounding_NEGINF, false, fpscr)",
+        "fplibRoundInt<uint16_t>(half_src2, FPRounding_NEGINF, false, fpscr)",
+        "fplibRoundInt<uint32_t>(FpOp1_uw, FPRounding_NEGINF, false, fpscr)",
+        "fplibRoundInt<uint64_t>(cOp1, FPRounding_NEGINF, false, fpscr)"
         )
-    buildSimpleUnaryFpOp("vrinta", "VRIntA", "FpRegRegOp", "SimdFloatMiscOp",
-        "fplibRoundInt<uint32_t>(FpOp1, FPRounding_TIEAWAY, false, fpscr)",
-        "fplibRoundInt<uint64_t>(dbl(FpOp1P0_uw, FpOp1P1_uw), " \
-        "FPRounding_TIEAWAY, false, fpscr)"
+    buildSimpleUnaryFpOp("vrinta", "VRIntA", "FpRegRegOp", "SimdCvtOp",
+        "fplibRoundInt<uint16_t>(half_src1, FPRounding_TIEAWAY, false, fpscr)",
+        "fplibRoundInt<uint16_t>(half_src2, FPRounding_TIEAWAY, false, fpscr)",
+        "fplibRoundInt<uint32_t>(FpOp1_uw, FPRounding_TIEAWAY, false, fpscr)",
+        "fplibRoundInt<uint64_t>(cOp1, FPRounding_TIEAWAY, false, fpscr)"
         )
-    buildSimpleUnaryFpOp("vrintn", "VRIntN", "FpRegRegOp", "SimdFloatMiscOp",
-        "fplibRoundInt<uint32_t>(FpOp1, FPRounding_TIEEVEN, false, fpscr)",
-        "fplibRoundInt<uint64_t>(dbl(FpOp1P0_uw, FpOp1P1_uw), " \
-        "FPRounding_TIEEVEN, false, fpscr)"
+    buildSimpleUnaryFpOp("vrintn", "VRIntN", "FpRegRegOp", "SimdCvtOp",
+        "fplibRoundInt<uint16_t>(half_src1, FPRounding_TIEEVEN, false, fpscr)",
+        "fplibRoundInt<uint16_t>(half_src2, FPRounding_TIEEVEN, false, fpscr)",
+        "fplibRoundInt<uint32_t>(FpOp1_uw, FPRounding_TIEEVEN, false, fpscr)",
+        "fplibRoundInt<uint64_t>(cOp1, FPRounding_TIEEVEN, false, fpscr)"
         )
 }};
 
@@ -913,7 +943,7 @@ let {{
         FPSCR fpscr = (FPSCR) FpscrExc;
         VfpSavedState state = prepFpState(fpscr.rMode);
         __asm__ __volatile__("" : "=m" (FpOp1_uw) : "m" (FpOp1_uw));
-        FpDest = FpOp1_uw;
+        FpDest = (float)FpOp1_uw;  // Should use fplib here instead.
         __asm__ __volatile__("" :: "m" (FpDest));
         finishVfp(fpscr, state, fpscr.fz);
         FpscrExc = fpscr;
@@ -930,7 +960,8 @@ let {{
         FPSCR fpscr = (FPSCR) FpscrExc;
         VfpSavedState state = prepFpState(fpscr.rMode);
         __asm__ __volatile__("" : "=m" (FpOp1P0_uw) : "m" (FpOp1P0_uw));
-        double cDest = (uint64_t)FpOp1P0_uw;
+        // Should use fplib here instead.
+        double cDest = (double)(uint64_t)FpOp1P0_uw;
         __asm__ __volatile__("" :: "m" (cDest));
         finishVfp(fpscr, state, fpscr.fz);
         FpDestP0_uw = dblLow(cDest);
@@ -949,7 +980,7 @@ let {{
         FPSCR fpscr = (FPSCR) FpscrExc;
         VfpSavedState state = prepFpState(fpscr.rMode);
         __asm__ __volatile__("" : "=m" (FpOp1_sw) : "m" (FpOp1_sw));
-        FpDest = FpOp1_sw;
+        FpDest = (float)FpOp1_sw;  // Should use fplib here instead.
         __asm__ __volatile__("" :: "m" (FpDest));
         finishVfp(fpscr, state, fpscr.fz);
         FpscrExc = fpscr;
@@ -966,7 +997,7 @@ let {{
         FPSCR fpscr = (FPSCR) FpscrExc;
         VfpSavedState state = prepFpState(fpscr.rMode);
         __asm__ __volatile__("" : "=m" (FpOp1P0_sw) : "m" (FpOp1P0_sw));
-        double cDest = FpOp1P0_sw;
+        double cDest = (double)FpOp1P0_sw;  // Should use fplib here instead.
         __asm__ __volatile__("" :: "m" (cDest));
         finishVfp(fpscr, state, fpscr.fz);
         FpDestP0_uw = dblLow(cDest);
@@ -1293,6 +1324,41 @@ let {{
     decoder_output += FpRegRegOpConstructor.subst(vcvtFpSFpHBIop);
     exec_output += PredOpExecute.subst(vcvtFpSFpHBIop);
 
+    bf16_check = '''
+      RegVal isar6 = xc->tcBase()->readMiscReg(MISCREG_ID_ISAR6);
+      if (!(bits(isar6, 23, 20) >= 0x1))
+          return std::make_shared<UndefinedInstruction>(machInst, true);
+    '''
+    vcvtFpSBfTCode = vfpEnabledCheckCode + bf16_check + '''
+        FPSCR fpscr = (FPSCR) FpscrExc;
+        uint32_t src_elem = fpToBits(FpOp1);
+        FpDest_uw = insertBits(FpDest_uw, 31, 16,
+                        fplibConvertBF(src_elem, FPCRRounding(fpscr), fpscr));
+        FpscrExc = fpscr;
+    '''
+    vcvtFpSBfTIop = ArmInstObjParams("vcvtt", "VcvtFpSBfT", "FpRegRegOp",
+                                      { "code": vcvtFpSBfTCode,
+                                        "predicate_test": predicateTest,
+                                        "op_class": "SimdBf16CvtOp" }, [])
+    header_output += FpRegRegOpDeclare.subst(vcvtFpSBfTIop);
+    decoder_output += FpRegRegOpConstructor.subst(vcvtFpSBfTIop);
+    exec_output += PredOpExecute.subst(vcvtFpSBfTIop);
+
+    vcvtFpSBfBCode = vfpEnabledCheckCode + bf16_check + '''
+        FPSCR fpscr = (FPSCR) FpscrExc;
+        uint32_t src_elem = fpToBits(FpOp1);
+        FpDest_uw = insertBits(FpDest_uw, 15, 0,
+                        fplibConvertBF(src_elem, FPCRRounding(fpscr), fpscr));
+        FpscrExc = fpscr;
+    '''
+    vcvtFpSBfBIop = ArmInstObjParams("vcvtb", "VcvtFpSBfB", "FpRegRegOp",
+                                      { "code": vcvtFpSBfBCode,
+                                        "predicate_test": predicateTest,
+                                        "op_class": "SimdBf16CvtOp" }, [])
+    header_output += FpRegRegOpDeclare.subst(vcvtFpSBfBIop);
+    decoder_output += FpRegRegOpConstructor.subst(vcvtFpSBfBIop);
+    exec_output += PredOpExecute.subst(vcvtFpSBfBIop);
+
     vcmpSCode = vfpEnabledCheckCode + '''
         FPSCR fpscr = (FPSCR) FpscrExc;
         vfpFlushToZero(fpscr, FpDest, FpOp1);
@@ -1358,13 +1424,12 @@ let {{
     vcmpZeroSCode = vfpEnabledCheckCode + '''
         FPSCR fpscr = (FPSCR) FpscrExc;
         vfpFlushToZero(fpscr, FpDest);
-        // This only handles imm == 0 for now.
-        assert(imm == 0);
-        if (FpDest == imm) {
+        assert(imm == 0); // immediate must be zero.
+        if (FpDest == 0.0f) {
             fpscr.n = 0; fpscr.z = 1; fpscr.c = 1; fpscr.v = 0;
-        } else if (FpDest < imm) {
+        } else if (FpDest < 0.0f) {
             fpscr.n = 1; fpscr.z = 0; fpscr.c = 0; fpscr.v = 0;
-        } else if (FpDest > imm) {
+        } else if (FpDest > 0.0f) {
             fpscr.n = 0; fpscr.z = 0; fpscr.c = 1; fpscr.v = 0;
         } else {
             const uint32_t qnan = 0x7fc00000;
@@ -1386,16 +1451,15 @@ let {{
     exec_output += PredOpExecute.subst(vcmpZeroSIop);
 
     vcmpZeroDCode = vfpEnabledCheckCode + '''
-        // This only handles imm == 0 for now.
-        assert(imm == 0);
         double cDest = dbl(FpDestP0_uw, FpDestP1_uw);
         FPSCR fpscr = (FPSCR) FpscrExc;
         vfpFlushToZero(fpscr, cDest);
-        if (cDest == imm) {
+        assert(imm == 0); // immediate must be zero.
+        if (cDest == 0.0) {
             fpscr.n = 0; fpscr.z = 1; fpscr.c = 1; fpscr.v = 0;
-        } else if (cDest < imm) {
+        } else if (cDest < 0.0) {
             fpscr.n = 1; fpscr.z = 0; fpscr.c = 0; fpscr.v = 0;
-        } else if (cDest > imm) {
+        } else if (cDest > 0.0) {
             fpscr.n = 0; fpscr.z = 0; fpscr.c = 1; fpscr.v = 0;
         } else {
             const uint64_t qnan = 0x7ff8000000000000ULL;
@@ -1469,11 +1533,12 @@ let {{
     vcmpeZeroSCode = vfpEnabledCheckCode + '''
         FPSCR fpscr = (FPSCR) FpscrExc;
         vfpFlushToZero(fpscr, FpDest);
-        if (FpDest == imm) {
+        assert(imm == 0); // immediate must be zero.
+        if (FpDest == 0.0f) {
             fpscr.n = 0; fpscr.z = 1; fpscr.c = 1; fpscr.v = 0;
-        } else if (FpDest < imm) {
+        } else if (FpDest < 0.0f) {
             fpscr.n = 1; fpscr.z = 0; fpscr.c = 0; fpscr.v = 0;
-        } else if (FpDest > imm) {
+        } else if (FpDest > 0.0f) {
             fpscr.n = 0; fpscr.z = 0; fpscr.c = 1; fpscr.v = 0;
         } else {
             fpscr.ioc = 1;
@@ -1494,11 +1559,12 @@ let {{
         double cDest = dbl(FpDestP0_uw, FpDestP1_uw);
         FPSCR fpscr = (FPSCR) FpscrExc;
         vfpFlushToZero(fpscr, cDest);
-        if (cDest == imm) {
+        assert(imm == 0); // immediate must be zero.
+        if (cDest == 0.0) {
             fpscr.n = 0; fpscr.z = 1; fpscr.c = 1; fpscr.v = 0;
-        } else if (cDest < imm) {
+        } else if (cDest < 0.0) {
             fpscr.n = 1; fpscr.z = 0; fpscr.c = 0; fpscr.v = 0;
-        } else if (cDest > imm) {
+        } else if (cDest > 0.0) {
             fpscr.n = 0; fpscr.z = 0; fpscr.c = 1; fpscr.v = 0;
         } else {
             fpscr.ioc = 1;
@@ -1529,7 +1595,7 @@ let {{
             FpDest = FpOp2;
         } '''
 
-    vselSIop = ArmInstObjParams("vsels", "VselS", "FpRegRegRegCondOp",
+    vselSIop = ArmInstObjParams("vsel.f32", "VselS", "FpRegRegRegCondOp",
                                 { "code" : vselSCode,
                                   "predicate_test" : predicateTest,
                                   "op_class" : "SimdFloatCmpOp" }, [] )
@@ -1546,7 +1612,7 @@ let {{
             FpDestP1_uw = FpOp2P1_uw;
         } '''
 
-    vselDIop = ArmInstObjParams("vseld", "VselD", "FpRegRegRegCondOp",
+    vselDIop = ArmInstObjParams("vsel.f64", "VselD", "FpRegRegRegCondOp",
                                 { "code" : vselDCode,
                                   "predicate_test" : predicateTest,
                                   "op_class" : "SimdFloatCmpOp" }, [] )

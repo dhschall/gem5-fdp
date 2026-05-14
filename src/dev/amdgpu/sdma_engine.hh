@@ -69,6 +69,7 @@ class SDMAEngine : public DmaVirtDevice
         SDMAQueueDesc *_mqd;
         Addr _mqd_addr = 0;
         bool _priv = true; // Only used for RLC queues. True otherwise.
+        bool _static = false;
       public:
         SDMAQueue() : _rptr(0), _wptr(0), _valid(false), _processing(false),
             _parent(nullptr), _ib(nullptr), _type(SDMAGfx), _mqd(nullptr) {}
@@ -89,6 +90,7 @@ class SDMAEngine : public DmaVirtDevice
         SDMAQueueDesc* getMQD() { return _mqd; }
         Addr getMQDAddr() { return _mqd_addr; }
         bool priv() { return _priv; }
+        bool isStatic() { return _static; }
 
         void base(Addr value) { _base = value; }
 
@@ -124,6 +126,13 @@ class SDMAEngine : public DmaVirtDevice
         void setMQD(SDMAQueueDesc *mqd) { _mqd = mqd; }
         void setMQDAddr(Addr mqdAddr) { _mqd_addr = mqdAddr; }
         void setPriv(bool priv) { _priv = priv; }
+        void setStatic(bool isStatic) { _static = isStatic; }
+
+        // setGlobalRptr is only used during checkpoint restoration
+        // It is needed because _global_rptr is incremented each time
+        // incRptr() is called pre-checkpointing and the pointer
+        // needs to be set to the incremented value at restoration
+        void setGlobalRptr(Addr global_rptr) { _global_rptr = global_rptr;}
     };
 
     /* SDMA Engine ID */
@@ -161,6 +170,8 @@ class SDMAEngine : public DmaVirtDevice
 
     Addr mmioBase = 0;
     Addr mmioSize = 0;
+
+    static constexpr Tick sdma_delay = 1e9;
 
   public:
     SDMAEngine(const SDMAEngineParams &p);
@@ -227,26 +238,28 @@ class SDMAEngine : public DmaVirtDevice
     void write(SDMAQueue *q, sdmaWrite *pkt);
     void writeReadData(SDMAQueue *q, sdmaWrite *pkt, uint32_t *dmaBuffer);
     void writeDone(SDMAQueue *q, sdmaWrite *pkt, uint32_t *dmaBuffer);
+    void writeCleanup(uint32_t *dmaBuffer);
     void copy(SDMAQueue *q, sdmaCopy *pkt);
     void copyReadData(SDMAQueue *q, sdmaCopy *pkt, uint8_t *dmaBuffer);
     void copyDone(SDMAQueue *q, sdmaCopy *pkt, uint8_t *dmaBuffer);
-    void indirectBuffer(SDMAQueue *q, sdmaIndirectBuffer *pkt);
+    void copyCleanup(uint8_t *dmaBuffer);
+    void indirectBuffer(SDMAQueue *q, sdmaIndirectBuffer *pkt,
+                        uint32_t header);
     void fence(SDMAQueue *q, sdmaFence *pkt);
     void fenceDone(SDMAQueue *q, sdmaFence *pkt);
     void trap(SDMAQueue *q, sdmaTrap *pkt);
-    void srbmWrite(SDMAQueue *q, sdmaSRBMWriteHeader *header,
-                    sdmaSRBMWrite *pkt);
-    void pollRegMem(SDMAQueue *q, sdmaPollRegMemHeader *header,
-                    sdmaPollRegMem *pkt);
-    void pollRegMemRead(SDMAQueue *q, sdmaPollRegMemHeader *header,
-                        sdmaPollRegMem *pkt, uint32_t dma_buffer, int count);
+    void srbmWrite(SDMAQueue *q, uint32_t header, sdmaSRBMWrite *pkt);
+    void pollRegMem(SDMAQueue *q, uint32_t header, sdmaPollRegMem *pkt);
+    void pollRegMemRead(SDMAQueue *q, uint32_t header, sdmaPollRegMem *pkt,
+                        uint32_t dma_buffer, int count);
     bool pollRegMemFunc(uint32_t value, uint32_t reference, uint32_t func);
     void ptePde(SDMAQueue *q, sdmaPtePde *pkt);
     void ptePdeDone(SDMAQueue *q, sdmaPtePde *pkt, uint64_t *dmaBuffer);
-    void atomic(SDMAQueue *q, sdmaAtomicHeader *header, sdmaAtomic *pkt);
-    void atomicData(SDMAQueue *q, sdmaAtomicHeader *header, sdmaAtomic *pkt,
+    void ptePdeCleanup(uint64_t *dmaBuffer);
+    void atomic(SDMAQueue *q, uint32_t header, sdmaAtomic *pkt);
+    void atomicData(SDMAQueue *q, uint32_t header, sdmaAtomic *pkt,
                     uint64_t *dmaBuffer);
-    void atomicDone(SDMAQueue *q, sdmaAtomicHeader *header, sdmaAtomic *pkt,
+    void atomicDone(SDMAQueue *q, uint32_t header, sdmaAtomic *pkt,
                     uint64_t *dmaBuffer);
     void constFill(SDMAQueue *q, sdmaConstFill *pkt, uint32_t header);
     void constFillDone(SDMAQueue *q, sdmaConstFill *pkt, uint8_t *fill_data);
@@ -304,9 +317,10 @@ class SDMAEngine : public DmaVirtDevice
     /**
      * Methods for RLC queues
      */
-    void registerRLCQueue(Addr doorbell, Addr mqdAddr, SDMAQueueDesc *mqd);
-    void unregisterRLCQueue(Addr doorbell);
-    void deallocateRLCQueues();
+    void registerRLCQueue(Addr doorbell, Addr mqdAddr, SDMAQueueDesc *mqd,
+                          bool isStatic);
+    void unregisterRLCQueue(Addr doorbell, bool unmap_static);
+    void deallocateRLCQueues(bool unmap_static);
 
     int cur_vmid = 0;
 };

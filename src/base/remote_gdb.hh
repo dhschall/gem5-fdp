@@ -93,7 +93,7 @@ class BaseGdbRegCache
      *
      * @ingroup api_remote_gdb
      */
-    virtual char *data() const = 0;
+    virtual char *data() = 0;
 
     /**
      * Return the size of the raw buffer, in bytes
@@ -321,10 +321,10 @@ class BaseRemoteGDB
     void descheduleInstCommitEvent(Event *ev);
 
     // Breakpoints.
-    void insertSoftBreak(Addr addr, size_t kind);
-    void removeSoftBreak(Addr addr, size_t kind);
-    void insertHardBreak(Addr addr, size_t kind);
-    void removeHardBreak(Addr addr, size_t kind);
+    virtual void insertSoftBreak(Addr addr, size_t kind);
+    virtual void removeSoftBreak(Addr addr, size_t kind);
+    virtual void insertHardBreak(Addr addr, size_t kind);
+    virtual void removeHardBreak(Addr addr, size_t kind);
 
     void sendTPacket(GDBSignal sig, ContextID id,
       const std::string& stopReason);

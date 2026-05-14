@@ -1,3 +1,15 @@
+# Copyright (c) 2025 Arm Limited
+# All rights reserved.
+#
+# The license below extends only to copyright in the software and shall
+# not be construed as granting a license to any other intellectual
+# property including but not limited to intellectual property relating
+# to a hardware implementation of the functionality of the software
+# licensed hereunder.  You may use the software subject to the license
+# terms below provided that you ensure that this notice is replicated
+# unmodified and in its entirety in all distributions of the software,
+# modified or unmodified, in source code or in binary form.
+#
 # Copyright (c) 2022 The Regents of the University of California
 # All rights reserved.
 #
@@ -29,6 +41,7 @@ from abc import (
     ABCMeta,
     abstractmethod,
 )
+from pathlib import Path
 from typing import (
     List,
     Optional,
@@ -37,13 +50,17 @@ from typing import (
 )
 
 from m5.objects import (
-    AddrRange,
     ClockDomain,
     IOXBar,
-    Port,
+    PciBus,
+    Root,
     SrcClockDomain,
     System,
     VoltageDomain,
+)
+from m5.params import (
+    AddrRange,
+    Port,
 )
 
 from ...resources.resource import WorkloadResource
@@ -110,17 +127,13 @@ class AbstractBoard:
         # is defined. Whether or not the board is to be run in FS mode is
         # determined by which kind of workload is set.
         self._is_fs = None
+        self._is_workload_set = False
+        self._workload: WorkloadResource = None
 
         # This variable is used to record the checkpoint directory which is
         # set when declaring the board's workload and then used by the
         # Simulator module.
         self._checkpoint = None
-
-        # Setup the board and memory system's memory ranges.
-        self._setup_memory_ranges()
-
-        # Setup board properties unique to the board being constructed.
-        self._setup_board()
 
         # A private variable to record whether `_connect_things` has been
         # been called.
@@ -139,6 +152,18 @@ class AbstractBoard:
         :returns: The memory system.
         """
         return self.memory
+
+    def get_mem_ranges(self) -> Sequence[AddrRange]:
+        """Get all the mem ranges in the board, This
+        tries to account for boards instantiating memories other
+        than main DRAM.
+        Using get_mem_ports might return some duplicate ranges
+        (when not considering interleaving) when the board
+        memory has multiple ports
+
+        :returns: All the memory ranges
+        """
+        return self.get_memory().get_uninterleaved_range()
 
     def get_mem_ports(self) -> Sequence[Tuple[AddrRange, Port]]:
         """Get the memory ports exposed on this board
@@ -163,6 +188,15 @@ class AbstractBoard:
         :returns: The size of the cache line size.
         """
         return self.cache_line_size
+
+    def get_devices(self):
+        """Get the devices connected to the board.
+
+        Currently, this is only used for GPUs by the ViperBoard.
+
+        :returns: The devices connected to the board or None.
+        """
+        return None
 
     def connect_system_port(self, port: Port) -> None:
         self.system_port = port
@@ -193,6 +227,9 @@ class AbstractBoard:
         """
         self._is_fs = is_fs
 
+        self._setup_memory_ranges()
+        self._setup_board()
+
     def is_fullsystem(self) -> bool:
         """
         Returns ``True`` if the board is to be run in FS mode. Otherwise the board
@@ -211,6 +248,12 @@ class AbstractBoard:
             )
         return self._is_fs
 
+    def set_is_workload_set(self, is_set: bool) -> None:
+        self._is_workload_set = is_set
+
+    def is_workload_set(self) -> bool:
+        return self._is_workload_set
+
     def set_workload(self, workload: WorkloadResource) -> None:
         """
         Set the workload for this board to run.
@@ -221,6 +264,7 @@ class AbstractBoard:
 
         :param workload: The workload to be set to this board.
         """
+        self._workload = workload
 
         try:
             func = getattr(self, workload.get_function_str())
@@ -242,14 +286,20 @@ class AbstractBoard:
 
         func(**workload.get_parameters())
 
+    def get_workload(self) -> Optional[WorkloadResource]:
+        return self._workload
+
     @abstractmethod
     def _setup_board(self) -> None:
         """
-        This function is called in the AbstractBoard constructor, before the
-        memory, processor, and cache hierarchy components are incorporated via
-        ``_connect_thing()``, but after the ``_setup_memory_ranges()`` function.
-        This function should be overridden by boards to specify components,
-        connections unique to that board.
+        This function is called at the end of `_set_fullsystem`. The reason for
+        this is the board's configuraiton varies significantly depending on
+        whether it is to be run in FS or SE mode. This function is therefore
+        called when a workload is set --- after construction but before
+        `_pre_instantiate` is called.
+
+        As `_setup_memory_ranges()` is set in the constructor, this function
+        can be considered to have been called prior to `_setup_board
         """
         raise NotImplementedError
 
@@ -300,6 +350,28 @@ class AbstractBoard:
         raise NotImplementedError
 
     @abstractmethod
+    def has_pci_bus(self) -> bool:
+        """Determine whether the board has an PCI bus or not.
+
+        :returns: ``True`` if the board has an PCI bus, otherwise ``False``.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_pci_bus(self) -> PciBus:
+        """Get the board's main PCI Bus.
+
+        This abstract method must be implemented within the subclasses if they
+        support PCI and/or full system simulation.
+
+        The PCI bus is a non-coherent bus (in the classic caches). This bus is
+        connected to the PCI host bridge and to each PCI devices of the system.
+
+        :returns: The PCI Bus.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     def has_coherent_io(self) -> bool:
         """Determine whether the board needs coherent I/O
 
@@ -318,15 +390,26 @@ class AbstractBoard:
         """
         raise NotImplementedError
 
+    def get_checkpoint_dir(self) -> Optional[Path]:
+        return self._checkpoint
+
     @abstractmethod
     def _setup_memory_ranges(self) -> None:
         """
         Set the memory ranges for this board and memory system.
 
-        This is called in the constructor, prior to ``_setup_board`` and
-        ``_connect_things``. It should query the board's memory to determine the
-        size and the set the memory ranges on the memory system and on the
-        board.
+        This is called at the end of the `_set_fullsystem` function but before
+        `_setup_board`.  `_set_fullsystem` is called when the workload is
+        declared. It is before `_pre_instantiate` (but, obviously after
+        construction).
+
+        It should query the board's memory
+        to determine the size and the set the memory ranges on the memory
+        system and on the board.
+
+        As thisis called at the end of `_set_fullsystem`, the board's memory
+        can be setup differently depending on whether the board is to be run in
+        FS or SE mode.
 
         The simplest implementation sets the board's memory range to the size
         of memory and memory system's range to be the same as the board. Full
@@ -384,12 +467,41 @@ class AbstractBoard:
             self.get_cache_hierarchy()._post_instantiate()
         self.get_memory()._post_instantiate()
 
-    def _pre_instantiate(self):
+    def _pre_instantiate(self, full_system: Optional[bool] = None) -> Root:
         """To be called immediately before ``m5.instantiate``. This is where
-        ``_connect_things`` is executed by default."""
+        ``_connect_things`` is executed by default and the root object is Root
+        object is created and returned.
 
-        # Connect the memory, processor, and cache hierarchy.
+        :param full_system: Used to pass the full system flag to the board from
+                            the Simulator module. **Note**: This was
+                            implemented solely to maintain backawards
+                            compatibility with while the Simululator module's
+                            `full_system` flag is in state of deprecation. This
+                            parameter will be removed when it is. When this
+                            occurs whether a simulation is to be run in FS or
+                            SE mode will be determined by the board set."""
+
+        # 1. Connect the memory, processor, and cache hierarchy.
         self._connect_things()
+
+        # 2. Create the root object
+        root = Root(
+            full_system=(
+                full_system
+                if full_system is not None
+                else self.is_fullsystem()
+            ),
+            board=self,
+        )
+
+        # 3. Call any of the components' `_pre_instantiate` functions.
+        self.get_processor()._pre_instantiate(root)
+        self.get_memory()._pre_instantiate(root)
+        if self.get_cache_hierarchy():
+            self.get_cache_hierarchy()._pre_instantiate(root)
+
+        # 4. Return the root object.
+        return root
 
     def _connect_things_check(self):
         """

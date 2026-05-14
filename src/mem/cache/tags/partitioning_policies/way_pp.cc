@@ -42,7 +42,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "params/WayPartitioningPolicy.hh"
-#include "way_allocation.hh"
+#include "mem/cache/tags/partitioning_policies/way_allocation.hh"
 
 namespace gem5
 {
@@ -70,7 +70,7 @@ WayPartitioningPolicy::WayPartitioningPolicy
                 "associativity is %d", alloc_id, way, cache_assoc);
 
             if (this->partitionIdWays[alloc_id].count(way) == 0) {
-                this->partitionIdWays[alloc_id].emplace(way);
+                addWayToPartition(alloc_id, way);
             } else {
                 // do not add duplicate allocation to policy and warn
                 warn("Duplicate Way Partitioning Policy allocation for "
@@ -84,6 +84,18 @@ WayPartitioningPolicy::WayPartitioningPolicy
             "for PartitionID: %d \n", allocation->getWays().size(),
             alloc_id);
     }
+}
+
+void
+WayPartitioningPolicy::addWayToPartition(uint64_t partition_id, unsigned way)
+{
+    partitionIdWays[partition_id].emplace(way);
+}
+
+void
+WayPartitioningPolicy::removeWayToPartition(uint64_t partition_id, unsigned way)
+{
+    partitionIdWays[partition_id].erase(way);
 }
 
 void

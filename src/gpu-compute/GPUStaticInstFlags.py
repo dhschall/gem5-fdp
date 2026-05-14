@@ -85,6 +85,7 @@ class GPUStaticInstFlags(Enum):
         "AtomicDec",
         "AtomicMax",
         "AtomicMin",
+        "AtomicPkAddBF16",
         # Segment access flags
         "ArgSegment",  # Accesses the arg segment
         "GlobalSegment",  # Accesses global memory
@@ -108,4 +109,5 @@ class GPUStaticInstFlags(Enum):
         "MAC",  # MAC
         "MAD",  # MAD
         "MFMA",  # MFMA
+        "NoAddr",  # Request has no address but goes to SQC for timing
     ]

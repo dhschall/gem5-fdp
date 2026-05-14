@@ -43,11 +43,6 @@ Import('*')
 if not env['CONF']['RUBY']:
     Return()
 
-env.Append(CPPDEFINES=['PROTOCOL_' + env['CONF']['PROTOCOL']])
-
-if env['CONF']['NEED_PARTIAL_FUNC_READS']:
-    env.Append(CPPDEFINES=['PARTIAL_FUNC_READS'])
-
 if env['CONF']['BUILD_GPU']:
     SimObject('GPUCoalescer.py', sim_objects=['RubyGPUCoalescer'])
 SimObject('RubySystem.py', sim_objects=['RubySystem'])
@@ -56,6 +51,7 @@ SimObject('Sequencer.py', sim_objects=[
     'DMASequencer'])
 if env['CONF']['BUILD_GPU']:
     SimObject('VIPERCoalescer.py', sim_objects=['VIPERCoalescer'])
+    SimObject('VIPERSequencer.py', sim_objects=['VIPERSequencer'])
 
 Source('CacheRecorder.cc')
 Source('DMASequencer.cc')
@@ -68,3 +64,4 @@ Source('RubySystem.cc')
 Source('Sequencer.cc')
 if env['CONF']['BUILD_GPU']:
     Source('VIPERCoalescer.cc')
+    Source('VIPERSequencer.cc')

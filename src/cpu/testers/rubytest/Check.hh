@@ -32,6 +32,7 @@
 
 #include <iostream>
 
+#include "base/random.hh"
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "mem/ruby/common/Address.hh"
 #include "mem/ruby/protocol/RubyAccessMode.hh"
@@ -47,6 +48,7 @@ class SubBlock;
 
 const int CHECK_SIZE_BITS = 2;
 const int CHECK_SIZE = (1 << CHECK_SIZE_BITS);
+const int CACHE_LINE_BITS = 6;
 
 class Check
 {
@@ -54,7 +56,7 @@ class Check
     Check(Addr address, Addr pc, int _num_writers,
           int _num_readers, RubyTester* _tester);
 
-    void initiate(); // Does Action or Check or nether
+    void initiate(Cycles current_time); // Does Action or Check or nether
     void performCallback(ruby::NodeID proc, ruby::SubBlock* data,
         Cycles curTime);
     Addr getAddress() const { return m_address; }
@@ -63,10 +65,10 @@ class Check
     void print(std::ostream& out) const;
 
   private:
-    void initiateFlush();
-    void initiatePrefetch();
-    void initiateAction();
-    void initiateCheck();
+    void initiateFlush(Cycles current_time);
+    void initiatePrefetch(Cycles current_time);
+    void initiateAction(Cycles current_time);
+    void initiateCheck(Cycles current_time);
 
     void pickValue();
     void pickInitiatingNode();
@@ -83,6 +85,7 @@ class Check
     int m_num_writers;
     int m_num_readers;
     RubyTester* m_tester_ptr;
+    Random::RandomPtr rng = Random::genRandom();
 };
 
 inline std::ostream&

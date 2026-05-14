@@ -13,7 +13,9 @@ namespace gem5
 namespace branch_prediction
 {
 
-TAGE_EMILIO::TAGE_EMILIO(const TAGE_EMILIOParams &params) : BPredUnit(params), tage(1024) 
+// Changed: call ConditionalPredictor(params) instead of BPredUnit(params).
+TAGE_EMILIO::TAGE_EMILIO(const TAGE_EMILIOParams &params)
+    : ConditionalPredictor(params), tage(1024)
 {
 }
 
@@ -44,7 +46,7 @@ void
 TAGE_EMILIO::squash(ThreadID tid, void * &bp_history)
 {
     TageEmilioBranchInfo *bi = static_cast<TageEmilioBranchInfo*>(bp_history);
-    DPRINTF(Tage, "TAGE id: %d squash: %lx bp_history:%p\n", bi ? bi->id : -1, 
+    DPRINTF(Tage, "TAGE id: %d squash: %lx bp_history:%p\n", bi ? bi->id : -1,
         bi? bi->pc : 0x00, bp_history);
     if (bi) {
       tage.flush_branch(bi->id);
@@ -78,9 +80,13 @@ TAGE_EMILIO::lookup(ThreadID tid, Addr pc, void* &bp_history)
     return retval;
 }
 
+// Changed: the ConditionalPredictor interface now passes the StaticInstPtr
+// so that direction predictors can inspect the instruction if desired.
+// TAGE-SC-L does not need it, so inst is accepted but unused.
 void
 TAGE_EMILIO::updateHistories(ThreadID tid, Addr pc, bool uncond,
-                         bool taken, Addr target, void * &bp_history)
+                         bool taken, Addr target,
+                         const StaticInstPtr &inst, void * &bp_history)
 {
     TageEmilioBranchInfo *bi = static_cast<TageEmilioBranchInfo*>(bp_history);
 
@@ -91,8 +97,7 @@ TAGE_EMILIO::updateHistories(ThreadID tid, Addr pc, bool uncond,
         DPRINTF(Tage, "UnConditionalBranch: %lx\n", pc);
         predict(tid, pc, false, bp_history);
     }
-    //bi->br_type.is_conditional = !uncond;
-    
+
     bi = static_cast<TageEmilioBranchInfo*>(bp_history);
     // Update the global history for all branches
     tage.update_speculative_state(bi->id, pc, bi->br_type, taken, target);

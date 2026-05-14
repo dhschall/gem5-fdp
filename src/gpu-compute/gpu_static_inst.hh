@@ -167,6 +167,7 @@ class GPUStaticInst : public GPUStaticInstFlags
     bool isAtomicDec() const { return _flags[AtomicDec]; }
     bool isAtomicMax() const { return _flags[AtomicMax]; }
     bool isAtomicMin() const { return _flags[AtomicMin]; }
+    bool isAtomicPkAddBF16() const { return _flags[AtomicPkAddBF16]; }
 
     bool
     isArgLoad() const
@@ -221,6 +222,8 @@ class GPUStaticInst : public GPUStaticInstFlags
     bool isMAC() const { return _flags[MAC]; }
     bool isMAD() const { return _flags[MAD]; }
     bool isMFMA() const { return _flags[MFMA]; }
+
+    bool hasNoAddr() const { return _flags[NoAddr]; }
 
     virtual int instSize() const = 0;
 

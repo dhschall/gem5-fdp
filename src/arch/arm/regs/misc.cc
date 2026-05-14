@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013, 2015-2024 Arm Limited
+ * Copyright (c) 2010-2013, 2015-2025 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -41,6 +41,7 @@
 
 #include "arch/arm/insts/misc64.hh"
 #include "arch/arm/isa.hh"
+#include "arch/arm/regs/misc_info.hh"
 #include "base/bitfield.hh"
 #include "base/logging.hh"
 #include "cpu/thread_context.hh"
@@ -401,6 +402,19 @@ std::unordered_map<MiscRegNum32, MiscRegIndex> miscRegNum32ToIdx{
     { MiscRegNum32(15, 0, 14, 2, 1), MISCREG_CNTP_CTL },
     { MiscRegNum32(15, 0, 14, 3, 0), MISCREG_CNTV_TVAL },
     { MiscRegNum32(15, 0, 14, 3, 1), MISCREG_CNTV_CTL },
+    { MiscRegNum32(15, 0, 14, 8, 0), MISCREG_PMEVCNTR0 },
+    { MiscRegNum32(15, 0, 14, 8, 1), MISCREG_PMEVCNTR1 },
+    { MiscRegNum32(15, 0, 14, 8, 2), MISCREG_PMEVCNTR2 },
+    { MiscRegNum32(15, 0, 14, 8, 3), MISCREG_PMEVCNTR3 },
+    { MiscRegNum32(15, 0, 14, 8, 4), MISCREG_PMEVCNTR4 },
+    { MiscRegNum32(15, 0, 14, 8, 5), MISCREG_PMEVCNTR5 },
+    { MiscRegNum32(15, 0, 14, 12, 0), MISCREG_PMEVTYPER0 },
+    { MiscRegNum32(15, 0, 14, 12, 1), MISCREG_PMEVTYPER1 },
+    { MiscRegNum32(15, 0, 14, 12, 2), MISCREG_PMEVTYPER2 },
+    { MiscRegNum32(15, 0, 14, 12, 3), MISCREG_PMEVTYPER3 },
+    { MiscRegNum32(15, 0, 14, 12, 4), MISCREG_PMEVTYPER4 },
+    { MiscRegNum32(15, 0, 14, 12, 5), MISCREG_PMEVTYPER5 },
+    { MiscRegNum32(15, 0, 14, 15, 7), MISCREG_PMCCFILTR },
     { MiscRegNum32(15, 1, 0, 0, 0), MISCREG_CCSIDR },
     { MiscRegNum32(15, 1, 0, 0, 1), MISCREG_CLIDR },
     { MiscRegNum32(15, 1, 0, 0, 7), MISCREG_AIDR },
@@ -499,6 +513,7 @@ std::unordered_map<MiscRegNum32, MiscRegIndex> miscRegNum32ToIdx{
     // MCRR/MRRC regs
     { MiscRegNum32(15, 0, 2), MISCREG_TTBR0 },
     { MiscRegNum32(15, 0, 7), MISCREG_PAR },
+    { MiscRegNum32(15, 0, 9), MISCREG_PMCCNTR }, // ARMv8 AArch32 register
     { MiscRegNum32(15, 0, 12), MISCREG_ICC_SGI1R },
     { MiscRegNum32(15, 0, 14), MISCREG_CNTPCT },
     { MiscRegNum32(15, 0, 15), MISCREG_CPUMERRSR },
@@ -560,6 +575,133 @@ decodeCP15Reg64(unsigned crm, unsigned opc1)
     } else {
         return MISCREG_UNKNOWN;
     }
+}
+
+bool
+decodeMrsMsrBankedReg(uint8_t sysM, bool r, bool &isIntReg, int &regIdx,
+                      CPSR cpsr, SCR scr, NSACR nsacr, bool checkSecurity)
+{
+    OperatingMode mode = MODE_UNDEFINED;
+    bool ok = true;
+
+    // R mostly indicates if its a int register or a misc reg, we override
+    // below if the few corner cases
+    isIntReg = !r;
+    // Loosely based on ARM ARM issue C section B9.3.10
+    if (r) {
+        switch (sysM) {
+            case 0xE:
+                regIdx = MISCREG_SPSR_FIQ;
+                mode = MODE_FIQ;
+                break;
+            case 0x10:
+                regIdx = MISCREG_SPSR_IRQ;
+                mode = MODE_IRQ;
+                break;
+            case 0x12:
+                regIdx = MISCREG_SPSR_SVC;
+                mode = MODE_SVC;
+                break;
+            case 0x14:
+                regIdx = MISCREG_SPSR_ABT;
+                mode = MODE_ABORT;
+                break;
+            case 0x16:
+                regIdx = MISCREG_SPSR_UND;
+                mode = MODE_UNDEFINED;
+                break;
+            case 0x1C:
+                regIdx = MISCREG_SPSR_MON;
+                mode = MODE_MON;
+                break;
+            case 0x1E:
+                regIdx = MISCREG_SPSR_HYP;
+                mode = MODE_HYP;
+                break;
+            default:
+                ok = false;
+                break;
+        }
+    } else {
+        int sysM4To3 = bits(sysM, 4, 3);
+
+        if (sysM4To3 == 0) {
+            mode = MODE_USER;
+            regIdx = int_reg::regInMode(mode, bits(sysM, 2, 0) + 8);
+        } else if (sysM4To3 == 1) {
+            mode = MODE_FIQ;
+            regIdx = int_reg::regInMode(mode, bits(sysM, 2, 0) + 8);
+        } else if (sysM4To3 == 3) {
+            if (bits(sysM, 1) == 0) {
+                mode = MODE_MON;
+                regIdx = int_reg::regInMode(mode, 14 - bits(sysM, 0));
+            } else {
+                mode = MODE_HYP;
+                if (bits(sysM, 0) == 1) {
+                    regIdx = int_reg::regInMode(mode, 13); // R13 in HYP
+                } else {
+                    isIntReg = false;
+                    regIdx = MISCREG_ELR_HYP;
+                }
+            }
+        } else { // Other Banked registers
+            int sysM2 = bits(sysM, 2);
+            int sysM1 = bits(sysM, 1);
+
+            mode = (OperatingMode)(((sysM2 || sysM1) << 0) | (1 << 1) |
+                                   ((sysM2 && !sysM1) << 2) |
+                                   ((sysM2 && sysM1) << 3) | (1 << 4));
+            regIdx = int_reg::regInMode(mode, 14 - bits(sysM, 0));
+            // Don't flatten the register here. This is going to go through
+            // setReg() which will do the flattening
+            ok &= mode != cpsr.mode;
+        }
+    }
+
+    // Check that the requested register is accessable from the current mode
+    if (ok && checkSecurity && mode != cpsr.mode) {
+        switch (cpsr.mode) {
+            case MODE_USER:
+                ok = false;
+                break;
+            case MODE_FIQ:
+                ok &= mode != MODE_HYP;
+                ok &= (mode != MODE_MON) || !scr.ns;
+                break;
+            case MODE_HYP:
+                ok &= mode != MODE_MON;
+                ok &= (mode != MODE_FIQ) || !nsacr.rfr;
+                break;
+            case MODE_IRQ:
+            case MODE_SVC:
+            case MODE_ABORT:
+            case MODE_UNDEFINED:
+            case MODE_SYSTEM:
+                ok &= mode != MODE_HYP;
+                ok &= (mode != MODE_MON) || !scr.ns;
+                ok &= (mode != MODE_FIQ) || !nsacr.rfr;
+                break;
+            // can access everything, no further checks required
+            case MODE_MON:
+                break;
+            default:
+                panic("unknown Mode 0x%x\n", cpsr.mode);
+                break;
+        }
+    }
+    return ok;
+}
+
+int
+decodeMrsMsrBankedIntRegIndex(uint8_t sysM, bool r)
+{
+    int regIdx;
+    bool isIntReg;
+    bool validReg;
+
+    validReg =
+        decodeMrsMsrBankedReg(sysM, r, isIntReg, regIdx, 0, 0, 0, false);
+    return (validReg && isIntReg) ? regIdx : int_reg::Zero;
 }
 
 std::tuple<bool, bool>
@@ -726,6 +868,21 @@ unflattenMiscReg(int reg)
     return unflattenResultMiscReg[reg];
 }
 
+RegIndex
+spMapping(MiscRegIndex reg)
+{
+    switch (reg) {
+        case MISCREG_SP_EL2:
+            return int_reg::Sp2;
+        case MISCREG_SP_EL1:
+            return int_reg::Sp1;
+        case MISCREG_SP_EL0:
+            return int_reg::Sp0;
+        default:
+            panic("Invalid SP register\n");
+    }
+}
+
 Fault
 checkFaultAccessAArch64SysReg(MiscRegIndex reg, CPSR cpsr,
                               ThreadContext *tc, const MiscRegOp64 &inst)
@@ -733,7 +890,639 @@ checkFaultAccessAArch64SysReg(MiscRegIndex reg, CPSR cpsr,
     return lookUpMiscReg[reg].checkFault(tc, inst, currEL(cpsr));
 }
 
-std::vector<struct MiscRegLUTEntry> lookUpMiscReg(NUM_MISCREGS);
+Fault
+mcrMrc15Trap(const MiscRegIndex misc_reg, ExtMachInst mach_inst,
+             ThreadContext *tc, uint32_t imm)
+{
+    ExceptionClass ec = ExceptionClass::TRAPPED_CP15_MCR_MRC;
+    if (mcrMrc15TrapToHyp(misc_reg, tc, imm, &ec)) {
+        return std::make_shared<HypervisorTrap>(mach_inst, imm, ec);
+    }
+    return AArch64AArch32SystemAccessTrap(misc_reg, mach_inst, tc, imm, ec);
+}
+
+bool
+mcrMrc15TrapToHyp(const MiscRegIndex misc_reg, ThreadContext *tc, uint32_t iss,
+                  ExceptionClass *ec)
+{
+    bool is_read;
+    uint32_t crm;
+    RegIndex rt;
+    uint32_t crn;
+    uint32_t opc1;
+    uint32_t opc2;
+    bool trap_to_hyp = false;
+
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    const HDCR hdcr = tc->readMiscReg(MISCREG_HDCR);
+    const HSTR hstr = tc->readMiscReg(MISCREG_HSTR);
+    const HCPTR hcptr = tc->readMiscReg(MISCREG_HCPTR);
+
+    if (EL2Enabled(tc) && (currEL(tc) < EL2)) {
+        mcrMrcIssExtract(iss, is_read, crm, rt, crn, opc1, opc2);
+        trap_to_hyp = ((uint32_t)hstr) & (1 << crn);
+        trap_to_hyp |= hdcr.tpm && (crn == 9) && (crm >= 12);
+        trap_to_hyp |=
+            hcr.tidcp &&
+            (((crn == 9) && ((crm <= 2) || ((crm >= 5) && (crm <= 8)))) ||
+             ((crn == 10) && ((crm <= 1) || (crm == 4) || (crm == 8))) ||
+             ((crn == 11) && ((crm <= 8) || (crm == 15))));
+
+        if (!trap_to_hyp) {
+            switch (unflattenMiscReg(misc_reg)) {
+                case MISCREG_CPACR:
+                    trap_to_hyp = hcptr.tcpac;
+                    break;
+                case MISCREG_REVIDR:
+                case MISCREG_TCMTR:
+                case MISCREG_TLBTR:
+                case MISCREG_AIDR:
+                    trap_to_hyp = hcr.tid1;
+                    break;
+                case MISCREG_CTR:
+                case MISCREG_CCSIDR:
+                case MISCREG_CLIDR:
+                case MISCREG_CSSELR:
+                    trap_to_hyp = hcr.tid2;
+                    break;
+                case MISCREG_ID_PFR0:
+                case MISCREG_ID_PFR1:
+                case MISCREG_ID_DFR0:
+                case MISCREG_ID_AFR0:
+                case MISCREG_ID_MMFR0:
+                case MISCREG_ID_MMFR1:
+                case MISCREG_ID_MMFR2:
+                case MISCREG_ID_MMFR3:
+                case MISCREG_ID_MMFR4:
+                case MISCREG_ID_ISAR0:
+                case MISCREG_ID_ISAR1:
+                case MISCREG_ID_ISAR2:
+                case MISCREG_ID_ISAR3:
+                case MISCREG_ID_ISAR4:
+                case MISCREG_ID_ISAR5:
+                case MISCREG_ID_ISAR6:
+                    trap_to_hyp = hcr.tid3;
+                    break;
+                case MISCREG_DCISW:
+                case MISCREG_DCCSW:
+                case MISCREG_DCCISW:
+                    trap_to_hyp = hcr.tsw;
+                    break;
+                case MISCREG_DCIMVAC:
+                case MISCREG_DCCIMVAC:
+                case MISCREG_DCCMVAC:
+                    trap_to_hyp = hcr.tpc;
+                    break;
+                case MISCREG_ICIMVAU:
+                case MISCREG_ICIALLU:
+                case MISCREG_ICIALLUIS:
+                case MISCREG_DCCMVAU:
+                    trap_to_hyp = hcr.tpu;
+                    break;
+                case MISCREG_TLBIALLIS:
+                case MISCREG_TLBIMVAIS:
+                case MISCREG_TLBIASIDIS:
+                case MISCREG_TLBIMVAAIS:
+                case MISCREG_TLBIMVALIS:
+                case MISCREG_TLBIMVAALIS:
+                case MISCREG_DTLBIALL:
+                case MISCREG_ITLBIALL:
+                case MISCREG_DTLBIMVA:
+                case MISCREG_ITLBIMVA:
+                case MISCREG_DTLBIASID:
+                case MISCREG_ITLBIASID:
+                case MISCREG_TLBIMVAA:
+                case MISCREG_TLBIALL:
+                case MISCREG_TLBIMVA:
+                case MISCREG_TLBIMVAL:
+                case MISCREG_TLBIMVAAL:
+                case MISCREG_TLBIASID:
+                    trap_to_hyp = hcr.ttlb;
+                    break;
+                case MISCREG_ACTLR:
+                    trap_to_hyp = hcr.tac;
+                    break;
+                case MISCREG_SCTLR:
+                case MISCREG_TTBR0:
+                case MISCREG_TTBR1:
+                case MISCREG_TTBCR:
+                case MISCREG_DACR:
+                case MISCREG_DFSR:
+                case MISCREG_IFSR:
+                case MISCREG_DFAR:
+                case MISCREG_IFAR:
+                case MISCREG_ADFSR:
+                case MISCREG_AIFSR:
+                case MISCREG_PRRR:
+                case MISCREG_NMRR:
+                case MISCREG_MAIR0:
+                case MISCREG_MAIR1:
+                case MISCREG_CONTEXTIDR:
+                    trap_to_hyp = hcr.tvm & !is_read;
+                    break;
+                case MISCREG_PMCR:
+                    trap_to_hyp = hdcr.tpmcr;
+                    break;
+                // GICv3 regs
+                case MISCREG_ICC_SGI0R:
+                    trap_to_hyp = hcr.fmo;
+                    break;
+                case MISCREG_ICC_SGI1R:
+                case MISCREG_ICC_ASGI1R:
+                    trap_to_hyp = hcr.imo;
+                    break;
+                case MISCREG_CNTFRQ ... MISCREG_CNTV_TVAL:
+                    // CNTFRQ may be trapped only on reads
+                    // CNTPCT and CNTVCT are read-only
+                    if (MISCREG_CNTFRQ <= misc_reg &&
+                        misc_reg <= MISCREG_CNTVCT && !is_read) {
+                        break;
+                    }
+                    trap_to_hyp = isGenericTimerHypTrap(misc_reg, tc, ec);
+                    break;
+                // No default action needed
+                default:
+                    break;
+            }
+        }
+    }
+    return trap_to_hyp;
+}
+
+bool
+mcrMrc14TrapToHyp(const MiscRegIndex misc_reg, ThreadContext *tc, uint32_t iss)
+{
+    bool is_read;
+    uint32_t crm;
+    RegIndex rt;
+    uint32_t crn;
+    uint32_t opc1;
+    uint32_t opc2;
+
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    const HDCR hdcr = tc->readMiscReg(MISCREG_HDCR);
+    const HSTR hstr = tc->readMiscReg(MISCREG_HSTR);
+    const HCPTR hcptr = tc->readMiscReg(MISCREG_HCPTR);
+
+    bool trap_to_hyp = false;
+
+    if (EL2Enabled(tc) && (currEL(tc) < EL2)) {
+        mcrMrcIssExtract(iss, is_read, crm, rt, crn, opc1, opc2);
+        inform("trap check M:%x N:%x 1:%x 2:%x hdcr %x, hcptr %x, hstr %x\n",
+               crm, crn, opc1, opc2, hdcr, hcptr, hstr);
+        trap_to_hyp = hdcr.tda && (opc1 == 0);
+        trap_to_hyp |= hcptr.tta && (opc1 == 1);
+        if (!trap_to_hyp) {
+            switch (unflattenMiscReg(misc_reg)) {
+                case MISCREG_DBGOSLSR:
+                case MISCREG_DBGOSLAR:
+                case MISCREG_DBGOSDLR:
+                case MISCREG_DBGPRCR:
+                    trap_to_hyp = hdcr.tdosa;
+                    break;
+                case MISCREG_DBGDRAR:
+                case MISCREG_DBGDSAR:
+                    trap_to_hyp = hdcr.tdra;
+                    break;
+                case MISCREG_JIDR:
+                    trap_to_hyp = hcr.tid0;
+                    break;
+                case MISCREG_JOSCR:
+                case MISCREG_JMCR:
+                    trap_to_hyp = hstr.tjdbx;
+                    break;
+                case MISCREG_TEECR:
+                case MISCREG_TEEHBR:
+                    trap_to_hyp = hstr.ttee;
+                    break;
+                // No default action needed
+                default:
+                    break;
+            }
+        }
+    }
+    return trap_to_hyp;
+}
+
+Fault
+mcrrMrrc15Trap(const MiscRegIndex misc_reg, ExtMachInst mach_inst,
+               ThreadContext *tc, uint32_t imm)
+{
+    ExceptionClass ec = ExceptionClass::TRAPPED_CP15_MCRR_MRRC;
+    if (mcrrMrrc15TrapToHyp(misc_reg, tc, imm, &ec)) {
+        return std::make_shared<HypervisorTrap>(mach_inst, imm, ec);
+    }
+    return AArch64AArch32SystemAccessTrap(misc_reg, mach_inst, tc, imm, ec);
+}
+
+bool
+mcrrMrrc15TrapToHyp(const MiscRegIndex misc_reg, ThreadContext *tc,
+                    uint32_t iss, ExceptionClass *ec)
+{
+    uint32_t crm;
+    RegIndex rt;
+    uint32_t crn;
+    uint32_t opc1;
+    uint32_t opc2;
+    bool is_read;
+    bool trap_to_hyp = false;
+
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    const HSTR hstr = tc->readMiscReg(MISCREG_HSTR);
+
+    if (EL2Enabled(tc) && (currEL(tc) < EL2)) {
+        // This is technically the wrong function, but we can re-use it for
+        // the moment because we only need one field, which overlaps with the
+        // mcrmrc layout
+        mcrMrcIssExtract(iss, is_read, crm, rt, crn, opc1, opc2);
+        trap_to_hyp = ((uint32_t)hstr) & (1 << crm);
+
+        if (!trap_to_hyp) {
+            switch (unflattenMiscReg(misc_reg)) {
+                case MISCREG_SCTLR:
+                case MISCREG_TTBR0:
+                case MISCREG_TTBR1:
+                case MISCREG_TTBCR:
+                case MISCREG_DACR:
+                case MISCREG_DFSR:
+                case MISCREG_IFSR:
+                case MISCREG_DFAR:
+                case MISCREG_IFAR:
+                case MISCREG_ADFSR:
+                case MISCREG_AIFSR:
+                case MISCREG_PRRR:
+                case MISCREG_NMRR:
+                case MISCREG_MAIR0:
+                case MISCREG_MAIR1:
+                case MISCREG_CONTEXTIDR:
+                    trap_to_hyp = hcr.tvm & !is_read;
+                    break;
+                case MISCREG_CNTFRQ ... MISCREG_CNTV_TVAL:
+                    // CNTFRQ may be trapped only on reads
+                    // CNTPCT and CNTVCT are read-only
+                    if (MISCREG_CNTFRQ <= misc_reg &&
+                        misc_reg <= MISCREG_CNTVCT && !is_read) {
+                        break;
+                    }
+                    trap_to_hyp = isGenericTimerHypTrap(misc_reg, tc, ec);
+                    break;
+                // No default action needed
+                default:
+                    break;
+            }
+        }
+    }
+    return trap_to_hyp;
+}
+
+Fault
+AArch64AArch32SystemAccessTrap(const MiscRegIndex misc_reg,
+                               ExtMachInst mach_inst, ThreadContext *tc,
+                               uint32_t imm, ExceptionClass ec)
+{
+    if (currEL(tc) <= EL1 && !ELIs32(tc, EL1) &&
+        isAArch64AArch32SystemAccessTrapEL1(misc_reg, tc)) {
+        return std::make_shared<SupervisorTrap>(mach_inst, imm, ec);
+    }
+    if (currEL(tc) <= EL2 && EL2Enabled(tc) && !ELIs32(tc, EL2) &&
+        isAArch64AArch32SystemAccessTrapEL2(misc_reg, tc)) {
+        return std::make_shared<HypervisorTrap>(mach_inst, imm, ec);
+    }
+    return NoFault;
+}
+
+bool
+isAArch64AArch32SystemAccessTrapEL1(const MiscRegIndex misc_reg,
+                                    ThreadContext *tc)
+{
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+            return currEL(tc) == EL0 &&
+                   isGenericTimerSystemAccessTrapEL1(misc_reg, tc);
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isGenericTimerHypTrap(const MiscRegIndex misc_reg, ThreadContext *tc,
+                      ExceptionClass *ec)
+{
+    if (currEL(tc) <= EL2 && EL2Enabled(tc) && ELIs32(tc, EL2)) {
+        switch (misc_reg) {
+            case MISCREG_CNTFRQ ... MISCREG_CNTV_TVAL:
+                if (currEL(tc) == EL0 &&
+                    isGenericTimerCommonEL0HypTrap(misc_reg, tc, ec)) {
+                    return true;
+                }
+                switch (misc_reg) {
+                    case MISCREG_CNTPCT:
+                    case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+                        return currEL(tc) <= EL1 &&
+                               isGenericTimerPhysHypTrap(misc_reg, tc, ec);
+                    default:
+                        break;
+                }
+                break;
+            default:
+                break;
+        }
+    }
+    return false;
+}
+
+bool
+isGenericTimerCommonEL0HypTrap(const MiscRegIndex misc_reg, ThreadContext *tc,
+                               ExceptionClass *ec)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    bool trap_cond = condGenericTimerSystemAccessTrapEL1(misc_reg, tc);
+    if (ELIs32(tc, EL1) && trap_cond && hcr.tge) {
+        // As per the architecture, this hyp trap should have uncategorized
+        // exception class
+        if (ec) {
+            *ec = ExceptionClass::UNKNOWN;
+        }
+        return true;
+    }
+    return false;
+}
+
+bool
+isGenericTimerPhysHypTrap(const MiscRegIndex misc_reg, ThreadContext *tc,
+                          ExceptionClass *ec)
+{
+    return condGenericTimerPhysHypTrap(misc_reg, tc);
+}
+
+bool
+condGenericTimerPhysHypTrap(const MiscRegIndex misc_reg, ThreadContext *tc)
+{
+    const CNTHCTL cnthctl = tc->readMiscReg(MISCREG_CNTHCTL_EL2);
+    switch (misc_reg) {
+        case MISCREG_CNTPCT:
+            return !cnthctl.el1pcten;
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+            return !cnthctl.el1pcen;
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isGenericTimerSystemAccessTrapEL1(const MiscRegIndex misc_reg,
+                                  ThreadContext *tc)
+{
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ ... MISCREG_CNTV_TVAL:
+        case MISCREG_CNTFRQ_EL0 ... MISCREG_CNTV_TVAL_EL0: {
+            const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+            bool trap_cond = condGenericTimerSystemAccessTrapEL1(misc_reg, tc);
+            return !(EL2Enabled(tc) && hcr.e2h && hcr.tge) && trap_cond &&
+                   !(EL2Enabled(tc) && !ELIs32(tc, EL2) && hcr.tge);
+        }
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+condGenericTimerSystemAccessTrapEL1(const MiscRegIndex misc_reg,
+                                    ThreadContext *tc)
+{
+    const CNTKCTL cntkctl = tc->readMiscReg(MISCREG_CNTKCTL_EL1);
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ:
+        case MISCREG_CNTFRQ_EL0:
+            return !cntkctl.el0pcten && !cntkctl.el0vcten;
+        case MISCREG_CNTPCT:
+        case MISCREG_CNTPCT_EL0:
+            return !cntkctl.el0pcten;
+        case MISCREG_CNTVCT:
+        case MISCREG_CNTVCT_EL0:
+            return !cntkctl.el0vcten;
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+        case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+            return !cntkctl.el0pten;
+        case MISCREG_CNTV_CTL ... MISCREG_CNTV_TVAL:
+        case MISCREG_CNTV_CTL_EL0 ... MISCREG_CNTV_TVAL_EL0:
+            return !cntkctl.el0vten;
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isAArch64AArch32SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                    ThreadContext *tc)
+{
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ ... MISCREG_CNTVOFF:
+            return currEL(tc) <= EL1 &&
+                   isGenericTimerSystemAccessTrapEL2(misc_reg, tc);
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isGenericTimerSystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                  ThreadContext *tc)
+{
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ ... MISCREG_CNTV_TVAL:
+        case MISCREG_CNTFRQ_EL0 ... MISCREG_CNTV_TVAL_EL0:
+            if (currEL(tc) == EL0 &&
+                isGenericTimerCommonEL0SystemAccessTrapEL2(misc_reg, tc)) {
+                return true;
+            }
+            switch (misc_reg) {
+                case MISCREG_CNTPCT:
+                case MISCREG_CNTPCT_EL0:
+                case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+                case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+                    return (currEL(tc) == EL0 &&
+                            isGenericTimerPhysEL0SystemAccessTrapEL2(misc_reg,
+                                                                     tc)) ||
+                           (currEL(tc) == EL1 &&
+                            isGenericTimerPhysEL1SystemAccessTrapEL2(misc_reg,
+                                                                     tc));
+                case MISCREG_CNTVCT:
+                case MISCREG_CNTVCT_EL0:
+                case MISCREG_CNTV_CTL ... MISCREG_CNTV_TVAL:
+                case MISCREG_CNTV_CTL_EL0 ... MISCREG_CNTV_TVAL_EL0:
+                    return isGenericTimerVirtSystemAccessTrapEL2(misc_reg, tc);
+                default:
+                    break;
+            }
+            break;
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isGenericTimerCommonEL0SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                           ThreadContext *tc)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    bool trap_cond_el1 = condGenericTimerSystemAccessTrapEL1(misc_reg, tc);
+    bool trap_cond_el2 =
+        condGenericTimerCommonEL0SystemAccessTrapEL2(misc_reg, tc);
+    return (!ELIs32(tc, EL1) && !hcr.e2h && trap_cond_el1 && hcr.tge) ||
+           (ELIs32(tc, EL1) && trap_cond_el1 && hcr.tge) ||
+           (hcr.e2h && hcr.tge && trap_cond_el2);
+}
+
+bool
+isGenericTimerPhysEL0SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                         ThreadContext *tc)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    bool trap_cond_0 =
+        condGenericTimerPhysEL1SystemAccessTrapEL2(misc_reg, tc);
+    bool trap_cond_1 =
+        condGenericTimerCommonEL1SystemAccessTrapEL2(misc_reg, tc);
+
+    switch (misc_reg) {
+        case MISCREG_CNTPCT:
+        case MISCREG_CNTPCT_EL0:
+            return !hcr.e2h && trap_cond_1;
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+        case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+            return (!hcr.e2h && trap_cond_0) ||
+                   (hcr.e2h && !hcr.tge && trap_cond_1);
+        default:
+            break;
+    }
+
+    return false;
+}
+
+bool
+isGenericTimerPhysEL1SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                         ThreadContext *tc)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    bool trap_cond_0 =
+        condGenericTimerPhysEL1SystemAccessTrapEL2(misc_reg, tc);
+    bool trap_cond_1 =
+        condGenericTimerCommonEL1SystemAccessTrapEL2(misc_reg, tc);
+
+    switch (misc_reg) {
+        case MISCREG_CNTPCT:
+        case MISCREG_CNTPCT_EL0:
+            return trap_cond_1;
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+        case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+            return (!hcr.e2h && trap_cond_0) || (hcr.e2h && trap_cond_1);
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+isGenericTimerVirtSystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                      ThreadContext *tc)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    bool trap_cond =
+        condGenericTimerCommonEL1SystemAccessTrapEL2(misc_reg, tc);
+    return !ELIs32(tc, EL1) && !(hcr.e2h && hcr.tge) && trap_cond;
+}
+
+bool
+condGenericTimerCommonEL0SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                             ThreadContext *tc)
+{
+    const CNTHCTL_E2H cnthctl = tc->readMiscReg(MISCREG_CNTHCTL_EL2);
+    switch (misc_reg) {
+        case MISCREG_CNTFRQ:
+        case MISCREG_CNTFRQ_EL0:
+            return !cnthctl.el0pcten && !cnthctl.el0vcten;
+        case MISCREG_CNTPCT:
+        case MISCREG_CNTPCT_EL0:
+            return !cnthctl.el0pcten;
+        case MISCREG_CNTVCT:
+        case MISCREG_CNTVCT_EL0:
+            return !cnthctl.el0vcten;
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+        case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+            return !cnthctl.el0pten;
+        case MISCREG_CNTV_CTL ... MISCREG_CNTV_TVAL:
+        case MISCREG_CNTV_CTL_EL0 ... MISCREG_CNTV_TVAL_EL0:
+            return !cnthctl.el0vten;
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+condGenericTimerCommonEL1SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                             ThreadContext *tc)
+{
+    const AA64MMFR0 mmfr0 = tc->readMiscRegNoEffect(MISCREG_ID_AA64MMFR0_EL1);
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+    const RegVal cnthctl_val = tc->readMiscReg(MISCREG_CNTHCTL_EL2);
+    const CNTHCTL cnthctl = cnthctl_val;
+    const CNTHCTL_E2H cnthctl_e2h = cnthctl_val;
+    switch (misc_reg) {
+        case MISCREG_CNTPCT:
+        case MISCREG_CNTPCT_EL0:
+            return hcr.e2h ? !cnthctl_e2h.el1pcten : !cnthctl.el1pcten;
+        case MISCREG_CNTVCT:
+        case MISCREG_CNTVCT_EL0:
+            if (!mmfr0.ecv) {
+                return false;
+            } else {
+                return hcr.e2h ? cnthctl_e2h.el1tvct : cnthctl.el1tvct;
+            }
+        case MISCREG_CNTP_CTL ... MISCREG_CNTP_TVAL_S:
+        case MISCREG_CNTP_CTL_EL0 ... MISCREG_CNTP_TVAL_EL0:
+            return hcr.e2h ? !cnthctl_e2h.el1pten : false;
+        case MISCREG_CNTV_CTL ... MISCREG_CNTV_TVAL:
+        case MISCREG_CNTV_CTL_EL0 ... MISCREG_CNTV_TVAL_EL0:
+            if (!mmfr0.ecv) {
+                return false;
+            } else {
+                return hcr.e2h ? cnthctl_e2h.el1tvt : cnthctl.el1tvt;
+            }
+        default:
+            break;
+    }
+    return false;
+}
+
+bool
+condGenericTimerPhysEL1SystemAccessTrapEL2(const MiscRegIndex misc_reg,
+                                           ThreadContext *tc)
+{
+    const CNTHCTL cnthctl = tc->readMiscReg(MISCREG_CNTHCTL_EL2);
+    return !cnthctl.el1pcen;
+}
+
+bool
+isGenericTimerSystemAccessTrapEL3(const MiscRegIndex misc_reg,
+                                  ThreadContext *tc)
+{
+    switch (misc_reg) {
+        case MISCREG_CNTPS_CTL_EL1 ... MISCREG_CNTPS_TVAL_EL1: {
+            const SCR scr = tc->readMiscReg(MISCREG_SCR_EL3);
+            return currEL(tc) == EL1 && !scr.ns && !scr.st;
+        }
+        default:
+            break;
+    }
+    return false;
+}
 
 namespace {
 // The map is translating a MiscRegIndex into AArch64 system register
@@ -783,6 +1572,36 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(1, 0, 8, 7, 3), MISCREG_TLBI_VAAE1 },
     { MiscRegNum64(1, 0, 8, 7, 5), MISCREG_TLBI_VALE1 },
     { MiscRegNum64(1, 0, 8, 7, 7), MISCREG_TLBI_VAALE1 },
+    { MiscRegNum64(1, 0, 9, 1, 0), MISCREG_TLBI_VMALLE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 1, 1), MISCREG_TLBI_VAE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 1, 2), MISCREG_TLBI_ASIDE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 1, 3), MISCREG_TLBI_VAAE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 1, 5), MISCREG_TLBI_VALE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 1, 7), MISCREG_TLBI_VAALE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 2, 1), MISCREG_TLBI_RVAE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 2, 3), MISCREG_TLBI_RVAAE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 2, 5), MISCREG_TLBI_RVALE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 2, 7), MISCREG_TLBI_RVAALE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 0), MISCREG_TLBI_VMALLE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 1), MISCREG_TLBI_VAE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 2), MISCREG_TLBI_ASIDE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 3), MISCREG_TLBI_VAAE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 5), MISCREG_TLBI_VALE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 3, 7), MISCREG_TLBI_VAALE1ISNXS },
+    { MiscRegNum64(1, 0, 9, 5, 1), MISCREG_TLBI_RVAE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 5, 3), MISCREG_TLBI_RVAAE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 5, 5), MISCREG_TLBI_RVALE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 5, 7), MISCREG_TLBI_RVAALE1OSNXS },
+    { MiscRegNum64(1, 0, 9, 6, 1), MISCREG_TLBI_RVAE1NXS },
+    { MiscRegNum64(1, 0, 9, 6, 3), MISCREG_TLBI_RVAAE1NXS },
+    { MiscRegNum64(1, 0, 9, 6, 5), MISCREG_TLBI_RVALE1NXS },
+    { MiscRegNum64(1, 0, 9, 6, 7), MISCREG_TLBI_RVAALE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 0), MISCREG_TLBI_VMALLE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 1), MISCREG_TLBI_VAE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 2), MISCREG_TLBI_ASIDE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 3), MISCREG_TLBI_VAAE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 5), MISCREG_TLBI_VALE1NXS },
+    { MiscRegNum64(1, 0, 9, 7, 7), MISCREG_TLBI_VAALE1NXS },
     { MiscRegNum64(1, 3, 7, 4, 1), MISCREG_DC_ZVA_Xt },
     { MiscRegNum64(1, 3, 7, 5, 1), MISCREG_IC_IVAU_Xt },
     { MiscRegNum64(1, 3, 7, 10, 1), MISCREG_DC_CVAC_Xt },
@@ -827,6 +1646,39 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(1, 4, 8, 7, 4), MISCREG_TLBI_ALLE1 },
     { MiscRegNum64(1, 4, 8, 7, 5), MISCREG_TLBI_VALE2 },
     { MiscRegNum64(1, 4, 8, 7, 6), MISCREG_TLBI_VMALLS12E1 },
+    { MiscRegNum64(1, 4, 9, 0, 1), MISCREG_TLBI_IPAS2E1ISNXS },
+    { MiscRegNum64(1, 4, 9, 0, 2), MISCREG_TLBI_RIPAS2E1ISNXS },
+    { MiscRegNum64(1, 4, 9, 0, 5), MISCREG_TLBI_IPAS2LE1ISNXS },
+    { MiscRegNum64(1, 4, 9, 1, 0), MISCREG_TLBI_ALLE2OSNXS },
+    { MiscRegNum64(1, 4, 9, 1, 1), MISCREG_TLBI_VAE2OSNXS },
+    { MiscRegNum64(1, 4, 9, 1, 4), MISCREG_TLBI_ALLE1OSNXS },
+    { MiscRegNum64(1, 4, 9, 1, 5), MISCREG_TLBI_VALE2OSNXS },
+    { MiscRegNum64(1, 4, 9, 1, 6), MISCREG_TLBI_VMALLS12E1OSNXS },
+    { MiscRegNum64(1, 4, 9, 0, 6), MISCREG_TLBI_RIPAS2LE1ISNXS },
+    { MiscRegNum64(1, 4, 9, 2, 1), MISCREG_TLBI_RVAE2ISNXS },
+    { MiscRegNum64(1, 4, 9, 2, 5), MISCREG_TLBI_RVALE2ISNXS },
+    { MiscRegNum64(1, 4, 9, 3, 0), MISCREG_TLBI_ALLE2ISNXS },
+    { MiscRegNum64(1, 4, 9, 3, 1), MISCREG_TLBI_VAE2ISNXS },
+    { MiscRegNum64(1, 4, 9, 3, 4), MISCREG_TLBI_ALLE1ISNXS },
+    { MiscRegNum64(1, 4, 9, 3, 5), MISCREG_TLBI_VALE2ISNXS },
+    { MiscRegNum64(1, 4, 9, 3, 6), MISCREG_TLBI_VMALLS12E1ISNXS },
+    { MiscRegNum64(1, 4, 9, 4, 0), MISCREG_TLBI_IPAS2E1OSNXS },
+    { MiscRegNum64(1, 4, 9, 4, 1), MISCREG_TLBI_IPAS2E1NXS },
+    { MiscRegNum64(1, 4, 9, 4, 2), MISCREG_TLBI_RIPAS2E1NXS },
+    { MiscRegNum64(1, 4, 9, 4, 3), MISCREG_TLBI_RIPAS2E1OSNXS },
+    { MiscRegNum64(1, 4, 9, 4, 4), MISCREG_TLBI_IPAS2LE1OSNXS },
+    { MiscRegNum64(1, 4, 9, 4, 5), MISCREG_TLBI_IPAS2LE1NXS },
+    { MiscRegNum64(1, 4, 9, 4, 6), MISCREG_TLBI_RIPAS2LE1NXS },
+    { MiscRegNum64(1, 4, 9, 4, 7), MISCREG_TLBI_RIPAS2LE1OSNXS },
+    { MiscRegNum64(1, 4, 9, 5, 1), MISCREG_TLBI_RVAE2OSNXS },
+    { MiscRegNum64(1, 4, 9, 5, 5), MISCREG_TLBI_RVALE2OSNXS },
+    { MiscRegNum64(1, 4, 9, 6, 1), MISCREG_TLBI_RVAE2NXS },
+    { MiscRegNum64(1, 4, 9, 6, 5), MISCREG_TLBI_RVALE2NXS },
+    { MiscRegNum64(1, 4, 9, 7, 0), MISCREG_TLBI_ALLE2NXS },
+    { MiscRegNum64(1, 4, 9, 7, 1), MISCREG_TLBI_VAE2NXS },
+    { MiscRegNum64(1, 4, 9, 7, 4), MISCREG_TLBI_ALLE1NXS },
+    { MiscRegNum64(1, 4, 9, 7, 5), MISCREG_TLBI_VALE2NXS },
+    { MiscRegNum64(1, 4, 9, 7, 6), MISCREG_TLBI_VMALLS12E1NXS },
     { MiscRegNum64(1, 6, 7, 8, 0), MISCREG_AT_S1E3R_Xt },
     { MiscRegNum64(1, 6, 7, 8, 1), MISCREG_AT_S1E3W_Xt },
     { MiscRegNum64(1, 6, 8, 1, 0), MISCREG_TLBI_ALLE3OS },
@@ -844,6 +1696,21 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(1, 6, 8, 7, 0), MISCREG_TLBI_ALLE3 },
     { MiscRegNum64(1, 6, 8, 7, 1), MISCREG_TLBI_VAE3 },
     { MiscRegNum64(1, 6, 8, 7, 5), MISCREG_TLBI_VALE3 },
+    { MiscRegNum64(1, 6, 9, 1, 0), MISCREG_TLBI_ALLE3OSNXS },
+    { MiscRegNum64(1, 6, 9, 1, 1), MISCREG_TLBI_VAE3OSNXS },
+    { MiscRegNum64(1, 6, 9, 1, 5), MISCREG_TLBI_VALE3OSNXS },
+    { MiscRegNum64(1, 6, 9, 2, 1), MISCREG_TLBI_RVAE3ISNXS },
+    { MiscRegNum64(1, 6, 9, 2, 5), MISCREG_TLBI_RVALE3ISNXS },
+    { MiscRegNum64(1, 6, 9, 3, 0), MISCREG_TLBI_ALLE3ISNXS },
+    { MiscRegNum64(1, 6, 9, 3, 1), MISCREG_TLBI_VAE3ISNXS },
+    { MiscRegNum64(1, 6, 9, 3, 5), MISCREG_TLBI_VALE3ISNXS },
+    { MiscRegNum64(1, 6, 9, 5, 1), MISCREG_TLBI_RVAE3OSNXS },
+    { MiscRegNum64(1, 6, 9, 5, 5), MISCREG_TLBI_RVALE3OSNXS },
+    { MiscRegNum64(1, 6, 9, 6, 1), MISCREG_TLBI_RVAE3NXS },
+    { MiscRegNum64(1, 6, 9, 6, 5), MISCREG_TLBI_RVALE3NXS },
+    { MiscRegNum64(1, 6, 9, 7, 0), MISCREG_TLBI_ALLE3NXS },
+    { MiscRegNum64(1, 6, 9, 7, 1), MISCREG_TLBI_VAE3NXS },
+    { MiscRegNum64(1, 6, 9, 7, 5), MISCREG_TLBI_VALE3NXS },
     { MiscRegNum64(2, 0, 0, 0, 2), MISCREG_OSDTRRX_EL1 },
     { MiscRegNum64(2, 0, 0, 0, 4), MISCREG_DBGBVR0_EL1 },
     { MiscRegNum64(2, 0, 0, 0, 5), MISCREG_DBGBCR0_EL1 },
@@ -1031,6 +1898,8 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(3, 0, 9, 14, 1), MISCREG_PMINTENSET_EL1 },
     { MiscRegNum64(3, 0, 9, 14, 2), MISCREG_PMINTENCLR_EL1 },
     { MiscRegNum64(3, 0, 10, 2, 0), MISCREG_MAIR_EL1 },
+    { MiscRegNum64(3, 0, 10, 2, 2), MISCREG_PIRE0_EL1 },
+    { MiscRegNum64(3, 0, 10, 2, 3), MISCREG_PIR_EL1 },
     { MiscRegNum64(3, 0, 10, 3, 0), MISCREG_AMAIR_EL1 },
     { MiscRegNum64(3, 0, 10, 4, 4), MISCREG_MPAMIDR_EL1 },
     { MiscRegNum64(3, 0, 10, 5, 0), MISCREG_MPAM1_EL1 },
@@ -1167,6 +2036,7 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(3, 4, 3, 0, 0), MISCREG_DACR32_EL2 },
     { MiscRegNum64(3, 4, 3, 1, 4), MISCREG_HDFGRTR_EL2 },
     { MiscRegNum64(3, 4, 3, 1, 5), MISCREG_HDFGWTR_EL2 },
+    { MiscRegNum64(3, 4, 3, 1, 6), MISCREG_HAFGRTR_EL2 },
     { MiscRegNum64(3, 4, 4, 0, 0), MISCREG_SPSR_EL2 },
     { MiscRegNum64(3, 4, 4, 0, 1), MISCREG_ELR_EL2 },
     { MiscRegNum64(3, 4, 4, 1, 0), MISCREG_SP_EL1 },
@@ -1183,6 +2053,8 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(3, 4, 6, 0, 0), MISCREG_FAR_EL2 },
     { MiscRegNum64(3, 4, 6, 0, 4), MISCREG_HPFAR_EL2 },
     { MiscRegNum64(3, 4, 10, 2, 0), MISCREG_MAIR_EL2 },
+    { MiscRegNum64(3, 4, 10, 2, 2), MISCREG_PIRE0_EL2 },
+    { MiscRegNum64(3, 4, 10, 2, 3), MISCREG_PIR_EL2 },
     { MiscRegNum64(3, 4, 10, 3, 0), MISCREG_AMAIR_EL2 },
     { MiscRegNum64(3, 4, 10, 4, 0), MISCREG_MPAMHCR_EL2 },
     { MiscRegNum64(3, 4, 10, 4, 1), MISCREG_MPAMVPMV_EL2 },
@@ -1261,6 +2133,8 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(3, 5, 5, 2, 0), MISCREG_ESR_EL12 },
     { MiscRegNum64(3, 5, 6, 0, 0), MISCREG_FAR_EL12 },
     { MiscRegNum64(3, 5, 10, 2, 0), MISCREG_MAIR_EL12 },
+    { MiscRegNum64(3, 5, 10, 2, 2), MISCREG_PIRE0_EL12 },
+    { MiscRegNum64(3, 5, 10, 2, 3), MISCREG_PIR_EL12 },
     { MiscRegNum64(3, 5, 10, 3, 0), MISCREG_AMAIR_EL12 },
     { MiscRegNum64(3, 5, 10, 5, 0), MISCREG_MPAM1_EL12 },
     { MiscRegNum64(3, 5, 12, 0, 0), MISCREG_VBAR_EL12 },
@@ -1291,6 +2165,7 @@ std::unordered_map<MiscRegNum64, MiscRegIndex> miscRegNumToIdx{
     { MiscRegNum64(3, 6, 5, 2, 0), MISCREG_ESR_EL3 },
     { MiscRegNum64(3, 6, 6, 0, 0), MISCREG_FAR_EL3 },
     { MiscRegNum64(3, 6, 10, 2, 0), MISCREG_MAIR_EL3 },
+    { MiscRegNum64(3, 6, 10, 2, 3), MISCREG_PIR_EL3 },
     { MiscRegNum64(3, 6, 10, 3, 0), MISCREG_AMAIR_EL3 },
     { MiscRegNum64(3, 6, 10, 5, 0), MISCREG_MPAM3_EL3 },
     { MiscRegNum64(3, 6, 12, 0, 0), MISCREG_VBAR_EL3 },
@@ -1338,6 +2213,9 @@ Fault
 faultFgtEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = EL2Enabled(tc) && hcr.e2h && hcr.tge;
     if (fgtEnabled(tc) && !in_host &&
@@ -1354,12 +2232,12 @@ faultFgtEL0(const MiscRegLUTEntry &entry,
  * @tparam read: is this a read access to the register?
  * @tparam r_bitfield: register (HFGTR) bitfield
  */
-template<bool read, auto r_bitfield>
+template<bool read, auto r_bitfield, RegVal r_match=0b1>
 Fault
 faultFgtEL1(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
-    if (fgtEnabled(tc) && fgtRegister<read>(tc).*r_bitfield) {
+    if (fgtEnabled(tc) && (fgtRegister<read>(tc).*r_bitfield == r_match)) {
         return inst.generateTrap(EL2);
     } else {
         return NoFault;
@@ -1379,6 +2257,30 @@ faultFgtInstEL1(const MiscRegLUTEntry &entry,
     if (fgtEnabled(tc) &&
         static_cast<HFGITR>(tc->readMiscReg(MISCREG_HFGITR_EL2)).*r_bitfield) {
         return inst.generateTrap(EL2);
+    } else {
+        return NoFault;
+    }
+}
+
+/**
+ * Template helper for fine grained traps at EL1
+ * for TLBI *NXS
+ *
+ * @tparam r_bitfield: register (HFGITR) bitfield
+ */
+template<auto r_bitfield>
+Fault
+faultFgtTlbiNxsEL1(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    if (HaveExt(tc, ArmExtension::FEAT_HCX)) {
+        const HCRX hcrx = tc->readMiscReg(MISCREG_HCRX_EL2);
+        if (auto fault = faultFgtInstEL1<r_bitfield>(entry, tc, inst);
+            fault != NoFault && (!isHcrxEL2Enabled(tc) || !hcrx.fgtnxs)) {
+            return fault;
+        } else {
+            return NoFault;
+        }
     } else {
         return NoFault;
     }
@@ -1452,7 +2354,7 @@ faultHcrFgtEL0(const MiscRegLUTEntry &entry,
  * @tparam g_bitfield: group (HCR) bitfield
  * @tparam r_bitfield: register (HFGTR) bitfield
  */
-template<bool read, auto g_bitfield, auto r_bitfield>
+template<bool read, auto g_bitfield, auto r_bitfield, RegVal r_match=0b1>
 Fault
 faultHcrFgtEL1(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
@@ -1461,7 +2363,7 @@ faultHcrFgtEL1(const MiscRegLUTEntry &entry,
 
     if (EL2Enabled(tc) && hcr.*g_bitfield) {
         return inst.generateTrap(EL2);
-    } else if (auto fault = faultFgtEL1<read, r_bitfield>(entry, tc, inst);
+    } else if (auto fault = faultFgtEL1<read, r_bitfield, r_match>(entry, tc, inst);
                fault != NoFault) {
         return fault;
     } else {
@@ -1485,6 +2387,30 @@ faultHcrFgtInstEL1(const MiscRegLUTEntry &entry,
     if (EL2Enabled(tc) && hcr.*g_bitfield) {
         return inst.generateTrap(EL2);
     } else if (auto fault = faultFgtInstEL1<r_bitfield>(entry, tc, inst);
+               fault != NoFault) {
+        return fault;
+    } else {
+        return NoFault;
+    }
+}
+
+/**
+ * Template helper for fine grained traps at EL1
+ * for TLBI *NXS instructions
+ *
+ * @tparam g_bitfield: group (HCR) bitfield
+ * @tparam r_bitfield: register (HFGITR) bitfield
+ */
+template<auto g_bitfield, auto r_bitfield>
+Fault
+faultTlbiNxsEL1(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
+
+    if (EL2Enabled(tc) && hcr.*g_bitfield) {
+        return inst.generateTrap(EL2);
+    } else if (auto fault = faultFgtTlbiNxsEL1<r_bitfield>(entry, tc, inst);
                fault != NoFault) {
         return fault;
     } else {
@@ -1742,6 +2668,9 @@ Fault
 faultCtrEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
      const SCTLR sctlr = tc->readMiscReg(MISCREG_SCTLR_EL1);
      const SCTLR sctlr2 = tc->readMiscReg(MISCREG_SCTLR_EL2);
      const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
@@ -1769,6 +2698,9 @@ Fault
 faultMdccsrEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const DBGDS32 mdscr = tc->readMiscReg(MISCREG_MDSCR_EL1);
     const HDCR mdcr_el2 = tc->readMiscReg(MISCREG_MDCR_EL2);
     const HDCR mdcr_el3 = tc->readMiscReg(MISCREG_MDCR_EL3);
@@ -2060,27 +2992,6 @@ faultSctlr2EL2(const MiscRegLUTEntry &entry,
     }
 }
 
-Fault
-faultSctlr2VheEL2(const MiscRegLUTEntry &entry,
-    ThreadContext *tc, const MiscRegOp64 &inst)
-{
-    if (HaveExt(tc, ArmExtension::FEAT_SCTLR2)) {
-        const HCR hcr = tc->readMiscRegNoEffect(MISCREG_HCR_EL2);
-        const SCR scr = tc->readMiscReg(MISCREG_SCR_EL3);
-        if (hcr.e2h) {
-            if (ArmSystem::haveEL(tc, EL3) && !scr.sctlr2En) {
-                return inst.generateTrap(EL3);
-            } else {
-                return NoFault;
-            }
-        } else {
-            return inst.undefined();
-        }
-    } else {
-        return inst.undefined();
-    }
-}
-
 template<bool read, auto g_bitfield>
 Fault
 faultTcr2EL1(const MiscRegLUTEntry &entry,
@@ -2121,27 +3032,6 @@ faultTcr2EL2(const MiscRegLUTEntry &entry,
             return inst.generateTrap(EL3);
         } else {
             return NoFault;
-        }
-    } else {
-        return inst.undefined();
-    }
-}
-
-Fault
-faultTcr2VheEL2(const MiscRegLUTEntry &entry,
-    ThreadContext *tc, const MiscRegOp64 &inst)
-{
-    if (HaveExt(tc, ArmExtension::FEAT_TCR2)) {
-        const HCR hcr = tc->readMiscRegNoEffect(MISCREG_HCR_EL2);
-        const SCR scr = tc->readMiscReg(MISCREG_SCR_EL3);
-        if (hcr.e2h) {
-            if (ArmSystem::haveEL(tc, EL3) && !scr.tcr2En) {
-                return inst.generateTrap(EL3);
-            } else {
-                return NoFault;
-            }
-        } else {
-            return inst.undefined();
         }
     } else {
         return inst.undefined();
@@ -2198,18 +3088,6 @@ faultCpacrEL2(const MiscRegLUTEntry &entry,
     }
 }
 
-Fault
-faultCpacrVheEL2(const MiscRegLUTEntry &entry,
-    ThreadContext *tc, const MiscRegOp64 &inst)
-{
-    const HCR hcr = tc->readMiscRegNoEffect(MISCREG_HCR_EL2);
-    if (hcr.e2h) {
-        return faultCpacrEL2(entry, tc, inst);
-    } else {
-        return inst.undefined();
-    }
-}
-
 template <auto bitfield>
 Fault
 faultTlbiOsEL1(const MiscRegLUTEntry &entry,
@@ -2232,6 +3110,26 @@ faultTlbiOsEL1(const MiscRegLUTEntry &entry,
 
 template <auto bitfield>
 Fault
+faultTlbiOsNxsEL1(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    const HCR hcr = tc->readMiscRegNoEffect(MISCREG_HCR_EL2);
+    const bool el2_enabled = EL2Enabled(tc);
+    if (el2_enabled && hcr.ttlb) {
+        return inst.generateTrap(EL2);
+    } else if (el2_enabled && HaveExt(tc, ArmExtension::FEAT_EVT) &&
+               hcr.ttlbos) {
+        return inst.generateTrap(EL2);
+    } else if (auto fault = faultFgtTlbiNxsEL1<bitfield>(entry, tc, inst);
+               fault != NoFault) {
+        return fault;
+    } else {
+        return NoFault;
+    }
+}
+
+template <auto bitfield>
+Fault
 faultTlbiIsEL1(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
@@ -2243,6 +3141,26 @@ faultTlbiIsEL1(const MiscRegLUTEntry &entry,
                hcr.ttlbis) {
         return inst.generateTrap(EL2);
     } else if (auto fault = faultFgtInstEL1<bitfield>(entry, tc, inst);
+               fault != NoFault) {
+        return fault;
+    } else {
+        return NoFault;
+    }
+}
+
+template <auto bitfield>
+Fault
+faultTlbiIsNxsEL1(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    const HCR hcr = tc->readMiscRegNoEffect(MISCREG_HCR_EL2);
+    const bool el2_enabled = EL2Enabled(tc);
+    if (el2_enabled && hcr.ttlb) {
+        return inst.generateTrap(EL2);
+    } else if (el2_enabled && HaveExt(tc, ArmExtension::FEAT_EVT) &&
+               hcr.ttlbis) {
+        return inst.generateTrap(EL2);
+    } else if (auto fault = faultFgtTlbiNxsEL1<bitfield>(entry, tc, inst);
                fault != NoFault) {
         return fault;
     } else {
@@ -2307,6 +3225,9 @@ Fault
 faultGenericTimerEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const bool el2_enabled = EL2Enabled(tc);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = el2_enabled && hcr.e2h && hcr.tge;
@@ -2328,6 +3249,9 @@ Fault
 faultCntpctEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const bool el2_enabled = EL2Enabled(tc);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = el2_enabled && hcr.e2h && hcr.tge;
@@ -2374,6 +3298,9 @@ Fault
 faultCntvctEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const bool el2_enabled = EL2Enabled(tc);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = el2_enabled && hcr.e2h && hcr.tge;
@@ -2410,6 +3337,9 @@ Fault
 faultCntpCtlEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const bool el2_enabled = EL2Enabled(tc);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = el2_enabled && hcr.e2h && hcr.tge;
@@ -2457,6 +3387,9 @@ Fault
 faultCntvCtlEL0(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
 {
+    if (!FullSystem) {
+        return NoFault;
+    }
     const bool el2_enabled = EL2Enabled(tc);
     const HCR hcr = tc->readMiscReg(MISCREG_HCR_EL2);
     const bool in_host = el2_enabled && hcr.e2h && hcr.tge;
@@ -2743,6 +3676,54 @@ faultMpamsmEL1(const MiscRegLUTEntry &entry,
     }
 }
 
+template <auto faultAtEL2>
+Fault
+faultVheEL2(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    if (ELIsInHost(tc, EL2)) {
+        return faultAtEL2(entry, tc, inst);
+    } else {
+        return inst.undefined();
+    }
+}
+
+template <bool read, auto g_bitfield, auto r_bitifield>
+Fault
+faultPieEL1(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    if (HaveExt(tc, ArmExtension::FEAT_S1PIE)) {
+        SCR scr_el3 = tc->readMiscReg(MISCREG_SCR_EL3);
+        if (auto fault = faultHcrFgtEL1<read, g_bitfield, r_bitifield, 0>(entry, tc, inst);
+            fault != NoFault) {
+            return fault;
+        } else if (ArmSystem::haveEL(tc, EL3) && !scr_el3.piEn) {
+            return inst.generateTrap(EL3);
+        } else {
+            return NoFault;
+        }
+    } else {
+        return inst.undefined();
+    }
+}
+
+Fault
+faultPieEL2(const MiscRegLUTEntry &entry,
+    ThreadContext *tc, const MiscRegOp64 &inst)
+{
+    if (HaveExt(tc, ArmExtension::FEAT_S1PIE)) {
+        SCR scr_el3 = tc->readMiscReg(MISCREG_SCR_EL3);
+        if (ArmSystem::haveEL(tc, EL3) && !scr_el3.piEn) {
+            return inst.generateTrap(EL3);
+        } else {
+            return NoFault;
+        }
+    } else {
+        return inst.undefined();
+    }
+}
+
 }
 
 MiscRegIndex
@@ -2782,26 +3763,6 @@ encodeAArch64SysReg(MiscRegIndex misc_reg)
     }
 }
 
-Fault
-MiscRegLUTEntry::checkFault(ThreadContext *tc,
-                            const MiscRegOp64 &inst, ExceptionLevel el)
-{
-    return !inst.miscRead() ? faultWrite[el](*this, tc, inst) :
-                              faultRead[el](*this, tc, inst);
-}
-
-template <MiscRegInfo Sec, MiscRegInfo NonSec>
-Fault
-MiscRegLUTEntry::defaultFault(const MiscRegLUTEntry &entry,
-    ThreadContext *tc, const MiscRegOp64 &inst)
-{
-    if (isSecureBelowEL3(tc) ? entry.info[Sec] : entry.info[NonSec]) {
-        return NoFault;
-    } else {
-        return inst.undefined();
-    }
-}
-
 static Fault
 defaultFaultE2H_EL2(const MiscRegLUTEntry &entry,
     ThreadContext *tc, const MiscRegOp64 &inst)
@@ -2825,18 +3786,6 @@ defaultFaultE2H_EL3(const MiscRegLUTEntry &entry,
     } else {
         return inst.undefined();
     }
-}
-
-MiscRegLUTEntryInitializer::chain
-MiscRegLUTEntryInitializer::highest(ArmSystem *const sys) const
-{
-    switch (FullSystem ? sys->highestEL() : EL1) {
-      case EL0:
-      case EL1: priv(); break;
-      case EL2: hyp(); break;
-      case EL3: mon(); break;
-    }
-    return *this;
 }
 
 static CPSR
@@ -2934,6 +3883,7 @@ ISA::initializeMiscRegMetadata()
      *  architecturally mandated."
      */
 
+    // clang-format off
     InitReg(MISCREG_CPSR)
       .reset(resetCPSR(system))
       .allPrivileges();
@@ -3395,6 +4345,9 @@ ISA::initializeMiscRegMetadata()
       .reset([p,release=release] () {
         ISAR6 isar6 = p.id_isar6;
         isar6.jscvt = release->has(ArmExtension::FEAT_JSCVT) ? 0x1 : 0x0;
+        isar6.fhm = release->has(ArmExtension::FEAT_FP16) ? 0x1 :
+                    (release->has(ArmExtension::FEAT_FHM) ? 0x1 : 0x0);
+        isar6.bf16 = release->has(ArmExtension::FEAT_AA32BF16) ? 0x1 : 0x0;
         return isar6;
       }())
       .allPrivileges().exceptUserMode().writes(0);
@@ -3796,6 +4749,30 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_PMCCNTR)
       .allPrivileges();
     InitReg(MISCREG_PMXEVTYPER)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR0)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR1)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR2)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR3)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR4)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVCNTR5)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER0)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER1)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER2)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER3)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER4)
+      .allPrivileges();
+    InitReg(MISCREG_PMEVTYPER5)
       .allPrivileges();
     InitReg(MISCREG_PMCCFILTR)
       .allPrivileges();
@@ -4593,81 +5570,97 @@ ISA::initializeMiscRegMetadata()
       .allPrivileges().exceptUserMode().writes(0);
     InitReg(MISCREG_ID_PFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_PFR0);
     InitReg(MISCREG_ID_PFR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_PFR1);
     InitReg(MISCREG_ID_DFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_DFR0);
     InitReg(MISCREG_ID_AFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_AFR0);
     InitReg(MISCREG_ID_MMFR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR0);
     InitReg(MISCREG_ID_MMFR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR1);
     InitReg(MISCREG_ID_MMFR2_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR2);
     InitReg(MISCREG_ID_MMFR3_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR3);
     InitReg(MISCREG_ID_MMFR4_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_MMFR4);
     InitReg(MISCREG_ID_ISAR0_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR0);
     InitReg(MISCREG_ID_ISAR1_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR1);
     InitReg(MISCREG_ID_ISAR2_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR2);
     InitReg(MISCREG_ID_ISAR3_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR3);
     InitReg(MISCREG_ID_ISAR4_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR4);
     InitReg(MISCREG_ID_ISAR5_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR5);
     InitReg(MISCREG_ID_ISAR6_EL1)
       .allPrivileges().exceptUserMode().writes(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .mapsTo(MISCREG_ID_ISAR6);
@@ -4693,6 +5686,8 @@ ISA::initializeMiscRegMetadata()
           pfr0_el1.el2 = release->has(ArmExtension::VIRTUALIZATION)
                                   ? 0x2 : 0x0;
           pfr0_el1.el3 = release->has(ArmExtension::SECURITY) ? 0x2 : 0x0;
+          pfr0_el1.fp = release->has(ArmExtension::FEAT_FP16) ? 0x1 : 0x0;
+          pfr0_el1.advsimd = release->has(ArmExtension::FEAT_FP16) ? 0x1 : 0x0;
           pfr0_el1.sve = release->has(ArmExtension::FEAT_SVE) ? 0x1 : 0x0;
           pfr0_el1.sel2 = release->has(ArmExtension::FEAT_SEL2) ? 0x1 : 0x0;
           // See MPAM frac in MISCREG_ID_AA64PFR1_EL1. Currently supporting
@@ -4702,6 +5697,7 @@ ISA::initializeMiscRegMetadata()
           return pfr0_el1;
       }())
       .unserialize(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4714,6 +5710,7 @@ ISA::initializeMiscRegMetadata()
           return pfr1_el1;
       }())
       .unserialize(0)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4723,21 +5720,25 @@ ISA::initializeMiscRegMetadata()
           dfr0_el1.pmuver = p.pmu ? 1 : 0; // Enable PMUv3
           return dfr0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64DFR1_EL1)
       .reset(p.id_aa64dfr1_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64AFR0_EL1)
       .reset(p.id_aa64afr0_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64AFR1_EL1)
       .reset(p.id_aa64afr1_el1)
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4761,21 +5762,33 @@ ISA::initializeMiscRegMetadata()
               0x2 : release->has(ArmExtension::FEAT_FLAGM) ?
                   0x1 : 0x0;
           isar0_el1.rndr = release->has(ArmExtension::FEAT_RNG) ? 0x1 : 0x0;
+          isar0_el1.fhm = release->has(ArmExtension::FEAT_FP16) ? 0x1 :
+                          (release->has(ArmExtension::FEAT_FHM) ? 0x1 : 0x0);
           return isar0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
     InitReg(MISCREG_ID_AA64ISAR1_EL1)
       .reset([p,release=release](){
           AA64ISAR1 isar1_el1 = p.id_aa64isar1_el1;
+          isar1_el1.xs = release->has(ArmExtension::FEAT_XS) ? 0x1 : 0x0;
           isar1_el1.i8mm = release->has(ArmExtension::FEAT_I8MM) ? 0x1 : 0x0;
           isar1_el1.apa = release->has(ArmExtension::FEAT_PAuth) ? 0x1 : 0x0;
           isar1_el1.jscvt = release->has(ArmExtension::FEAT_JSCVT) ? 0x1 : 0x0;
           isar1_el1.fcma = release->has(ArmExtension::FEAT_FCMA) ? 0x1 : 0x0;
+          isar1_el1.lrcpc = release->has(ArmExtension::FEAT_LRCPC2)  ? 0x2
+                            : release->has(ArmExtension::FEAT_LRCPC) ? 0x1
+                                                                     : 0x0;
           isar1_el1.gpa = release->has(ArmExtension::FEAT_PAuth) ? 0x1 : 0x0;
+          isar1_el1.frintts =
+              release->has(ArmExtension::FEAT_FRINTTS) ? 0x1 : 0x0;
+          isar1_el1.bf16 = release->has(ArmExtension::FEAT_EBF16) ? 0x2 :
+                           (release->has(ArmExtension::FEAT_BF16) ? 0x1 : 0x0);
           return isar1_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4786,6 +5799,7 @@ ISA::initializeMiscRegMetadata()
           mmfr0_el1.parange = encodePhysAddrRange64(parange);
           return mmfr0_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4798,8 +5812,10 @@ ISA::initializeMiscRegMetadata()
           mmfr1_el1.hpds = release->has(ArmExtension::FEAT_HPDS) ? 0x1 : 0x0;
           mmfr1_el1.pan = release->has(ArmExtension::FEAT_PAN) ? 0x1 : 0x0;
           mmfr1_el1.hcx = release->has(ArmExtension::FEAT_HCX) ? 0x1 : 0x0;
+          mmfr1_el1.afp = release->has(ArmExtension::FEAT_AFP) ? 0x1 : 0x0;
           return mmfr1_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4808,10 +5824,12 @@ ISA::initializeMiscRegMetadata()
           AA64MMFR2 mmfr2_el1 = p.id_aa64mmfr2_el1;
           mmfr2_el1.uao = release->has(ArmExtension::FEAT_UAO) ? 0x1 : 0x0;
           mmfr2_el1.varange = release->has(ArmExtension::FEAT_LVA) ? 0x1 : 0x0;
+          mmfr2_el1.st = release->has(ArmExtension::FEAT_TTST) ? 0x1 : 0x0;
           mmfr2_el1.ids = release->has(ArmExtension::FEAT_IDST) ? 0x1 : 0x0;
           mmfr2_el1.evt = release->has(ArmExtension::FEAT_EVT) ? 0x2 : 0x0;
           return mmfr2_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4821,8 +5839,10 @@ ISA::initializeMiscRegMetadata()
           mmfr3_el1.sctlrx =
             release->has(ArmExtension::FEAT_SCTLR2) ? 0x1 : 0x0;
           mmfr3_el1.tcrx = release->has(ArmExtension::FEAT_TCR2) ? 0x1 : 0x0;
+          mmfr3_el1.s1pie = release->has(ArmExtension::FEAT_S1PIE) ? 0x1 : 0x0;
           return mmfr3_el1;
       }())
+      .serializing(false)
       .faultRead(EL0, faultIdst)
       .faultRead(EL1, faultHcrEL1<&HCR::tid3>)
       .allPrivileges().writes(0);
@@ -4944,7 +5964,7 @@ ISA::initializeMiscRegMetadata()
       .faultWrite(EL1, faultSctlr2EL1<false, &HCR::tvm>)
       .fault(EL2,faultSctlr2EL2);
     InitReg(MISCREG_SCTLR2_EL12)
-      .fault(EL2, faultSctlr2VheEL2)
+      .fault(EL2, faultVheEL2<faultSctlr2EL2>)
       .fault(EL3, defaultFaultE2H_EL3)
       .mapsTo(MISCREG_SCTLR2_EL1);
     InitReg(MISCREG_ACTLR_EL1)
@@ -4958,7 +5978,7 @@ ISA::initializeMiscRegMetadata()
       .fault(EL2, faultCpacrEL2)
       .mapsTo(MISCREG_CPACR);
     InitReg(MISCREG_CPACR_EL12)
-      .fault(EL2, faultCpacrVheEL2)
+      .fault(EL2, faultVheEL2<faultCpacrEL2>)
       .fault(EL3, defaultFaultE2H_EL3)
       .mapsTo(MISCREG_CPACR_EL1);
     InitReg(MISCREG_SCTLR_EL2)
@@ -5053,7 +6073,7 @@ ISA::initializeMiscRegMetadata()
       .faultWrite(EL1, faultTcr2EL1<false, &HCR::tvm>)
       .fault(EL2, faultTcr2EL2);
     InitReg(MISCREG_TCR2_EL12)
-      .fault(EL2, faultTcr2VheEL2)
+      .fault(EL2, faultVheEL2<faultTcr2EL2>)
       .fault(EL3, faultTcr2VheEL3)
       .mapsTo(MISCREG_TCR2_EL1);
     InitReg(MISCREG_TTBR0_EL2)
@@ -5278,9 +6298,9 @@ ISA::initializeMiscRegMetadata()
       .faultWrite(EL1, faultHcrFgtInstEL1<&HCR::tpc, &HFGITR::dccivac>)
       .writes(1);
     InitReg(MISCREG_AT_S1E2R_Xt)
-      .monNonSecureWrite().hypWrite();
+      .monWrite().hypWrite();
     InitReg(MISCREG_AT_S1E2W_Xt)
-      .monNonSecureWrite().hypWrite();
+      .monWrite().hypWrite();
     InitReg(MISCREG_AT_S12E1R_Xt)
       .hypWrite().monSecureWrite().monNonSecureWrite();
     InitReg(MISCREG_AT_S12E1W_Xt)
@@ -5480,6 +6500,193 @@ ISA::initializeMiscRegMetadata()
       .monWrite();
     InitReg(MISCREG_TLBI_RVALE3OS)
       .monWrite();
+    InitReg(MISCREG_TLBI_VMALLE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbivmalle1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbivae1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_ASIDE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbiaside1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAAE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbivaae1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VALE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbivale1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAALE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbivaale1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VMALLE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbivmalle1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbivae1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_ASIDE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbiaside1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAAE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbivaae1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VALE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbivale1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAALE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbivaale1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VMALLE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbivmalle1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbivae1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_ASIDE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbiaside1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAAE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbivaae1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VALE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbivale1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_VAALE1NXS)
+      .faultWrite(EL1, faultTlbiNxsEL1<&HCR::ttlb, &HFGITR::tlbivaale1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_IPAS2E1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_IPAS2LE1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE2OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VAE2OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VALE2OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VMALLS12E1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_IPAS2E1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_IPAS2LE1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE2ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VAE2ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VALE2ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VMALLS12E1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_IPAS2E1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_IPAS2LE1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE2NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VAE2NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VALE2NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_VMALLS12E1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_ALLE3OSNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VAE3OSNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VALE3OSNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_ALLE3ISNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VAE3ISNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VALE3ISNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_ALLE3NXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VAE3NXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_VALE3NXS)
+      .monWrite();
+
+    InitReg(MISCREG_TLBI_RVAE1NXS)
+      .faultWrite(EL1, faultHcrFgtInstEL1<&HCR::ttlb, &HFGITR::tlbirvae1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAAE1NXS)
+      .faultWrite(EL1, faultHcrFgtInstEL1<&HCR::ttlb, &HFGITR::tlbirvaae1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVALE1NXS)
+      .faultWrite(EL1, faultHcrFgtInstEL1<&HCR::ttlb, &HFGITR::tlbirvale1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAALE1NXS)
+      .faultWrite(EL1, faultHcrFgtInstEL1<&HCR::ttlb, &HFGITR::tlbirvaale1>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RIPAS2E1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RIPAS2LE1NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE2NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVALE2NXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE3NXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_RVALE3NXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_RVAE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbirvae1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAAE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbirvaae1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVALE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbirvale1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAALE1ISNXS)
+      .faultWrite(EL1, faultTlbiIsNxsEL1<&HFGITR::tlbirvaale1is>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RIPAS2E1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RIPAS2LE1ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE2ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVALE2ISNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE3ISNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_RVALE3ISNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_RVAE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbirvae1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAAE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbirvaae1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVALE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbirvale1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RVAALE1OSNXS)
+      .faultWrite(EL1, faultTlbiOsNxsEL1<&HFGITR::tlbirvaale1os>)
+      .writes(1).exceptUserMode();
+    InitReg(MISCREG_TLBI_RIPAS2E1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RIPAS2LE1OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE2OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVALE2OSNXS)
+      .hypWrite().monWrite();
+    InitReg(MISCREG_TLBI_RVAE3OSNXS)
+      .monWrite();
+    InitReg(MISCREG_TLBI_RVALE3OSNXS)
+      .monWrite();
     InitReg(MISCREG_PMINTENSET_EL1)
       .allPrivileges().exceptUserMode()
       .mapsTo(MISCREG_PMINTENSET);
@@ -5601,11 +6808,13 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_CONTEXTIDR_NS);
     InitReg(MISCREG_TPIDR_EL1)
       .allPrivileges().exceptUserMode()
+      .serializing(false)
       .faultRead(EL1, faultFgtEL1<true, &HFGTR::tpidrEL1>)
       .faultWrite(EL1, faultFgtEL1<false, &HFGTR::tpidrEL1>)
       .mapsTo(MISCREG_TPIDRPRW_NS);
     InitReg(MISCREG_TPIDR_EL0)
       .allPrivileges()
+      .serializing(false)
       .faultRead(EL0, faultFgtEL0<true, &HFGTR::tpidrEL0>)
       .faultWrite(EL0, faultFgtEL0<false, &HFGTR::tpidrEL0>)
       .faultRead(EL1, faultFgtEL1<true, &HFGTR::tpidrEL0>)
@@ -5619,9 +6828,11 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_TPIDRURO_NS);
     InitReg(MISCREG_TPIDR_EL2)
       .hyp().mon()
+      .serializing(false)
       .mapsTo(MISCREG_HTPIDR);
     InitReg(MISCREG_TPIDR_EL3)
-      .mon();
+      .mon()
+      .serializing(false);
     // BEGIN Generic Timer (AArch64)
     InitReg(MISCREG_CNTFRQ_EL0)
       .reads(1)
@@ -5786,41 +6997,41 @@ ISA::initializeMiscRegMetadata()
       .mapsTo(MISCREG_CNTVOFF);
     // END Generic Timer (AArch64)
     InitReg(MISCREG_PMEVCNTR0_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR0);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR0);
     InitReg(MISCREG_PMEVCNTR1_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR1);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR1);
     InitReg(MISCREG_PMEVCNTR2_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR2);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR2);
     InitReg(MISCREG_PMEVCNTR3_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR3);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR3);
     InitReg(MISCREG_PMEVCNTR4_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR4);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR4);
     InitReg(MISCREG_PMEVCNTR5_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVCNTR5);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVCNTR5);
     InitReg(MISCREG_PMEVTYPER0_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER0);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER0);
     InitReg(MISCREG_PMEVTYPER1_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER1);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER1);
     InitReg(MISCREG_PMEVTYPER2_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER2);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER2);
     InitReg(MISCREG_PMEVTYPER3_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER3);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER3);
     InitReg(MISCREG_PMEVTYPER4_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER4);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER4);
     InitReg(MISCREG_PMEVTYPER5_EL0)
-      .allPrivileges();
-//    .mapsTo(MISCREG_PMEVTYPER5);
+      .allPrivileges()
+      .mapsTo(MISCREG_PMEVTYPER5);
     InitReg(MISCREG_IL1DATA0_EL1)
       .allPrivileges().exceptUserMode();
     InitReg(MISCREG_IL1DATA1_EL1)
@@ -6319,6 +7530,22 @@ ISA::initializeMiscRegMetadata()
             zfr0_el1.f32mm = release->has(ArmExtension::FEAT_F32MM) ? 1 : 0;
             zfr0_el1.f64mm = release->has(ArmExtension::FEAT_F64MM) ? 1 : 0;
             zfr0_el1.i8mm = release->has(ArmExtension::FEAT_I8MM) ? 1 : 0;
+            zfr0_el1.sm4 = release->has(ArmExtension::FEAT_SVE_SM4) ? 1 : 0;
+            zfr0_el1.sha3 = release->has(ArmExtension::FEAT_SVE_SHA3) ? 1 : 0;
+            zfr0_el1.b16b16 =
+                release->has(ArmExtension::FEAT_SVE_B16B16) ? 0x1 : 0x0;
+            zfr0_el1.bf16 = release->has(ArmExtension::FEAT_EBF16) ? 0x2 :
+                          (release->has(ArmExtension::FEAT_BF16) ? 0x1 : 0x0);
+            zfr0_el1.aes =
+                release->has(ArmExtension::FEAT_SVE_PMULL128)
+                    ? 0x2
+                    : (release->has(ArmExtension::FEAT_SVE_AES) ? 0x1 : 0x0);
+            zfr0_el1.sveVer =
+                release->has(ArmExtension::FEAT_SVE2p1)
+                    ? 0x2
+                    : (release->has(ArmExtension::FEAT_SVE2) ? 0x1 : 0x0);
+            zfr0_el1.bitPerm =
+                release->has(ArmExtension::FEAT_SVE_BitPerm) ? 0x1 : 0x0;
             return zfr0_el1;
         }())
         .faultRead(EL0, faultIdst)
@@ -6334,7 +7561,7 @@ ISA::initializeMiscRegMetadata()
         .fault(EL3, faultZcrEL3)
         .hyp().mon();
     InitReg(MISCREG_ZCR_EL12)
-        .fault(EL2, defaultFaultE2H_EL2)
+        .fault(EL2, faultVheEL2<faultZcrEL2>)
         .fault(EL3, defaultFaultE2H_EL3)
         .mapsTo(MISCREG_ZCR_EL1);
     InitReg(MISCREG_ZCR_EL1)
@@ -6478,6 +7705,9 @@ ISA::initializeMiscRegMetadata()
     InitReg(MISCREG_HDFGWTR_EL2)
       .fault(EL2, faultFgtCtrlRegs)
       .hyp().mon(release->has(ArmExtension::FEAT_FGT));
+    InitReg(MISCREG_HAFGRTR_EL2)
+      .fault(EL2, faultFgtCtrlRegs)
+      .hyp().mon(release->has(ArmExtension::FEAT_FGT));
 
     // Dummy registers
     InitReg(MISCREG_NOP)
@@ -6592,6 +7822,35 @@ ISA::initializeMiscRegMetadata()
         .fault(EL1, faultMpamsmEL1)
         .fault(EL2, faultMpamEL2)
         .allPrivileges().exceptUserMode();
+
+    // FEAT_S1PIE
+    InitReg(MISCREG_PIRE0_EL1)
+        .faultRead(EL1, faultPieEL1<true, &HCR::trvm, &HFGTR::nPire0EL1>)
+        .faultWrite(EL1, faultPieEL1<false, &HCR::tvm, &HFGTR::nPire0EL1>)
+        .fault(EL2, faultPieEL2)
+        .mon();
+    InitReg(MISCREG_PIRE0_EL2)
+        .fault(EL2, faultPieEL2)
+        .mon();
+    InitReg(MISCREG_PIR_EL1)
+        .faultRead(EL1, faultPieEL1<true, &HCR::trvm, &HFGTR::nPirEL1>)
+        .faultWrite(EL1, faultPieEL1<false, &HCR::tvm, &HFGTR::nPirEL1>)
+        .fault(EL2, faultPieEL2)
+        .mon();
+    InitReg(MISCREG_PIRE0_EL12)
+        .fault(EL2, faultVheEL2<faultPieEL2>)
+        .fault(EL3, defaultFaultE2H_EL3)
+        .mapsTo(MISCREG_PIRE0_EL1);
+    InitReg(MISCREG_PIR_EL12)
+        .fault(EL2, faultVheEL2<faultPieEL2>)
+        .fault(EL3, defaultFaultE2H_EL3)
+        .mapsTo(MISCREG_PIR_EL1);
+    InitReg(MISCREG_PIR_EL2)
+        .fault(EL2, faultPieEL2)
+        .mon();
+    InitReg(MISCREG_PIR_EL3)
+        .mon();
+    // clang-format on
 
     // Register mappings for some unimplemented registers:
     // ESR_EL1 -> DFSR

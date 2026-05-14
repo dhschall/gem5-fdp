@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011,2017-2020 ARM Limited
+ * Copyright (c) 2011,2017-2020, 2025 ARM Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -335,6 +335,18 @@ TarmacParserRecord::MiscRegMap TarmacParserRecord::miscRegMap = {
     { "pmceid1", MISCREG_PMCEID1 },
     { "pmccntr", MISCREG_PMCCNTR },
     { "pmxevtyper", MISCREG_PMXEVTYPER },
+    { "pmevcntr0", MISCREG_PMEVCNTR0 },
+    { "pmevcntr1", MISCREG_PMEVCNTR1 },
+    { "pmevcntr2", MISCREG_PMEVCNTR2 },
+    { "pmevcntr3", MISCREG_PMEVCNTR3 },
+    { "pmevcntr4", MISCREG_PMEVCNTR4 },
+    { "pmevcntr5", MISCREG_PMEVCNTR5 },
+    { "pmevtyper0", MISCREG_PMEVTYPER0 },
+    { "pmevtyper1", MISCREG_PMEVTYPER1 },
+    { "pmevtyper2", MISCREG_PMEVTYPER2 },
+    { "pmevtyper3", MISCREG_PMEVTYPER3 },
+    { "pmevtyper4", MISCREG_PMEVTYPER4 },
+    { "pmevtyper5", MISCREG_PMEVTYPER5 },
     { "pmccfiltr", MISCREG_PMCCFILTR },
     { "pmxevcntr", MISCREG_PMXEVCNTR },
     { "pmuserenr", MISCREG_PMUSERENR },
@@ -839,40 +851,13 @@ TarmacParserRecord::TarmacParserRecordEvent::process()
                 cpsr.v = thread->getReg(cc_reg::V);
                 values.push_back(cpsr);
             } else if (it->index == MISCREG_FPCR) {
-                // Read FPSCR and extract FPCR value
-                FPSCR fpscr = thread->readMiscRegNoEffect(MISCREG_FPSCR);
-                const uint32_t ones = (uint32_t)(-1);
-                FPSCR fpcrMask  = 0;
-                fpcrMask.ioe = ones;
-                fpcrMask.dze = ones;
-                fpcrMask.ofe = ones;
-                fpcrMask.ufe = ones;
-                fpcrMask.ixe = ones;
-                fpcrMask.ide = ones;
-                fpcrMask.len    = ones;
-                fpcrMask.stride = ones;
-                fpcrMask.rMode  = ones;
-                fpcrMask.fz     = ones;
-                fpcrMask.dn     = ones;
-                fpcrMask.ahp    = ones;
-                values.push_back(fpscr & fpcrMask);
+                // Directly Read FPCR
+                FPCR fpcr = thread->readMiscReg(MISCREG_FPCR);
+                values.push_back(fpcr);
             } else if (it->index == MISCREG_FPSR) {
-                // Read FPSCR and extract FPSR value
-                FPSCR fpscr = thread->readMiscRegNoEffect(MISCREG_FPSCR);
-                const uint32_t ones = (uint32_t)(-1);
-                FPSCR fpsrMask  = 0;
-                fpsrMask.ioc = ones;
-                fpsrMask.dzc = ones;
-                fpsrMask.ofc = ones;
-                fpsrMask.ufc = ones;
-                fpsrMask.ixc = ones;
-                fpsrMask.idc = ones;
-                fpsrMask.qc = ones;
-                fpsrMask.v = ones;
-                fpsrMask.c = ones;
-                fpsrMask.z = ones;
-                fpsrMask.n = ones;
-                values.push_back(fpscr & fpsrMask);
+                // Directly Read FPSR
+                FPSCR fpsr = thread->readMiscReg(MISCREG_FPSR);
+                values.push_back(fpsr);
             } else {
                 values.push_back(thread->readMiscRegNoEffect(it->index));
             }

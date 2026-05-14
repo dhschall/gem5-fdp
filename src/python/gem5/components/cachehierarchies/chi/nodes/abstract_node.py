@@ -28,14 +28,14 @@ import math
 from abc import abstractmethod
 
 from m5.objects import (
-    Cache_Controller,
+    CHI_Cache_Controller,
     MessageBuffer,
     RubyNetwork,
 )
 
-from gem5.components.processors.abstract_core import AbstractCore
-from gem5.components.processors.cpu_types import CPUTypes
-from gem5.isas import ISA
+from .....isas import ISA
+from ....processors.abstract_core import AbstractCore
+from ....processors.cpu_types import CPUTypes
 
 
 class TriggerMessageBuffer(MessageBuffer):
@@ -53,7 +53,7 @@ class OrderedTriggerMessageBuffer(TriggerMessageBuffer):
     ordered = True
 
 
-class AbstractNode(Cache_Controller):
+class AbstractNode(CHI_Cache_Controller):
     """A node is the abstract unit for caches in the CHI protocol.
 
     You can extend the AbstractNode to create caches (private or shared) and

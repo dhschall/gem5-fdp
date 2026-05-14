@@ -35,8 +35,33 @@
 
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
+from m5.objects.PartitioningPolicies import PartitionManager
 from m5.params import *
 from m5.proxy import *
+from m5.SimObject import SimObject
+
+
+class TaggedIndexingPolicy(SimObject):
+    type = "TaggedIndexingPolicy"
+    abstract = True
+    cxx_class = "gem5::IndexingPolicyTemplate<gem5::TaggedTypes>"
+    cxx_header = "mem/cache/tags/tagged_entry.hh"
+    cxx_template_params = ["class Types"]
+
+    # Get the associativity
+    assoc = Param.Int(Parent.assoc, "associativity")
+
+
+class TaggedSetAssociative(TaggedIndexingPolicy):
+    type = "TaggedSetAssociative"
+    cxx_class = "gem5::TaggedSetAssociative"
+    cxx_header = "mem/cache/tags/tagged_entry.hh"
+
+    # Get the size from the parent (cache)
+    size = Param.MemorySize(Parent.size, "capacity in bytes")
+
+    # Get the entry size from the parent (tags)
+    entry_size = Param.Int(Parent.entry_size, "entry size in bytes")
 
 
 class BaseTags(ClockedObject):
@@ -71,8 +96,8 @@ class BaseTags(ClockedObject):
     )
 
     # Get indexing policy
-    indexing_policy = Param.BaseIndexingPolicy(
-        SetAssociative(), "Indexing policy"
+    indexing_policy = Param.TaggedIndexingPolicy(
+        TaggedSetAssociative(), "Indexing policy"
     )
 
     partitioning_manager = Param.PartitionManager(

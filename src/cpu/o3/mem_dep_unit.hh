@@ -47,19 +47,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// #include "base/statistics.hh"
-// #include "cpu/inst_seq.hh"
-// #include "cpu/o3/dyn_inst_ptr.hh"
-// #include "cpu/o3/limits.hh"
-// #include "cpu/o3/phast.hh"
-// #include "debug/MemDepUnit.hh"
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
-#include "cpu/o3/phast.hh"
 //#include "cpu/o3/store_set.hh"
-//#include "cpu/o3/store_set_xs.hh"
+#include "cpu/o3/phast.hh"
 #include "debug/MemDepUnit.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
@@ -115,7 +108,6 @@ class MemDepUnit
     class MemDepEntry;
 
     typedef std::shared_ptr<MemDepEntry> MemDepEntryPtr;
-
 
   public:
     /** Empty constructor. Must call init() prior to using in this case. */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, 2018-2019, 2023-2024 ARM Limited
+ * Copyright (c) 2012-2013, 2018-2019, 2023-2025 Arm Limited
  * All rights reserved.
  *
  * The license below extends only to copyright in the software and shall
@@ -55,6 +55,7 @@
 #include "debug/HWPrefetch.hh"
 #include "mem/cache/compressors/base.hh"
 #include "mem/cache/mshr.hh"
+#include "mem/cache/mshr_queue.hh"
 #include "mem/cache/prefetch/base.hh"
 #include "mem/cache/queue_entry.hh"
 #include "mem/cache/tags/compressed_tags.hh"
@@ -125,11 +126,13 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     // forward snoops is overridden in init() once we can query
     // whether the connected requestor is actually snooping or not
 
-    tempBlock = new TempCacheBlk(blkSize);
+    tempBlock = new TempCacheBlk(blkSize,
+        genTagExtractor(tags->params().indexing_policy));
 
     tags->tagsInit();
-    if (prefetcher)
+    if (prefetcher) {
         prefetcher->setParentInfo(system, getProbeManager(), getBlockSize());
+    }
 
     fatal_if(compressor && !dynamic_cast<CompressedTags*>(tags),
         "The tags of compressed cache %s must derive from CompressedTags",
@@ -222,6 +225,50 @@ BaseCache::inRange(Addr addr) const
        }
     }
     return false;
+}
+
+void
+BaseCache::allocateWriteBuffer(PacketPtr pkt, Tick time)
+{
+    // should only see writes or clean evicts here
+    assert(pkt->isWrite() || pkt->cmd == MemCmd::CleanEvict);
+
+    Addr blk_addr = pkt->getBlockAddr(blkSize);
+
+    // If using compression, on evictions the block is decompressed and
+    // the operation's latency is added to the payload delay. Consume
+    // that payload delay here, meaning that the data is always stored
+    // uncompressed in the writebuffer
+    if (compressor) {
+        time += pkt->payloadDelay;
+        pkt->payloadDelay = 0;
+    }
+
+    WriteQueueEntry *wq_entry =
+        writeBuffer.findMatch(blk_addr, pkt->isSecure());
+    if (wq_entry && !wq_entry->inService) {
+        DPRINTF(Cache, "Potential to merge writeback %s", pkt->print());
+    }
+
+    writeBuffer.allocate(blk_addr, blkSize, pkt, time, order++);
+
+    if (writeBuffer.isFull()) {
+        setBlocked((BlockedCause)MSHRQueue_WriteBuffer);
+    }
+
+    // schedule the send
+    schedMemSideSendEvent(time);
+}
+
+void
+BaseCache::markInService(WriteQueueEntry *entry)
+{
+    bool wasFull = writeBuffer.isFull();
+    writeBuffer.markInService(entry);
+
+    if (wasFull && !writeBuffer.isFull()) {
+        clearBlocked(Blocked_NoWBBuffers);
+    }
 }
 
 void
@@ -416,7 +463,7 @@ BaseCache::recvTimingReq(PacketPtr pkt)
         // Now that the write is here, mark it accessible again, so the
         // write will succeed.  LockedRMWReadReq brings the block in in
         // exclusive mode, so we know it was previously writable.
-        CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+        CacheBlk *blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
         assert(blk && blk->isValid());
         assert(!blk->isSet(CacheBlk::WritableBit) &&
                !blk->isSet(CacheBlk::ReadableBit));
@@ -550,7 +597,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
     // the response is an invalidation
     assert(!mshr->wasWholeLineWrite || pkt->isInvalidate());
 
-    CacheBlk *blk = tags->findBlock(pkt->getAddr(), pkt->isSecure());
+    CacheBlk *blk = tags->findBlock({pkt->getAddr(), pkt->isSecure()});
 
     if (is_fill && !is_error) {
         DPRINTF(Cache, "Block for addr %#llx being updated in Cache\n",
@@ -719,7 +766,7 @@ BaseCache::functionalAccess(PacketPtr pkt, bool from_cpu_side)
 {
     Addr blk_addr = pkt->getBlockAddr(blkSize);
     bool is_secure = pkt->isSecure();
-    CacheBlk *blk = tags->findBlock(pkt->getAddr(), is_secure);
+    CacheBlk *blk = tags->findBlock({pkt->getAddr(), is_secure});
     MSHR *mshr = mshrQueue.findMatch(blk_addr, is_secure);
 
     pkt->pushLabel(name());
@@ -910,7 +957,7 @@ BaseCache::getNextQueueEntry()
         PacketPtr pkt = prefetcher->getPacket();
         if (pkt) {
             Addr pf_addr = pkt->getBlockAddr(blkSize);
-            if (tags->findBlock(pf_addr, pkt->isSecure())) {
+            if (tags->findBlock({pf_addr, pkt->isSecure()})) {
                 DPRINTF(HWPrefetch, "Prefetch %#x has hit in cache, "
                         "dropped.\n", pf_addr);
                 prefetcher->pfHitInCache();
@@ -1031,8 +1078,9 @@ BaseCache::updateCompressionData(CacheBlk *&blk, const uint64_t* data,
         bool victim_itself = false;
         CacheBlk *victim = nullptr;
         if (replaceExpansions || is_data_contraction) {
-            victim = tags->findVictim(regenerateBlkAddr(blk),
-                blk->isSecure(), compression_size, evict_blks,
+            victim = tags->findVictim(
+                {regenerateBlkAddr(blk), blk->isSecure()},
+                compression_size, evict_blks,
                 blk->getPartitionId());
 
             // It is valid to return nullptr if there is no victim
@@ -1546,7 +1594,7 @@ BaseCache::handleFill(PacketPtr pkt, CacheBlk *blk, PacketList &writebacks,
             // cache... just use temporary storage to complete the
             // current request and then get rid of it
             blk = tempBlock;
-            tempBlock->insert(addr, is_secure);
+            tempBlock->insert({addr, is_secure});
             DPRINTF(Cache, "using temp block for %#llx (%s)\n", addr,
                     is_secure ? "s" : "ns");
         }
@@ -1647,7 +1695,7 @@ BaseCache::allocateBlock(const PacketPtr pkt, PacketList &writebacks)
         partitionManager->readPacketPartitionID(pkt) : 0;
     // Find replacement victim
     std::vector<CacheBlk*> evict_blks;
-    CacheBlk *victim = tags->findVictim(addr, is_secure, blk_size_bits,
+    CacheBlk *victim = tags->findVictim({addr, is_secure}, blk_size_bits,
                                         evict_blks, partition_id);
 
     // It is valid to return nullptr if there is no victim
@@ -1911,7 +1959,7 @@ BaseCache::sendMSHRQueuePacket(MSHR* mshr)
         }
     }
 
-    CacheBlk *blk = tags->findBlock(mshr->blkAddr, mshr->isSecure);
+    CacheBlk *blk = tags->findBlock({mshr->blkAddr, mshr->isSecure});
 
     // either a prefetch that is not present upstream, or a normal
     // MSHR request, proceed to get the packet to send downstream
@@ -2406,6 +2454,7 @@ BaseCache::CacheStats::regStats()
     blockedCycles.init(NUM_BLOCKED_CAUSES);
     blockedCycles
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_wbuffers")
         .subname(Blocked_NoTargets, "no_targets")
         ;
 
@@ -2413,11 +2462,13 @@ BaseCache::CacheStats::regStats()
     blockedCauses.init(NUM_BLOCKED_CAUSES);
     blockedCauses
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_wbuffers")
         .subname(Blocked_NoTargets, "no_targets")
         ;
 
     avgBlocked
         .subname(Blocked_NoMSHRs, "no_mshrs")
+        .subname(Blocked_NoWBBuffers, "no_wbuffers")
         .subname(Blocked_NoTargets, "no_targets")
         ;
     avgBlocked = blockedCycles / blockedCauses;

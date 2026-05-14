@@ -83,7 +83,7 @@ class MemBus(SystemXBar):
     default = Self.badaddr_responder.pio
 
 
-def attach_9p(parent, bus):
+def attach_9p(parent):
     viopci = PciVirtIO()
     viopci.vio = VirtIO9PDiod()
     viodir = os.path.realpath(os.path.join(m5.options.outdir, "9p"))
@@ -93,7 +93,7 @@ def attach_9p(parent, bus):
     if os.path.exists(viopci.vio.socketPath):
         os.remove(viopci.vio.socketPath)
     parent.viopci = viopci
-    parent.attachPciDevice(viopci, bus)
+    parent.attachPciDevice(viopci)
 
 
 def fillInCmdline(mdesc, template, **kwargs):
@@ -137,8 +137,8 @@ def makeSparcSystem(mem_mode, mdesc=None, cmdline=None):
     self.t1000.attachOnChipIO(self.membus)
     self.t1000.attachIO(self.iobus)
     self.mem_ranges = [
-        AddrRange(Addr("1MB"), size="64MB"),
-        AddrRange(Addr("2GB"), size="256MB"),
+        AddrRange(Addr("1MiB"), size="64MiB"),
+        AddrRange(Addr("2GiB"), size="256MiB"),
     ]
     self.bridge.mem_side_port = self.iobus.cpu_side_ports
     self.bridge.cpu_side_port = self.membus.mem_side_ports
@@ -174,21 +174,21 @@ def makeSparcSystem(mem_mode, mdesc=None, cmdline=None):
     # ROM for OBP/Reset/Hypervisor
     self.rom = SimpleMemory(
         image_file=binary("t1000_rom.bin"),
-        range=AddrRange(0xFFF0000000, size="8MB"),
+        range=AddrRange(0xFFF0000000, size="8MiB"),
     )
     # nvram
     self.nvram = SimpleMemory(
-        image_file=binary("nvram1"), range=AddrRange(0x1F11000000, size="8kB")
+        image_file=binary("nvram1"), range=AddrRange(0x1F11000000, size="8KiB")
     )
     # hypervisor description
     self.hypervisor_desc = SimpleMemory(
         image_file=binary("1up-hv.bin"),
-        range=AddrRange(0x1F12080000, size="8kB"),
+        range=AddrRange(0x1F12080000, size="8KiB"),
     )
     # partition description
     self.partition_desc = SimpleMemory(
         image_file=binary("1up-md.bin"),
-        range=AddrRange(0x1F12000000, size="8kB"),
+        range=AddrRange(0x1F12000000, size="8KiB"),
     )
 
     self.rom.port = self.membus.mem_side_ports
@@ -245,7 +245,7 @@ def makeArmSystem(
     self._bootmem = self.realview.bootmem
 
     # Attach any PCI devices this platform supports
-    self.realview.attachPciDevices()
+    self.realview.attachPlatformPciDevices()
 
     disks = makeCowDisks(mdesc.disks())
     # Old platforms have a built-in IDE or CF controller. Default to
@@ -384,15 +384,13 @@ def makeArmSystem(
         self.realview.attachIO(self.iobus)
 
     for dev in pci_devices:
-        self.realview.attachPciDevice(
-            dev, self.iobus, dma_ports=self._dma_ports if ruby else None
-        )
+        self.realview.attachPciDevice(dev)
 
     self.terminal = Terminal()
     self.vncserver = VncServer()
 
     if vio_9p:
-        attach_9p(self.realview, self.iobus)
+        attach_9p(self.realview)
 
     if not ruby:
         self.system_port = self.membus.cpu_side_ports
@@ -410,10 +408,8 @@ def makeArmSystem(
 
 def makeLinuxMipsSystem(mem_mode, mdesc=None, cmdline=None):
     class BaseMalta(Malta):
-        ethernet = NSGigE(pci_bus=0, pci_dev=1, pci_func=0)
-        ide = IdeController(
-            disks=Parent.disks, pci_func=0, pci_dev=0, pci_bus=0
-        )
+        ethernet = NSGigE(pci_dev=1, pci_func=0)
+        ide = IdeController(disks=Parent.disks, pci_func=0, pci_dev=0)
 
     self = System()
     if not mdesc:
@@ -423,7 +419,7 @@ def makeLinuxMipsSystem(mem_mode, mdesc=None, cmdline=None):
     self.iobus = IOXBar()
     self.membus = MemBus()
     self.bridge = Bridge(delay="50ns")
-    self.mem_ranges = [AddrRange("1GB")]
+    self.mem_ranges = [AddrRange("1GiB")]
     self.bridge.mem_side_port = self.iobus.cpu_side_ports
     self.bridge.cpu_side_port = self.membus.mem_side_ports
     self.disks = makeCowDisks(mdesc.disks())
@@ -469,7 +465,7 @@ def connectX86ClassicSystem(x86_sys, numCPUs):
     x86_sys.bridge.cpu_side_port = x86_sys.membus.mem_side_ports
     # Allow the bridge to pass through:
     #  1) kernel configured PCI device memory map address: address range
-    #     [0xC0000000, 0xFFFF0000). (The upper 64kB are reserved for m5ops.)
+    #     [0xC0000000, 0xFFFF0000). (The upper 64KiB are reserved for m5ops.)
     #  2) the bridge to pass through the IO APIC (two pages, already contained in 1),
     #  3) everything in the IO address range up to the local APIC, and
     #  4) then the entire PCI address space and beyond.
@@ -501,9 +497,9 @@ def connectX86RubySystem(x86_sys):
     # North Bridge
     x86_sys.iobus = IOXBar()
 
-    # add the ide to the list of dma devices that later need to attach to
-    # dma controllers
-    x86_sys._dma_ports = [x86_sys.pc.south_bridge.ide.dma]
+    # add the PCI host bridge to the list of dma devices that later
+    # need to attach to dma controllers
+    x86_sys._dma_ports = [x86_sys.pc.pci_host.up_request_port()]
     x86_sys.pc.attachIO(x86_sys.iobus, x86_sys._dma_ports)
 
 
@@ -526,22 +522,22 @@ def makeX86System(mem_mode, numCPUs=1, mdesc=None, workload=None, Ruby=False):
     # Physical memory
     # On the PC platform, the memory region 0xC0000000-0xFFFFFFFF is reserved
     # for various devices.  Hence, if the physical memory size is greater than
-    # 3GB, we need to split it into two parts.
+    # 3GiB, we need to split it into two parts.
     excess_mem_size = convert.toMemorySize(mdesc.mem()) - convert.toMemorySize(
-        "3GB"
+        "3GiB"
     )
     if excess_mem_size <= 0:
         self.mem_ranges = [AddrRange(mdesc.mem())]
     else:
         warn(
             "Physical memory size specified is %s which is greater than "
-            "3GB.  Twice the number of memory controllers would be "
+            "3GiB.  Twice the number of memory controllers would be "
             "created." % (mdesc.mem())
         )
 
         self.mem_ranges = [
-            AddrRange("3GB"),
-            AddrRange(Addr("4GB"), size=excess_mem_size),
+            AddrRange("3GiB"),
+            AddrRange(Addr("4GiB"), size=excess_mem_size),
         ]
 
     # Platform
@@ -663,16 +659,16 @@ def makeLinuxX86System(
     # Build up the x86 system and then specialize it for Linux
     self = makeX86System(mem_mode, numCPUs, mdesc, X86FsLinux(), Ruby)
 
-    # We assume below that there's at least 1MB of memory. We'll require 2
+    # We assume below that there's at least 1MiB of memory. We'll require 2
     # just to avoid corner cases.
     phys_mem_size = sum([r.size() for r in self.mem_ranges])
     assert phys_mem_size >= 0x200000
     assert len(self.mem_ranges) <= 2
 
     entries = [
-        # Mark the first megabyte of memory as reserved
-        X86E820Entry(addr=0, size="639kB", range_type=1),
-        X86E820Entry(addr=0x9FC00, size="385kB", range_type=2),
+        # Mark the first mibibyte of memory as reserved
+        X86E820Entry(addr=0, size="639KiB", range_type=1),
+        X86E820Entry(addr=0x9FC00, size="385KiB", range_type=2),
         # Mark the rest of physical memory as available
         X86E820Entry(
             addr=0x100000,
@@ -681,7 +677,7 @@ def makeLinuxX86System(
         ),
     ]
 
-    # Mark [mem_size, 3GB) as reserved if memory less than 3GB, which force
+    # Mark [mem_size, 3iB) as reserved if memory less than 3GiB, which force
     # IO devices to be mapped to [0xC0000000, 0xFFFF0000). Requests to this
     # specific range can pass though bridge to iobus.
     if len(self.mem_ranges) == 1:
@@ -693,10 +689,10 @@ def makeLinuxX86System(
             )
         )
 
-    # Reserve the last 16kB of the 32-bit address space for the m5op interface
-    entries.append(X86E820Entry(addr=0xFFFF0000, size="64kB", range_type=2))
+    # Reserve the last 16KiB of the 32-bit address space for the m5op interface
+    entries.append(X86E820Entry(addr=0xFFFF0000, size="64KiB", range_type=2))
 
-    # In case the physical memory is greater than 3GB, we split it into two
+    # In case the physical memory is greater than 3GiB, we split it into two
     # parts and add a separate e820 entry for the second part.  This entry
     # starts at 0x100000000,  which is the first address after the space
     # reserved for devices.

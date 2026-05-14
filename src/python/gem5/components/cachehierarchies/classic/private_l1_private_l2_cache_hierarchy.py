@@ -44,9 +44,9 @@ from m5.objects import (
     BaseXBar,
     Cache,
     L2XBar,
-    Port,
     SystemXBar,
 )
+from m5.params import Port
 
 from ....isas import ISA
 from ....utils.override import *
@@ -89,11 +89,11 @@ class PrivateL1PrivateL2CacheHierarchy(
         membus: Optional[BaseXBar] = None,
     ) -> None:
         """
-        :param l1d_size: The size of the L1 Data Cache (e.g., "32kB").
+        :param l1d_size: The size of the L1 Data Cache (e.g., "32KiB").
 
-        :param  l1i_size: The size of the L1 Instruction Cache (e.g., "32kB").
+        :param  l1i_size: The size of the L1 Instruction Cache (e.g., "32KiB").
 
-        :param l2_size: The size of the L2 Cache (e.g., "256kB").
+        :param l2_size: The size of the L2 Cache (e.g., "256KiB").
 
         :param membus: The memory bus. This parameter is optional parameter and
                        will default to a 64 bit width SystemXBar is not
@@ -126,7 +126,7 @@ class PrivateL1PrivateL2CacheHierarchy(
         # Set up the system port for functional access from the simulator.
         board.connect_system_port(self.membus.cpu_side_ports)
 
-        for _, port in board.get_memory().get_mem_ports():
+        for _, port in board.get_mem_ports():
             self.membus.mem_side_ports = port
 
         self.l2buses = [
@@ -167,7 +167,8 @@ class PrivateL1PrivateL2CacheHierarchy(
 
     def _connect_table_walker(self, cpu_id: int, cpu: BaseCPU) -> None:
         cpu.connect_walker_ports(
-            self.membus.cpu_side_ports, self.membus.cpu_side_ports
+            self.l2buses[cpu_id].cpu_side_ports,
+            self.l2buses[cpu_id].cpu_side_ports,
         )
 
     def _setup_io_cache(self, board: AbstractBoard) -> None:
@@ -178,7 +179,7 @@ class PrivateL1PrivateL2CacheHierarchy(
             data_latency=50,
             response_latency=50,
             mshrs=20,
-            size="1kB",
+            size="1KiB",
             tgts_per_mshr=12,
             addr_ranges=board.mem_ranges,
         )

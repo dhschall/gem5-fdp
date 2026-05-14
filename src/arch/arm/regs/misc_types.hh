@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2024 Arm Limited
+ * Copyright (c) 2010-2025 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -133,7 +133,9 @@ namespace ArmISA
     EndBitUnion(AA64ISAR0)
 
     BitUnion64(AA64ISAR1)
+        Bitfield<59, 56> xs;
         Bitfield<55, 52> i8mm;
+        Bitfield<47, 44> bf16;
         Bitfield<43, 40> specres;
         Bitfield<39, 36> sb;
         Bitfield<35, 32> frintts;
@@ -164,6 +166,7 @@ namespace ArmISA
     EndBitUnion(AA64MMFR0)
 
     BitUnion64(AA64MMFR1)
+        Bitfield<47, 44> afp;
         Bitfield<43, 40> hcx;
         Bitfield<31, 28> xnx;
         Bitfield<27, 24> specsei;
@@ -387,6 +390,7 @@ namespace ArmISA
     EndBitUnion(NSACR)
 
     BitUnion64(SCR)
+        Bitfield<45> piEn;
         Bitfield<44> sctlr2En;
         Bitfield<43> tcr2En;
         Bitfield<40> trndr;
@@ -513,6 +517,26 @@ namespace ArmISA
         Bitfield<13> cm;  // LPAE
     EndBitUnion(FSR)
 
+    BitUnion32(FPCR)
+        Bitfield<0> fiz;
+        Bitfield<1> ah;
+        Bitfield<2> nep;
+        Bitfield<8> ioe;
+        Bitfield<9> dze;
+        Bitfield<10> ofe;
+        Bitfield<11> ufe;
+        Bitfield<12> ixe;
+        Bitfield<13> ebf;
+        Bitfield<15> ide;
+        Bitfield<18, 16> len;
+        Bitfield<19> fz16;
+        Bitfield<21, 20> stride;
+        Bitfield<23, 22> rMode;
+        Bitfield<24> fz;
+        Bitfield<25> dn;
+        Bitfield<26> ahp;
+    EndBitUnion(FPCR)
+
     BitUnion32(FPSCR)
         Bitfield<0> ioc;
         Bitfield<1> dzc;
@@ -622,6 +646,7 @@ namespace ArmISA
         Bitfield<29> tbid; // EL2
         Bitfield<31, 30> tg1; // EL1
         Bitfield<34, 32> ips; // EL1
+        Bitfield<35> pie; // EL3
         Bitfield<36> as; // EL1
         Bitfield<37> tbi0; // EL1
         Bitfield<38> tbi1; // EL1
@@ -632,6 +657,10 @@ namespace ArmISA
         Bitfield<51> tbid0; // EL1
         Bitfield<52> tbid1; // EL1
     EndBitUnion(TCR)
+
+    BitUnion64(TCR2)
+        Bitfield<1> pie;    // EL1/EL2
+    EndBitUnion(TCR2)
 
     BitUnion32(HTCR)
         Bitfield<2, 0> t0sz;
@@ -654,6 +683,10 @@ namespace ArmISA
         Bitfield<19> vs;     // Only defined for VTCR_EL2
         Bitfield<21> ha;     // Only defined for VTCR_EL2
         Bitfield<22> hd;     // Only defined for VTCR_EL2
+        Bitfield<29> nsw;    // Only defined for VTCR_EL2
+        Bitfield<29> sw;     // Only defined for VSTCR_EL2
+        Bitfield<30> nsa;    // Only defined for VTCR_EL2
+        Bitfield<30> sa;     // Only defined for VSTCR_EL2
     EndBitUnion(VTCR_t)
 
     BitUnion32(PRRR)
@@ -750,7 +783,14 @@ namespace ArmISA
         Bitfield<0>      f;
    EndBitUnion(PAR)
 
-   BitUnion32(ESR)
+   BitUnion64(ESR)
+        Bitfield<55, 32> iss2;
+
+        // Data Abort ISS2
+        SubBitUnion(data_abort_iss2, 55, 32)
+            Bitfield<5> dirtyBit;
+        EndSubBitUnion(data_abort_iss2)
+
         Bitfield<31, 26> ec;
         Bitfield<25> il;
         Bitfield<24, 0> iss;
@@ -1016,6 +1056,8 @@ namespace ArmISA
     // HFGRTR and HFGWTR. Some fields are
     // for HFGRTR only (RO registers)
     BitUnion64(HFGTR)
+        Bitfield<58> nPirEL1;
+        Bitfield<57> nPire0EL1;
         Bitfield<50> nAccdataEL1;
         Bitfield<49> erxaddrEL1;
         Bitfield<48> erxpfgcdnEL1;
@@ -1088,6 +1130,8 @@ namespace ArmISA
     BitUnion64(HCRX)
         Bitfield<15> sctlr2En;
         Bitfield<14> tcr2En;
+        Bitfield<4> fgtnxs;
+        Bitfield<3> fnxs;
     EndBitUnion(HCRX)
 
     BitUnion64(MPAMIDR)

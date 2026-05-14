@@ -35,7 +35,6 @@
 #include <vector>
 
 #include "base/logging.hh"
-#include "base/random.hh"
 #include "base/statistics.hh"
 #include "debug/GarnetSyntheticTraffic.hh"
 #include "mem/packet.hh"
@@ -104,6 +103,8 @@ GarnetSyntheticTraffic::GarnetSyntheticTraffic(const Params &p)
     traffic = trafficStringToEnum[trafficType];
 
     id = TESTER_NETWORK++;
+    // Initialize random generator with unique seed based on tester ID
+    rng = Random::genRandom(Random::globalSeed + id);
     DPRINTF(GarnetSyntheticTraffic,"Config Created: Name = %s , and id = %d\n",
             name(), id);
 }
@@ -151,7 +152,7 @@ GarnetSyntheticTraffic::tick()
     // - send pkt if this number is < injRate*(10^precision)
     bool sendAllowedThisCycle;
     double injRange = pow((double) 10, (double) precision);
-    unsigned trySending = random_mt.random<unsigned>(0, (int) injRange);
+    unsigned trySending = rng->random<unsigned>(0, (int) injRange);
     if (trySending < injRate*injRange)
         sendAllowedThisCycle = true;
     else
@@ -196,7 +197,7 @@ GarnetSyntheticTraffic::generatePkt()
     {
         destination = singleDest;
     } else if (traffic == UNIFORM_RANDOM_) {
-        destination = random_mt.random<unsigned>(0, num_destinations - 1);
+        destination = rng->random<unsigned>(0, num_destinations - 1);
     } else if (traffic == BIT_COMPLEMENT_) {
         dest_x = radix - src_x - 1;
         dest_y = radix - src_y - 1;
@@ -285,7 +286,7 @@ GarnetSyntheticTraffic::generatePkt()
     if (injReqType < 0 || injReqType > 2)
     {
         // randomly inject in any vnet
-        injReqType = random_mt.random(0, 2);
+        injReqType = rng->random(0, 2);
     }
 
     if (injReqType == 0) {

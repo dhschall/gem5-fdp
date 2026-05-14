@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2012, 2014 ARM Limited
+ * Copyright (c) 2011-2012, 2014, 2025 Arm Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
@@ -55,16 +55,18 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_dep_unit.hh"
-//#include "cpu/o3/phast.hh"
+//#include "cpu/o3/store_set.hh"
 #include "cpu/op_class.hh"
 #include "cpu/timebuf.hh"
 #include "enums/SMTQueuePolicy.hh"
 #include "sim/eventq.hh"
+#include "sim/sim_object.hh"
 
 namespace gem5
 {
 
 struct BaseO3CPUParams;
+struct IQUnitParams;
 
 namespace memory
 {
@@ -77,6 +79,85 @@ namespace o3
 class FUPool;
 class CPU;
 class IEW;
+
+class IQUnit : public SimObject
+{
+  public:
+    IQUnit(const IQUnitParams &p);
+
+    void insert(const DynInstPtr &inst);
+    void remove(const DynInstPtr &inst);
+
+    unsigned
+    numEntries() const
+    {
+        return _numEntries;
+    }
+
+    unsigned
+    numFreeEntries() const
+    {
+        return _freeEntries;
+    }
+
+    unsigned
+    numFreeEntries(ThreadID tid) const
+    {
+        return maxEntries[tid] - count[tid];
+    }
+
+    unsigned numFreeEntries(const DynInstPtr &inst) const;
+
+    /** Returns the number of used entries for a thread. */
+    unsigned
+    getCount(ThreadID tid)
+    {
+        return count[tid];
+    };
+
+    /** Resets all instruction queue state. */
+    void resetState();
+
+    /** Resets max entries for all threads. */
+    void resetEntries();
+
+    /** Sets active threads list. */
+    void setActiveThreads(std::list<ThreadID> *at_ptr);
+
+    /** Number of entries needed for given amount of threads. */
+    int entryAmount(ThreadID num_threads);
+
+    FUPool *
+    fuPool()
+    {
+        return _fuPool;
+    }
+
+  private:
+    /** IQ sharing policy for SMT. */
+    SMTQueuePolicy iqPolicy;
+
+    /** Number of Total Threads */
+    ThreadID numThreads;
+
+    /** Pointer to list of active threads. */
+    std::list<ThreadID> *activeThreads;
+
+    /** Number of free IQ entries left. */
+    unsigned _freeEntries;
+
+    /** The number of entries in the instruction queue. */
+    unsigned _numEntries;
+
+    /** Max IQ Entries Per Thread */
+    unsigned maxEntries[MaxThreads];
+
+    /** Per Thread IQ count */
+    unsigned count[MaxThreads];
+
+    /** Function unit pool. */
+    FUPool *_fuPool;
+};
 
 /**
  * A standard instruction queue class.  It holds ready instructions, in
@@ -113,6 +194,9 @@ class InstructionQueue
         /** Executing instruction. */
         DynInstPtr inst;
 
+        /** Pointer to the FUPool used */
+        FUPool *fuPool;
+
         /** Index of the FU used for executing. */
         int fuIdx;
 
@@ -126,7 +210,7 @@ class InstructionQueue
 
       public:
         /** Construct a FU completion event. */
-        FUCompletion(const DynInstPtr &_inst, int fu_idx,
+        FUCompletion(const DynInstPtr &_inst, FUPool *fu_pool, int fu_idx,
                      InstructionQueue *iq_ptr);
 
         virtual void process();
@@ -165,26 +249,35 @@ class InstructionQueue
     /** Takes over execution from another CPU's thread. */
     void takeOverFrom();
 
-    /** Number of entries needed for given amount of threads. */
-    int entryAmount(ThreadID num_threads);
-
-    /** Resets max entries for all threads. */
-    void resetEntries();
-
     /** Returns total number of free entries. */
     unsigned numFreeEntries();
 
     /** Returns number of free entries for a thread. */
     unsigned numFreeEntries(ThreadID tid);
 
+    /** Returns number of free entries for a thread. */
+    unsigned numFreeEntries(const DynInstPtr &inst);
+
     /** Returns whether or not the IQ is full. */
     bool isFull();
 
-    /** Returns whether or not the IQ is full for a specific thread. */
+    /** Returns whether or not the IQ is full for a specific thread.
+     */
     bool isFull(ThreadID tid);
+
+    /** Returns whether or not the IQ is full for a specific
+     * instruction type (OpClass)
+     */
+    bool isFull(const DynInstPtr &inst);
+
+    /** Returns a vector of FU pools */
+    std::vector<FUPool *> allFUPools();
 
     /** Returns if there are any ready instructions in the IQ. */
     bool hasReadyInsts();
+
+    /** Find a compatible IQ (e.g. to insert the instruction) */
+    IQUnit *findIQ(const DynInstPtr &inst);
 
     /** Inserts a new instruction into the IQ. */
     void insert(const DynInstPtr &new_inst);
@@ -223,7 +316,8 @@ class InstructionQueue
     }
 
     /** Process FU completion event. */
-    void processFUCompletion(const DynInstPtr &inst, int fu_idx);
+    void processFUCompletion(const DynInstPtr &inst, FUPool *fu_pool,
+                             int fu_idx);
 
     /**
      * Schedules ready instructions, adding the ready ones (oldest first) to
@@ -264,6 +358,9 @@ class InstructionQueue
     /**  Defers a memory instruction when it is cache blocked. */
     void blockMemInst(const DynInstPtr &blocked_inst);
 
+    /**  Retries a memory instruction in the next cycle. */
+    void retryMemInst(const DynInstPtr &retry_inst);
+
     /**  Notify instruction queue that a previous blockage has resolved */
     void cacheUnblocked();
 
@@ -278,7 +375,7 @@ class InstructionQueue
     void squash(ThreadID tid);
 
     /** Returns the number of used entries for a thread. */
-    unsigned getCount(ThreadID tid) { return count[tid]; };
+    unsigned getCount(ThreadID tid) const;
 
     /** Debug function to print all instructions. */
     void printInsts();
@@ -300,6 +397,9 @@ class InstructionQueue
     /** Pointer to IEW stage. */
     IEW *iewStage;
 
+    /** List of Instruction Queues */
+    std::vector<IQUnit *> iqs;
+
     /** The queue to the execute stage.  Issued instructions will be written
      *  into it.
      */
@@ -310,9 +410,6 @@ class InstructionQueue
 
     /** Wire to read information from timebuffer. */
     typename TimeBuffer<TimeStruct>::wire fromCommit;
-
-    /** Function unit pool. */
-    FUPool *fuPool;
 
     //////////////////////////////////////
     // Instruction lists, ready queues, and ordering
@@ -409,26 +506,8 @@ class InstructionQueue
     // Various parameters
     //////////////////////////////////////
 
-    /** IQ sharing policy for SMT. */
-    SMTQueuePolicy iqPolicy;
-
     /** Number of Total Threads*/
     ThreadID numThreads;
-
-    /** Pointer to list of active threads. */
-    std::list<ThreadID> *activeThreads;
-
-    /** Per Thread IQ count */
-    unsigned count[MaxThreads];
-
-    /** Max IQ Entries Per Thread */
-    unsigned maxEntries[MaxThreads];
-
-    /** Number of free IQ entries left. */
-    unsigned freeEntries;
-
-    /** The number of entries in the instruction queue. */
-    unsigned numEntries;
 
     /** The total number of instructions that can be issued in one cycle. */
     unsigned totalWidth;
@@ -463,12 +542,6 @@ class InstructionQueue
 
     /** Moves an instruction to the ready queue if it is ready. */
     void addIfReady(const DynInstPtr &inst);
-
-    /** Debugging function to count how many entries are in the IQ.  It does
-     *  a linear walk through the instructions, so do not call this function
-     *  during normal execution.
-     */
-    int countInsts();
 
     /** Debugging function to dump all the list sizes, as well as print
      *  out the list of nonspeculative instructions.  Should not be used
@@ -533,7 +606,7 @@ class InstructionQueue
         statistics::Vector statFuBusy;
         // statistics::Vector dist_unissued;
         /** Stat for total number issued for each instruction type. */
-        statistics::Vector2d statIssuedInstType;
+        statistics::Vector2d issuedInstType;
 
         /** Number of instructions issued per cycle. */
         statistics::Formula issueRate;

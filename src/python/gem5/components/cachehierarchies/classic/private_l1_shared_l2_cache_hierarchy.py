@@ -1,3 +1,4 @@
+# Copyright (c) 2025 The Regents of the University of California
 # Copyright (c) 2022 The Regents of the Yonsei University
 # All rights reserved.
 #
@@ -28,12 +29,13 @@ from typing import Optional
 
 from m5.objects import (
     BadAddr,
+    BaseCPU,
     BaseXBar,
     Cache,
     L2XBar,
-    Port,
     SystemXBar,
 )
+from m5.params import Port
 
 from ....isas import ISA
 from ....utils.override import *
@@ -44,7 +46,6 @@ from .abstract_classic_cache_hierarchy import AbstractClassicCacheHierarchy
 from .caches.l1dcache import L1DCache
 from .caches.l1icache import L1ICache
 from .caches.l2cache import L2Cache
-from .caches.mmu_cache import MMUCache
 
 
 class PrivateL1SharedL2CacheHierarchy(
@@ -52,8 +53,9 @@ class PrivateL1SharedL2CacheHierarchy(
 ):
     """
     A cache setup where each core has a private L1 Data and Instruction Cache,
-    and a L2 cache is shared with all cores. The shared L2 cache is mostly
-    inclusive with respect to the split I/D L1 and MMU caches.
+    and a L2 cache is shared with all cores. Table walker ports connect
+    directly to the shared L2 bus by default, ensuring the absence of implicit
+    walk caches unless explicitly requested via a subclass.
     """
 
     def _get_default_membus(self) -> SystemXBar:
@@ -82,9 +84,9 @@ class PrivateL1SharedL2CacheHierarchy(
         membus: Optional[BaseXBar] = None,
     ) -> None:
         """
-        :param l1d_size: The size of the L1 Data Cache (e.g., "32kB").
-        :param  l1i_size: The size of the L1 Instruction Cache (e.g., "32kB").
-        :param l2_size: The size of the L2 Cache (e.g., "256kB").
+        :param l1d_size: The size of the L1 Data Cache (e.g., "32KiB").
+        :param  l1i_size: The size of the L1 Instruction Cache (e.g., "32KiB").
+        :param l2_size: The size of the L2 Cache (e.g., "256KiB").
         :param l1d_assoc: The associativity of the L1 Data Cache.
         :param l1i_assoc: The associativity of the L1 Instruction Cache.
         :param l2_assoc: The associativity of the L2 Cache.
@@ -119,7 +121,7 @@ class PrivateL1SharedL2CacheHierarchy(
         # Set up the system port for functional access from the simulator.
         board.connect_system_port(self.membus.cpu_side_ports)
 
-        for _, port in board.get_memory().get_mem_ports():
+        for _, port in board.get_mem_ports():
             self.membus.mem_side_ports = port
 
         self.l1icaches = [
@@ -136,16 +138,6 @@ class PrivateL1SharedL2CacheHierarchy(
         ]
         self.l2bus = L2XBar()
         self.l2cache = L2Cache(size=self._l2_size, assoc=self._l2_assoc)
-        # ITLB Page walk caches
-        self.iptw_caches = [
-            MMUCache(size="8KiB", writeback_clean=False)
-            for _ in range(board.get_processor().get_num_cores())
-        ]
-        # DTLB Page walk caches
-        self.dptw_caches = [
-            MMUCache(size="8KiB", writeback_clean=False)
-            for _ in range(board.get_processor().get_num_cores())
-        ]
 
         if board.has_coherent_io():
             self._setup_io_cache(board)
@@ -156,12 +148,7 @@ class PrivateL1SharedL2CacheHierarchy(
 
             self.l1icaches[i].mem_side = self.l2bus.cpu_side_ports
             self.l1dcaches[i].mem_side = self.l2bus.cpu_side_ports
-            self.iptw_caches[i].mem_side = self.l2bus.cpu_side_ports
-            self.dptw_caches[i].mem_side = self.l2bus.cpu_side_ports
-
-            cpu.connect_walker_ports(
-                self.iptw_caches[i].cpu_side, self.dptw_caches[i].cpu_side
-            )
+            self._connect_table_walker(i, cpu)
 
             if board.get_processor().get_isa() == ISA.X86:
                 int_req_port = self.membus.mem_side_ports
@@ -173,6 +160,23 @@ class PrivateL1SharedL2CacheHierarchy(
         self.l2bus.mem_side_ports = self.l2cache.cpu_side
         self.membus.cpu_side_ports = self.l2cache.mem_side
 
+    def _connect_table_walker(self, cpu_id: int, cpu: BaseCPU) -> None:
+        walker_ports = cpu.get_mmu().walkerPorts() if cpu.has_mmu() else []
+        if len(walker_ports) > 2:
+            raise RuntimeError(
+                "Unexpected number of walker ports "
+                f"from CPU {cpu_id}: {len(walker_ports)}.\n"
+                "Expected 0, 1, or 2"
+            )
+
+        if len(walker_ports) == 0:
+            return
+
+        cpu.connect_walker_ports(
+            self.l2bus.cpu_side_ports,
+            self.l2bus.cpu_side_ports,
+        )
+
     def _setup_io_cache(self, board: AbstractBoard) -> None:
         """Create a cache for coherent I/O connections"""
         self.iocache = Cache(
@@ -181,7 +185,7 @@ class PrivateL1SharedL2CacheHierarchy(
             data_latency=50,
             response_latency=50,
             mshrs=20,
-            size="1kB",
+            size="1KiB",
             tgts_per_mshr=12,
             addr_ranges=board.mem_ranges,
         )

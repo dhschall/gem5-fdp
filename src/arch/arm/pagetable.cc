@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2018-2019, 2021 Arm Limited
+ * Copyright (c) 2013, 2018-2019, 2021, 2024 Arm Limited
  * All rights reserved
  *
  * The license below extends only to copyright in the software and shall
@@ -247,6 +247,7 @@ V8PageTableOps4k::firstS2Level(uint8_t sl0) const
       case 0: return LookupLevel::L2;
       case 1: return LookupLevel::L1;
       case 2: return LookupLevel::L0;
+      case 3: return LookupLevel::L3; // Only when FEAT_TTST is implemented
       default: panic("Unsupported VTCR_EL2.SL0: %d", sl0);
     }
 }
@@ -487,6 +488,16 @@ getPageTableOps(GrainSize trans_granule)
         panic("Unknown translation granule size %d", trans_granule);
     }
 }
+
+TLBTypes::KeyType::KeyType(const TlbEntry &entry)
+  : va(entry.vpn << entry.N), pageSize(entry.N), size(0),
+    asn(entry.asid), ignoreAsn(false),
+    vmid(entry.vmid), ss(entry.ss),
+    functional(false),
+    targetRegime(entry.regime),
+    mode(entry.type == TypeTLB::instruction ?
+        BaseMMU::Execute : BaseMMU::Read)
+{}
 
 } // namespace ArmISA
 } // namespace gem5

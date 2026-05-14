@@ -55,6 +55,7 @@ output header {{
 #include "arch/riscv/insts/static_inst.hh"
 #include "arch/riscv/insts/unknown.hh"
 #include "arch/riscv/insts/vector.hh"
+#include "arch/riscv/insts/zcmp.hh"
 #include "arch/riscv/interrupts.hh"
 #include "cpu/static_inst.hh"
 #include "mem/packet.hh"
@@ -75,6 +76,7 @@ output decoder {{
 
 #include "arch/riscv/decoder.hh"
 #include "arch/riscv/faults.hh"
+#include "arch/riscv/memflags.hh"
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/regs/float.hh"
 #include "base/cprintf.hh"

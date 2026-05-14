@@ -1,4 +1,16 @@
 /*
+ * Copyright (c) 2024 Arm Limited
+ *
+ * The license below extends only to copyright in the software and
+ * shall not be construed as granting a license to any other
+ * intellectual property including but not limited to intellectual
+ * property relating to a hardware implementation of the
+ * functionality of the software licensed hereunder.  You may use the
+ * software subject to the license terms below provided that you
+ * ensure that this notice is replicated unmodified and in its
+ * entirety in all distributions of the software, modified or
+ * unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2003-2005 The Regents of The University of Michigan
  * All rights reserved.
  *
@@ -88,6 +100,13 @@ ignoreWarnOnceFunc(SyscallDesc *desc, ThreadContext *tc)
     }
 
     return 0;
+}
+
+SyscallReturn
+ignoreWithEnosysFunc(SyscallDesc *desc, ThreadContext *tc)
+{
+    warn("ignoring syscall %s(...) returning -ENOSYS", desc->name());
+    return -ENOSYS;
 }
 
 static void
@@ -277,7 +296,7 @@ brkFunc(SyscallDesc *desc, ThreadContext *tc, VPtr<> new_brk)
 }
 
 SyscallReturn
-setTidAddressFunc(SyscallDesc *desc, ThreadContext *tc, uint64_t tidPtr)
+setTidAddressFunc(SyscallDesc *desc, ThreadContext *tc, VPtr<> tidPtr)
 {
     auto process = tc->getProcessPtr();
 
@@ -292,26 +311,10 @@ closeFunc(SyscallDesc *desc, ThreadContext *tc, int tgt_fd)
     return p->fds->closeFDEntry(tgt_fd);
 }
 
-SyscallReturn
-lseekFunc(SyscallDesc *desc, ThreadContext *tc,
-          int tgt_fd, uint64_t offs, int whence)
-{
-    auto p = tc->getProcessPtr();
-
-    auto ffdp = std::dynamic_pointer_cast<FileFDEntry>((*p->fds)[tgt_fd]);
-    if (!ffdp)
-        return -EBADF;
-    int sim_fd = ffdp->getSimFD();
-
-    off_t result = lseek(sim_fd, offs, whence);
-
-    return (result == (off_t)-1) ? -errno : result;
-}
-
 
 SyscallReturn
 _llseekFunc(SyscallDesc *desc, ThreadContext *tc,
-            int tgt_fd, uint64_t offset_high, uint32_t offset_low,
+            int tgt_fd, uint32_t offset_high, uint32_t offset_low,
             VPtr<> result_ptr, int whence)
 {
     auto p = tc->getProcessPtr();
@@ -321,7 +324,7 @@ _llseekFunc(SyscallDesc *desc, ThreadContext *tc,
         return -EBADF;
     int sim_fd = ffdp->getSimFD();
 
-    uint64_t offset = (offset_high << 32) | offset_low;
+    uint64_t offset = ((uint64_t) offset_high << 32) | offset_low;
 
     uint64_t result = lseek(sim_fd, offset, whence);
     result = htog(result, tc->getSystemPtr()->getGuestByteOrder());
@@ -346,36 +349,6 @@ gethostnameFunc(SyscallDesc *desc, ThreadContext *tc,
     strncpy((char *)name.bufferPtr(), hostname, name_len);
     name.copyOut(SETranslatingPortProxy(tc));
     return 0;
-}
-
-SyscallReturn
-getcwdFunc(SyscallDesc *desc, ThreadContext *tc,
-           VPtr<> buf_ptr, unsigned long size)
-{
-    int result = 0;
-    auto p = tc->getProcessPtr();
-    BufferArg buf(buf_ptr, size);
-
-    // Is current working directory defined?
-    std::string cwd = p->tgtCwd;
-    if (!cwd.empty()) {
-        if (cwd.length() >= size) {
-            // Buffer too small
-            return -ERANGE;
-        }
-        strncpy((char *)buf.bufferPtr(), cwd.c_str(), size);
-        result = cwd.length();
-    } else {
-        if (getcwd((char *)buf.bufferPtr(), size)) {
-            result = strlen((char *)buf.bufferPtr());
-        } else {
-            result = -1;
-        }
-    }
-
-    buf.copyOut(SETranslatingPortProxy(tc));
-
-    return (result == -1) ? -errno : result;
 }
 
 SyscallReturn
@@ -1194,7 +1167,7 @@ recvmsgFunc(SyscallDesc *desc, ThreadContext *tc,
      */
     Addr msg_name_phold = 0;
     Addr msg_iov_phold = 0;
-    Addr iovec_base_phold[msgHdr->msg_iovlen];
+    auto iovec_base_phold = std::make_unique<Addr[]>(msgHdr->msg_iovlen);
     Addr msg_control_phold = 0;
 
     /**
@@ -1214,7 +1187,7 @@ recvmsgFunc(SyscallDesc *desc, ThreadContext *tc,
      * their pointers with buffer pointers.
      */
     BufferArg *iovBuf = NULL;
-    BufferArg *iovecBuf[msgHdr->msg_iovlen];
+    auto iovecBuf = std::make_unique<BufferArg *[]>(msgHdr->msg_iovlen);
     for (int i = 0; i < msgHdr->msg_iovlen; i++) {
         iovec_base_phold[i] = 0;
         iovecBuf[i] = NULL;
@@ -1226,14 +1199,13 @@ recvmsgFunc(SyscallDesc *desc, ThreadContext *tc,
                                     sizeof(struct iovec));
         /*3*/iovBuf->copyIn(proxy);
         for (int i = 0; i < msgHdr->msg_iovlen; i++) {
-            if (((struct iovec *)iovBuf->bufferPtr())[i].iov_base) {
-                /*1*/iovec_base_phold[i] =
-                     (Addr)((struct iovec *)iovBuf->bufferPtr())[i].iov_base;
-                /*2*/iovecBuf[i] = new BufferArg(iovec_base_phold[i],
-                     ((struct iovec *)iovBuf->bufferPtr())[i].iov_len);
+            auto iov = ((struct iovec *)iovBuf->bufferPtr())[i];
+            if (iov.iov_base) {
+                /*1*/iovec_base_phold[i] = (Addr)iov.iov_base;
+                /*2*/iovecBuf[i] = new BufferArg(
+                        iovec_base_phold[i], iov.iov_len);
                 /*3*/iovecBuf[i]->copyIn(proxy);
-                /*4*/((struct iovec *)iovBuf->bufferPtr())[i].iov_base =
-                     iovecBuf[i]->bufferPtr();
+                /*4*/iov.iov_base = iovecBuf[i]->bufferPtr();
             }
         }
         /*4*/msgHdr->msg_iov = (struct iovec *)iovBuf->bufferPtr();
@@ -1264,11 +1236,11 @@ recvmsgFunc(SyscallDesc *desc, ThreadContext *tc,
 
     if (msgHdr->msg_iov) {
         for (int i = 0; i< msgHdr->msg_iovlen; i++) {
-            if (((struct iovec *)iovBuf->bufferPtr())[i].iov_base) {
+            auto iov = ((struct iovec *)iovBuf->bufferPtr())[i];
+            if (iov.iov_base) {
                 iovecBuf[i]->copyOut(proxy);
                 delete iovecBuf[i];
-                ((struct iovec *)iovBuf->bufferPtr())[i].iov_base =
-                (void *)iovec_base_phold[i];
+                iov.iov_base = (void *)iovec_base_phold[i];
             }
         }
         iovBuf->copyOut(proxy);
@@ -1499,6 +1471,18 @@ getcpuFunc(SyscallDesc *desc, ThreadContext *tc,
     if (node)
         *node = 0;
 
+    return 0;
+}
+
+SyscallReturn
+sched_getparamFunc(SyscallDesc *desc, ThreadContext *tc,
+                   int pid, VPtr<int> paramPtr)
+{
+    if (!paramPtr || pid < 0)
+        return -EINVAL;
+
+    warn_once("sched_getparam: pretending sched_priority is 0 for all PIDs\n");
+    *paramPtr = 0;
     return 0;
 }
 

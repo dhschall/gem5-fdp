@@ -40,6 +40,7 @@ from m5.objects import *
 from m5.util import addToPath
 
 from gem5.isas import ISA
+from gem5.resources.resource import obtain_resource
 from gem5.runtime import get_supported_isas
 
 addToPath("../")
@@ -49,6 +50,7 @@ from common import (
     FileSystemConfig,
     GPUTLBConfig,
     GPUTLBOptions,
+    ObjectList,
     Options,
     Simulation,
 )
@@ -294,6 +296,21 @@ parser.add_argument(
     help="Latency for scalar responses from ruby to the cu.",
 )
 
+parser.add_argument(
+    "--memtime-latency",
+    type=int,
+    # Set to a default of 41 from micro-benchmarks
+    default=41,
+    help="Latency for memtimes in scalar memory pipeline.",
+)
+parser.add_argument(
+    "--mfma-scale",
+    type=float,
+    # Set to a default of 1 to not scale MFMA cycles
+    default=1,
+    help="Scale how long an MFMA instruction reserves the matrix core unit",
+)
+
 parser.add_argument("--TLB-prefetch", type=int, help="prefetch depth for TLBs")
 parser.add_argument(
     "--pf-type",
@@ -384,6 +401,7 @@ parser.add_argument(
     "--tcp-rp",
     type=str,
     default="TreePLRURP",
+    choices=ObjectList.rp_list.get_names(),
     help="cache replacement policy" "policy for tcp",
 )
 
@@ -391,6 +409,7 @@ parser.add_argument(
     "--tcc-rp",
     type=str,
     default="TreePLRURP",
+    choices=ObjectList.rp_list.get_names(),
     help="cache replacement policy" "policy for tcc",
 )
 
@@ -399,7 +418,31 @@ parser.add_argument(
     "--sqc-rp",
     type=str,
     default="TreePLRURP",
+    choices=ObjectList.rp_list.get_names(),
     help="cache replacement policy" "policy for sqc",
+)
+
+parser.add_argument(
+    "--download-resource",
+    type=str,
+    default=None,
+    required=False,
+    help="Download this resources prior to simulation",
+)
+
+parser.add_argument(
+    "--download-resource-version",
+    type=str,
+    default=None,
+    required=False,
+    help="Specify version of resource to download",
+)
+parser.add_argument(
+    "--download-dir",
+    type=str,
+    default=None,
+    required=False,
+    help="Download resources to this directory",
 )
 
 Ruby.define_options(parser)
@@ -408,6 +451,18 @@ Ruby.define_options(parser)
 GPUTLBOptions.tlb_options(parser)
 
 args = parser.parse_args()
+
+# Get the resource if specified.
+if args.download_resource:
+    resources = obtain_resource(
+        resource_id=args.download_resource,
+        resource_version=args.download_resource_version,
+        resource_directory=args.download_dir,
+    )
+
+    # This line seems pointless but is actually what triggers the download.
+    resources.get_local_path()
+
 
 # The GPU cache coherence protocols only work with the backing store
 args.access_backing_store = True
@@ -511,6 +566,8 @@ for i in range(n_cu):
             mem_resp_latency=args.mem_resp_latency,
             scalar_mem_req_latency=args.scalar_mem_req_latency,
             scalar_mem_resp_latency=args.scalar_mem_resp_latency,
+            memtime_latency=args.memtime_latency,
+            mfma_scale=args.mfma_scale,
             localDataStore=LdsState(
                 banks=args.numLdsBanks,
                 bankConflictPenalty=args.ldsBankConflictPenalty,
@@ -894,9 +951,9 @@ gpu_port_idx = gpu_port_idx - args.num_cp * 2
 token_port_idx = 0
 for i in range(len(system.ruby._cpu_ports)):
     if isinstance(system.ruby._cpu_ports[i], VIPERCoalescer):
-        system.cpu[shader_idx].CUs[
-            token_port_idx
-        ].gmTokenPort = system.ruby._cpu_ports[i].gmTokenPort
+        system.cpu[shader_idx].CUs[token_port_idx].gmTokenPort = (
+            system.ruby._cpu_ports[i].gmTokenPort
+        )
         token_port_idx += 1
 
 wavefront_size = args.wf_size

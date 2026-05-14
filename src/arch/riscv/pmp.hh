@@ -36,6 +36,7 @@
 #include "base/types.hh"
 #include "mem/packet.hh"
 #include "params/PMP.hh"
+#include "sim/serialize.hh"
 #include "sim/sim_object.hh"
 
 /**
@@ -98,18 +99,28 @@ class PMP : public SimObject
     /** variable to keep track of active number of rules any time */
     int numRules;
 
-    /** variable to keep track of any lock of entry */
-    bool hasLockEntry;
-
     /** single pmp entry struct*/
-    struct PmpEntry
+    struct PmpEntry : public Serializable
     {
         /** addr range corresponding to a single pmp entry */
         AddrRange pmpAddr = AddrRange(0, 0);
         /** raw addr in pmpaddr register for a pmp entry */
-        Addr rawAddr;
+        Addr rawAddr = 0;
         /** pmpcfg reg value for a pmp entry */
         uint8_t pmpCfg = 0;
+
+        void
+        serialize(CheckpointOut &cp) const
+        {
+            SERIALIZE_SCALAR(rawAddr);
+            SERIALIZE_SCALAR(pmpCfg);
+        }
+        void
+        unserialize(CheckpointIn &cp)
+        {
+            UNSERIALIZE_SCALAR(rawAddr);
+            UNSERIALIZE_SCALAR(pmpCfg);
+        }
     };
 
     /** a table of pmp entries */
@@ -159,16 +170,6 @@ class PMP : public SimObject
 
   private:
     /**
-     * This function is called during a memory
-     * access to determine if the pmp table
-     * should be consulted for this access.
-     * @param pmode current privilege mode of memory (U, S, M).
-     * @param tc thread context.
-     * @return true or false.
-     */
-    bool shouldCheckPMP(PrivilegeMode pmode, ThreadContext *tc);
-
-    /**
      * createAddrfault creates an address fault
      * if the pmp checks fail to pass for a given
      * access. This function is used by pmpCheck().
@@ -179,6 +180,18 @@ class PMP : public SimObject
      * @return Fault.
      */
     Fault createAddrfault(Addr vaddr, BaseMMU::Mode mode);
+
+    /**
+     * createDefaultFault creates an address fault when numRules = 0
+     * @param req memory request.
+     * @param mode mode of request (read, write, execute).
+     * @param pmode current privilege mode of memory (U, S, M).
+     * @param vaddr optional parameter to pass vaddr of original
+     * request for which a page table walk is consulted by pmp unit
+     * @return Fault.
+     */
+    Fault createDefaultFault(const RequestPtr &req, BaseMMU::Mode mode,
+                             PrivilegeMode pmode, Addr vaddr = 0);
 
     /**
      * pmpUpdateRule updates the pmp rule for a
@@ -206,6 +219,8 @@ class PMP : public SimObject
      */
     inline AddrRange pmpDecodeNapot(Addr pmpaddr);
 
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
 };
 
 } // namespace RiscvISA

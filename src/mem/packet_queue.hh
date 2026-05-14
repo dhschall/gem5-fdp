@@ -196,7 +196,6 @@ class PacketQueue : public Drainable
      * @param when time to schedule an event
      */
     void schedSendEvent(Tick when);
-    void schedSendEvent(Tick when, PacketPtr pkt);
 
     /**
      * Add a packet to the transmit list, and schedule a send event.

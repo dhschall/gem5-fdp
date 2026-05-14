@@ -3,7 +3,7 @@
         "id": "suite-example",
         "category": "suite",
         "resource_version": "1.0.0",
-        "gem5_versions": ["develop","23.1", "24.0"],
+        "gem5_versions": ["develop","23.1", "24.0", "24.1","25.0"],
         "workloads": [
             {
                 "id": "simple-workload-1",
@@ -38,7 +38,9 @@
         "resource_version": "1.0.0",
         "gem5_versions": [
             "develop",
-            "24.0"
+            "24.0",
+            "24.1",
+            "25.0"
         ]
     },
     {
@@ -62,7 +64,9 @@
         "resource_version": "1.0.0",
         "gem5_versions": [
             "develop",
-            "24.0"
+            "24.0",
+            "24.1",
+            "25.0"
         ]
     },
     {
@@ -77,7 +81,9 @@
         "resource_version": "1.0.0",
         "gem5_versions": [
             "develop",
-            "24.0"
+            "24.0",
+            "24.1",
+            "25.0"
         ]
     },
     {
@@ -93,7 +99,9 @@
         "resource_version": "1.0.0",
         "gem5_versions": [
             "develop",
-            "24.0"
+            "24.0",
+            "24.1",
+            "25.0"
         ]
     },
     {
@@ -108,7 +116,9 @@
         "resource_version": "1.0.0",
         "gem5_versions": [
             "develop",
-            "24.0"
+            "24.0",
+            "24.1",
+            "25.0"
         ]
     }
 ]

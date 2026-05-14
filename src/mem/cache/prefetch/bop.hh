@@ -1,5 +1,18 @@
 /**
+ * Copyright (c) 2025 Arm Limited
+ * All rights reserved
+ *
+ * The license below extends only to copyright in the software and shall
+ * not be construed as granting a license to any other intellectual
+ * property including but not limited to intellectual property relating
+ * to a hardware implementation of the functionality of the software
+ * licensed hereunder.  You may use the software subject to the license
+ * terms below provided that you ensure that this notice is replicated
+ * unmodified and in its entirety in all distributions of the software,
+ * modified or unmodified, in source code or in binary form.
+ *
  * Copyright (c) 2018 Metempsy Technology Consulting
+ * Copyright (c) 2024 Samsung Electronics
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -116,13 +129,14 @@ class BOP : public Queued
          *  @param addr: address to hash
          *  @param way:  RR table to which is addressed (left/right)
          */
-        unsigned int hash(Addr addr, unsigned int way) const;
+        unsigned int index(Addr addr, unsigned int way) const;
 
         /** Insert the specified address into the RR table
          *  @param addr: address to insert
+         *  @param addr_tag: The tag to insert in the RR table
          *  @param way: RR table to which the address will be inserted
          */
-        void insertIntoRR(Addr addr, unsigned int way);
+        void insertIntoRR(Addr addr, Addr addr_tag, unsigned int way);
 
         /** Insert the specified address into the delay queue. This will
          *  trigger an event after the delay cycles pass
@@ -140,17 +154,24 @@ class BOP : public Queued
         Addr tag(Addr addr) const;
 
         /** Test if @X-O is hitting in the RR table to update the
-            offset score */
-        bool testRR(Addr) const;
+         *  offset score
+         *  @param addr_tag: tag searched for within the RR
+        */
+        bool testRR(Addr addr_tag) const;
 
         /** Learning phase of the BOP. Update the intermediate values of the
-            round and update the best offset if found */
-        void bestOffsetLearning(Addr);
+         * round and update the best offset if found
+         * @param addr: full address used to compute X-O tag to determine
+         *              offset efficacy.
+        */
+        void bestOffsetLearning(Addr addr);
 
         /** Update the RR right table after a prefetch fill */
         void notifyFill(const CacheAccessProbeArg &arg) override;
 
     public:
+        /** The prefetch degree, i.e. the number of prefetches to generate */
+        unsigned int degree;
 
         BOP(const BOPPrefetcherParams &p);
         ~BOP() = default;

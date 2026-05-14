@@ -39,7 +39,6 @@
 
 #include <algorithm>
 
-#include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/TrafficGen.hh"
 
@@ -76,12 +75,12 @@ StridedGen::getNextPacket()
 {
     // choose if we generate a read or a write here
     bool isRead = readPercent != 0 &&
-        (readPercent == 100 || random_mt.random(0, 100) < readPercent);
+        (readPercent == 100 || rng->random(0, 100) < readPercent);
 
     assert((readPercent == 0 && !isRead) || (readPercent == 100 && isRead) ||
            readPercent != 100);
 
-    DPRINTF(TrafficGen, "StridedGen::getNextPacket: %c to addr %x, size %d\n",
+    DPRINTF(TrafficGen, "StridedGen::getNextPacket: %c to addr %#x, size %d\n",
             isRead ? 'r' : 'w', nextAddr, blocksize);
 
     // Add the amount of data manipulated to the total
@@ -101,7 +100,7 @@ StridedGen::getNextPacket()
 
     // If we have reached the end of the address space, reset the
     // address to the start of the range
-    if (nextAddr > endAddr) {
+    if (nextAddr >= endAddr) {
         DPRINTF(TrafficGen, "Wrapping address to the start of "
                 "the range\n");
         nextAddr = startAddr + offset;
@@ -122,7 +121,7 @@ StridedGen::nextPacketTick(bool elastic, Tick delay) const
         return MaxTick;
     } else {
         // return the time when the next request should take place
-        Tick wait = random_mt.random(minPeriod, maxPeriod);
+        Tick wait = rng->random(minPeriod, maxPeriod);
 
         // compensate for the delay experienced to not be elastic, by
         // default the value we generate is from the time we are

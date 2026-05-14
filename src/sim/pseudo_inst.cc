@@ -322,10 +322,6 @@ resetstats(ThreadContext *tc, Tick delay, Tick period)
     Tick repeat = period * sim_clock::as_int::ns;
 
     statistics::schedStatEvent(false, true, when, repeat);
-
-    if (tc->getCpuPtr()->system->params().exit_on_reset_stats) {
-        m5exit(tc, delay);
-    }
 }
 
 void
@@ -340,10 +336,6 @@ dumpstats(ThreadContext *tc, Tick delay, Tick period)
     Tick repeat = period * sim_clock::as_int::ns;
 
     statistics::schedStatEvent(true, false, when, repeat);
-
-    if (tc->getCpuPtr()->system->params().exit_on_dump_stats) {
-        m5exit(tc, delay);
-    }
 }
 
 void
@@ -359,10 +351,6 @@ dumpresetstats(ThreadContext *tc, Tick delay, Tick period)
     Tick repeat = period * sim_clock::as_int::ns;
 
     statistics::schedStatEvent(true, true, when, repeat);
-
-    if (tc->getCpuPtr()->system->params().exit_on_dump_reset_stats) {
-        m5exit(tc, delay);
-    }
 }
 
 void
@@ -618,6 +606,14 @@ workend(ThreadContext *tc, uint64_t workid, uint64_t threadid)
             exitSimLoop("work items exit count reached");
         }
     }
+}
+
+void
+m5Hypercall(ThreadContext *tc, uint64_t hypercall_id)
+{
+    DPRINTF(PseudoInst, "pseudo_inst::m5Hypercall(%i)\n", hypercall_id);
+    exitSimLoopWithHypercall("m5_hypercall instruction encountered", 0,
+    curTick(),0, std::map<std::string, std::string>(), hypercall_id, true);
 }
 
 } // namespace pseudo_inst

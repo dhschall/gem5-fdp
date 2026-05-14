@@ -85,8 +85,6 @@ def macroop BTC_R_I {
 };
 
 def macroop BTC_M_I {
-    .rmw
-    
     limm t1, imm, dataSize=asz
     # This fudges just a tiny bit, but it's reasonable to expect the
     # microcode generation logic to have the log of the various sizes
@@ -100,8 +98,6 @@ def macroop BTC_M_I {
 };
 
 def macroop BTC_P_I {
-    .rmw
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, 1
@@ -113,9 +109,6 @@ def macroop BTC_P_I {
 };
 
 def macroop BTC_LOCKED_M_I {
-    .rmw
-    .rmwa
-    
     limm t1, imm, dataSize=asz
     limm t4, 1
     roli t4, t4, imm
@@ -128,9 +121,6 @@ def macroop BTC_LOCKED_M_I {
 };
 
 def macroop BTC_LOCKED_P_I {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, 1
@@ -151,8 +141,6 @@ def macroop BTC_R_R {
 };
 
 def macroop BTC_M_R {
-    .rmw
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -165,8 +153,6 @@ def macroop BTC_M_R {
 };
 
 def macroop BTC_P_R {
-    .rmw
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
@@ -179,9 +165,6 @@ def macroop BTC_P_R {
 };
 
 def macroop BTC_LOCKED_M_R {
-    .rmw
-    .rmwa
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -196,9 +179,6 @@ def macroop BTC_LOCKED_M_R {
 };
 
 def macroop BTC_LOCKED_P_R {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
@@ -220,8 +200,6 @@ def macroop BTR_R_I {
 };
 
 def macroop BTR_M_I {
-    .rmw
-    
     limm t1, imm, dataSize=asz
     limm t4, "(uint64_t(-(2ULL)))"
     roli t4, t4, imm
@@ -232,8 +210,6 @@ def macroop BTR_M_I {
 };
 
 def macroop BTR_P_I {
-    .rmw
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, "(uint64_t(-(2ULL)))"
@@ -245,9 +221,6 @@ def macroop BTR_P_I {
 };
 
 def macroop BTR_LOCKED_M_I {
-    .rmw
-    .rmwa
-    
     limm t1, imm, dataSize=asz
     limm t4, "(uint64_t(-(2ULL)))"
     roli t4, t4, imm
@@ -260,9 +233,6 @@ def macroop BTR_LOCKED_M_I {
 };
 
 def macroop BTR_LOCKED_P_I {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, "(uint64_t(-(2ULL)))"
@@ -283,8 +253,6 @@ def macroop BTR_R_R {
 };
 
 def macroop BTR_M_R {
-    .rmw
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -297,8 +265,6 @@ def macroop BTR_M_R {
 };
 
 def macroop BTR_P_R {
-    .rmw
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
@@ -311,9 +277,6 @@ def macroop BTR_P_R {
 };
 
 def macroop BTR_LOCKED_M_R {
-    .rmw
-    .rmwa
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -328,9 +291,6 @@ def macroop BTR_LOCKED_M_R {
 };
 
 def macroop BTR_LOCKED_P_R {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
@@ -352,8 +312,6 @@ def macroop BTS_R_I {
 };
 
 def macroop BTS_M_I {
-    .rmw
-    
     limm t1, imm, dataSize=asz
     limm t4, 1
     roli t4, t4, imm
@@ -364,8 +322,6 @@ def macroop BTS_M_I {
 };
 
 def macroop BTS_P_I {
-    .rmw
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, 1
@@ -377,9 +333,6 @@ def macroop BTS_P_I {
 };
 
 def macroop BTS_LOCKED_M_I {
-    .rmw
-    .rmwa
-    
     limm t1, imm, dataSize=asz
     limm t4, 1
     roli t4, t4, imm
@@ -392,9 +345,6 @@ def macroop BTS_LOCKED_M_I {
 };
 
 def macroop BTS_LOCKED_P_I {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     limm t1, imm, dataSize=asz
     limm t4, 1
@@ -415,8 +365,6 @@ def macroop BTS_R_R {
 };
 
 def macroop BTS_M_R {
-    .rmw
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -429,8 +377,6 @@ def macroop BTS_M_R {
 };
 
 def macroop BTS_P_R {
-    .rmw
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
@@ -444,9 +390,6 @@ def macroop BTS_P_R {
 };
 
 def macroop BTS_LOCKED_M_R {
-    .rmw
-    .rmwa
-    
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz
     lea t3, flatseg, [dsz, t3, base], dataSize=asz
@@ -461,9 +404,6 @@ def macroop BTS_LOCKED_M_R {
 };
 
 def macroop BTS_LOCKED_P_R {
-    .rmw
-    .rmwa
-    
     rdip t7, dataSize=asz
     srai t2, reg, 3, dataSize=asz
     srai t3, t2, ldsz, dataSize=asz

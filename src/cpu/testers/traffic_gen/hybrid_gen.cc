@@ -39,7 +39,6 @@
 
 #include <algorithm>
 
-#include "base/random.hh"
 #include "base/trace.hh"
 #include "debug/TrafficGen.hh"
 #include "enums/AddrMap.hh"
@@ -142,11 +141,11 @@ HybridGen::getNextPacket()
     // start counting again
     if (countNumSeqPkts == 0) {
         isNvm = nvmPercent != 0 &&
-            (nvmPercent == 100 || random_mt.random(0, 100) < nvmPercent);
+            (nvmPercent == 100 || rng->random(0, 100) < nvmPercent);
 
         // choose if we generate a read or a write here
         isRead = readPercent != 0 &&
-            (readPercent == 100 || random_mt.random(0, 100) < readPercent);
+            (readPercent == 100 || rng->random(0, 100) < readPercent);
 
         assert((readPercent == 0 && !isRead) ||
                (readPercent == 100 && isRead) ||
@@ -186,11 +185,11 @@ HybridGen::getNextPacket()
 
         // pick a random bank
         unsigned int new_bank =
-            random_mt.random<unsigned int>(0, nbrOfBanksUtil - 1);
+            rng->random<unsigned int>(0, nbrOfBanksUtil - 1);
 
         // pick a random rank
         unsigned int new_rank =
-            random_mt.random<unsigned int>(0, nbrOfRanks - 1);
+            rng->random<unsigned int>(0, nbrOfRanks - 1);
 
         // Generate the start address of the command series
         // routine will update addr variable with bank, rank, and col
@@ -216,7 +215,7 @@ HybridGen::getNextPacket()
         }
     }
 
-    DPRINTF(TrafficGen, "HybridGen::getNextPacket: %c to addr %x, "
+    DPRINTF(TrafficGen, "HybridGen::getNextPacket: %c to addr %#x, "
             "size %d, countNumSeqPkts: %d, numSeqPkts: %d\n",
             isRead ? 'r' : 'w', addr, blocksize, countNumSeqPkts, numSeqPkts);
 
@@ -238,7 +237,7 @@ void
 HybridGen::genStartAddr(unsigned int new_bank, unsigned int new_rank)
 {
     // start by picking a random address in the range
-    addr = random_mt.random<Addr>(startAddr, endAddr - 1);
+    addr = rng->random<Addr>(startAddr, endAddr - 1);
 
     // round down to start address of a block, i.e. a DRAM burst
     addr -= addr % blocksize;
@@ -259,7 +258,7 @@ HybridGen::genStartAddr(unsigned int new_bank, unsigned int new_rank)
     // pick a random column, but ensure that there is room for
     // numSeqPkts sequential columns in the same page
     unsigned int new_col =
-        random_mt.random<unsigned int>(0, burst_per_page - numSeqPkts);
+        rng->random<unsigned int>(0, burst_per_page - numSeqPkts);
 
     if (addrMapping == enums::RoRaBaCoCh ||
         addrMapping == enums::RoRaBaChCo) {
@@ -296,7 +295,7 @@ HybridGen::nextPacketTick(bool elastic, Tick delay) const
         return MaxTick;
     } else {
         // return the time when the next request should take place
-        Tick wait = random_mt.random(minPeriod, maxPeriod);
+        Tick wait = rng->random(minPeriod, maxPeriod);
 
         // compensate for the delay experienced to not be elastic, by
         // default the value we generate is from the time we are

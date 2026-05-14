@@ -45,7 +45,7 @@ class PrefetchType(Enum):
 
 
 class GfxVersion(ScopedEnum):
-    vals = ["gfx900", "gfx902", "gfx908", "gfx90a", "gfx942"]
+    vals = ["gfx900", "gfx902", "gfx908", "gfx90a", "gfx942", "gfx950"]
 
 
 class PoolManager(SimObject):
@@ -204,6 +204,16 @@ class ComputeUnit(ClockedObject):
         "TCP and cu as well as TCP data array "
         "access. Specified in GPU clock cycles",
     )
+    memtime_latency = Param.Int(
+        41,
+        "Latency for memtimes in scalar memory pipeline. "
+        "Specified in GPU clock cycles",
+    )
+    mfma_scale = Param.Float(
+        1,
+        "Scale how long an mfma consumes the matrix core unit. "
+        "Multiplied into mfma cycle count in scoreboard stage",
+    )
     system = Param.System(Parent.any, "system object")
     cu_id = Param.Int("CU id")
     vrf_to_coalescer_bus_width = Param.Int(
@@ -305,7 +315,7 @@ class Shader(ClockedObject):
         """Insert rel packet into
                                          ruby at kernel end""",
     )
-    globalmem = Param.MemorySize("64kB", "Memory size")
+    globalmem = Param.MemorySize("64KiB", "Memory size")
     timing = Param.Bool(False, "timing memory accesses")
 
     cpu_pointer = Param.BaseCPU(NULL, "pointer to base CPU")
@@ -313,6 +323,12 @@ class Shader(ClockedObject):
     timer_period = Param.Clock("10us", "system timer period")
     idlecu_timeout = Param.Tick(0, "Idle CU watchdog timeout threshold")
     max_valu_insts = Param.Int(0, "Maximum vALU insts before exiting")
+    progress_interval = Param.Tick(
+        0,
+        "Print periodic status of GPU, with last executed instruction, "
+        "sequence number, and wavefront state. 1_000_000 is a reasonable "
+        "value in most cases. Set to 0 to disable.",
+    )
 
 
 class GPUComputeDriver(EmulatedDriver):

@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2019 ARM Limited
+# Copyright (c) 2017, 2019, 2025 Arm Limited
 # All rights reserved.
 #
 # The license below extends only to copyright in the software and shall
@@ -59,6 +59,7 @@ class System(SimObject):
     cxx_exports = [
         PyBindMethod("getMemoryMode"),
         PyBindMethod("setMemoryMode"),
+        PyBindProperty("physProxy", writable=False),
     ]
 
     memories = VectorParam.AbstractMemory(
@@ -84,6 +85,15 @@ class System(SimObject):
     # I/O bridge or cache
     mem_ranges = VectorParam.AddrRange(
         [], "Ranges that constitute main memory"
+    )
+
+    external_memory_ranges = VectorParam.AddrRange(
+        [],
+        "Ranges that are valid physical address but not part of physmem. "
+        "These are considered to be coherent addresses, not for I/O or "
+        "devices. This is used for external memory controllers which are "
+        "owned by a different instance of a `System` object (e.g., remote) "
+        "memory.",
     )
 
     # The ranges backed by a shadowed ROM
@@ -153,22 +163,4 @@ class System(SimObject):
         0,
         "Base of the 64KiB PA range used for "
         "memory-mapped m5ops. Set to 0 to disable.",
-    )
-
-    exit_on_dump_stats = Param.Bool(
-        False,
-        "Exit from the simulation loop when "
-        "doing a dump stats.",
-    )
-
-    exit_on_dump_reset_stats = Param.Bool(
-        False,
-        "Exit from the simulation loop when "
-        "doing a dump reset stats.",
-    )
-
-    exit_on_reset_stats = Param.Bool(
-        False,
-        "Exit from the simulation loop when "
-        "doing a reset stats.",
     )

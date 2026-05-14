@@ -65,6 +65,7 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       stats(_cpu)
 {
+    assert(!squashWidth.has_value() || (squashWidth > 0));
     //Figure out rob policy
     if (robPolicy == SMTQueuePolicy::Dynamic) {
         //Set Max Entries to Total ROB Capacity
@@ -97,8 +98,6 @@ ROB::ROB(CPU *_cpu, const BaseO3CPUParams &params)
     for (ThreadID tid = numThreads; tid < MaxThreads; tid++) {
         maxEntries[tid] = 0;
     }
-
-    depCheckShift = params.LSQDepCheckShift;
 
     resetState();
 }
@@ -153,12 +152,7 @@ ROB::resetEntries()
     if (robPolicy != SMTQueuePolicy::Dynamic || numThreads > 1) {
         auto active_threads = activeThreads->size();
 
-        std::list<ThreadID>::iterator threads = activeThreads->begin();
-        std::list<ThreadID>::iterator end = activeThreads->end();
-
-        while (threads != end) {
-            ThreadID tid = *threads++;
-
+        for (ThreadID tid : *activeThreads) {
             if (robPolicy == SMTQueuePolicy::Partitioned) {
                 maxEntries[tid] = numEntries / active_threads;
             } else if (robPolicy == SMTQueuePolicy::Threshold &&
@@ -282,12 +276,7 @@ bool
 ROB::canCommit()
 {
     //@todo: set ActiveThreads through ROB or CPU
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
+    for (ThreadID tid : *activeThreads) {
         if (isHeadReady(tid)) {
             return true;
         }
@@ -337,7 +326,7 @@ ROB::doSquash(ThreadID tid, bool squashedDueToMemOrder)
 
     bool robTailUpdate = false;
 
-    unsigned int numInstsToSquash = squashWidth;
+    auto numInstsToSquash = squashWidth.has_value() ? squashWidth : numEntries;
 
     // If the CPU is exiting, squash all of the instructions
     // it is told to, even if that exceeds the squashWidth.
@@ -367,27 +356,8 @@ ROB::doSquash(ThreadID tid, bool squashedDueToMemOrder)
 
         (*squashIt[tid])->setCanCommit();
 
-        if ((*squashIt[tid])->isLoad()) {
-            stats.squashedLoads++;
-            if ((*squashIt[tid])->isRMW()) {
-                stats.squashedRMWLoads++;
-            }
-            if ((*squashIt[tid])->isRMWA()) {
-                stats.squashedRMWALoads++;
-            }
-            if (squashedDueToMemOrder) {
-                (*squashIt[tid])->squashedDueToMemOrder = true;
-            }
-        }
-        
-        if ((*squashIt[tid])->isStore()) {
-            stats.squashedStores++;
-            if ((*squashIt[tid])->isRMW()) {
-                stats.squashedRMWStores++;
-            }
-            if ((*squashIt[tid])->isRMWA()) {
-                stats.squashedRMWAStores++;
-            }
+        if ((*squashIt[tid])->isLoad() && squashedDueToMemOrder) {
+            (*squashIt[tid])->squashedDueToMemOrder = true;
         }
 
 
@@ -435,12 +405,7 @@ ROB::updateHead()
     bool first_valid = true;
 
     // @todo: set ActiveThreads through ROB or CPU
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
+    for (ThreadID tid : *activeThreads) {
         if (instList[tid].empty())
             continue;
 
@@ -455,7 +420,7 @@ ROB::updateHead()
 
         DynInstPtr head_inst = (*head_thread);
 
-        assert(head_inst != 0);
+        assert(head_inst);
 
         if (head_inst->seqNum < lowest_num) {
             head = head_thread;
@@ -475,12 +440,7 @@ ROB::updateTail()
     tail = instList[0].end();
     bool first_valid = true;
 
-    std::list<ThreadID>::iterator threads = activeThreads->begin();
-    std::list<ThreadID>::iterator end = activeThreads->end();
-
-    while (threads != end) {
-        ThreadID tid = *threads++;
-
+    for (ThreadID tid : *activeThreads) {
         if (instList[tid].empty()) {
             continue;
         }
@@ -563,20 +523,7 @@ ROB::ROBStats::ROBStats(statistics::Group *parent)
     ADD_STAT(reads, statistics::units::Count::get(),
         "The number of ROB reads"),
     ADD_STAT(writes, statistics::units::Count::get(),
-        "The number of ROB writes"),
-    ADD_STAT(squashedLoads, statistics::units::Count::get(),
-        "The number of load instructions squashed"),
-    ADD_STAT(squashedRMWLoads, statistics::units::Count::get(),
-        "The number of read-modify-write load instructions squashed"),
-    ADD_STAT(squashedRMWALoads, statistics::units::Count::get(),
-        "The number of atomic read-modify-write load instructions squashed"),
-    ADD_STAT(squashedStores, statistics::units::Count::get(),
-        "The number of store instructions squashed"),
-    ADD_STAT(squashedRMWStores, statistics::units::Count::get(),
-        "The number of read-modify-write store instructions squashed"),
-    ADD_STAT(squashedRMWAStores, statistics::units::Count::get(),
-        "The number of atomic read-modify-write store instructions squashed")
-    
+        "The number of ROB writes")
 {
 }
 

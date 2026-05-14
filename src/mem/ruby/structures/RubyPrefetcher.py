@@ -36,7 +36,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from m5.objects.System import System
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import SimObject
@@ -61,6 +60,9 @@ class RubyPrefetcher(SimObject):
     )
     page_shift = Param.UInt32(
         12, "Number of bits to mask to get a page number"
+    )
+    block_size = Param.UInt32(
+        "Size of block to prefetch, usually cache line size"
     )
 
 

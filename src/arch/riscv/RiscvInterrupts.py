@@ -30,8 +30,11 @@
 
 from m5.citations import add_citation
 from m5.objects.BaseInterrupts import BaseInterrupts
-from m5.objects.IntPin import VectorIntSinkPin
-from m5.params import VectorParam
+from m5.params import (
+    Param,
+    VectorIntSinkPin,
+    VectorParam,
+)
 
 
 class RiscvInterrupts(BaseInterrupts):
@@ -43,20 +46,22 @@ class RiscvInterrupts(BaseInterrupts):
     local_interrupt_ids = VectorParam.Unsigned(
         [], "list of local interrupt ids"
     )
+    nmi_cause = Param.Int(0, "Non-maskable interrupt(NMI) cause")
 
 
 add_citation(
     RiscvInterrupts,
-    r"""@inproceedings{Hauser:2024:LocalRiscvInterrupts,
-    author = {Robert Hauser  and
-              Lukas Steffen and
-              Florian Gr{\"u}tzmacher and
-              Christian Haubelt},
-    title = {Analyzing Local RISC-V Interrupt Latencies with Virtual Prototyping},
-    booktitle = {Workshop Methoden und Beschreibungssprachen zur Modellierung und Verifikation von Schaltungen und Systemen (MBMV24)},
-    pages = {1-7},
-    year = {2024},
-    month = {2}
-    }
+    r"""@INPROCEEDINGS{Hauser:2024:LocalRiscvInterrupts,
+  author    = {Hauser, Robert and
+               Steffen, Lukas and
+               Gr{\"u}tzmacher, Florian and
+               Haubelt, Christian},
+  booktitle = {MBMV 2024; 27. Workshop},
+  title     = {Analyzing Local RISC-V Interrupt Latencies
+               with Virtual Prototyping},
+  year      = {2024},
+  pages     = {7-14},
+  address   = {Kaiserslautern, Germany},
+  }
     """,
 )

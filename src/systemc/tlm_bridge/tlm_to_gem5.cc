@@ -435,6 +435,7 @@ TlmToGem5Bridge<BITWIDTH>::transport_dbg(tlm::tlm_generic_payload &trans)
         pkt->pushSenderState(new Gem5SystemC::TlmSenderState(trans));
 
         bmp.sendFunctional(pkt);
+        setPayloadResponse(trans, pkt);
 
         gem5::Packet::SenderState *senderState = pkt->popSenderState();
         sc_assert(
@@ -469,6 +470,15 @@ TlmToGem5Bridge<BITWIDTH>::get_direct_mem_ptr(tlm::tlm_generic_payload &trans,
     }
     Addr start_addr = trans.get_address();
     Addr length = trans.get_data_length();
+
+    // The data_length field in trans is not a required field when doing
+    // get_direct_mem_ptr, so the size might be 0.
+    // However, if the length is 0, the created AddrRange in gem5 will have
+    // different meaning.
+    // To avoid the situation, set length to 1 if the original length is 0.
+    if (length == 0) {
+        length = 1;
+    }
 
     MemBackdoorReq req({start_addr, start_addr + length}, flags);
     MemBackdoorPtr backdoor = nullptr;
@@ -515,7 +525,7 @@ TlmToGem5Bridge<BITWIDTH>::recvTimingResp(PacketPtr pkt)
      *
      * See recvTimingReq in sc_slave_port.cc for a detailed description.
      */
-    auto delay = sc_core::sc_time::from_value(pkt->payloadDelay);
+    auto delay = sc_core::sc_time::from_value(pkt->headerDelay);
     // reset the delays
     pkt->payloadDelay = 0;
     pkt->headerDelay = 0;
