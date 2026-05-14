@@ -19,7 +19,7 @@ PHAST is much more complex than Store Sets and so required several changes and o
 ## Additional Optimisations:
 - Includes an L3 Cache, taken from https://github.com/SamAinsworth/gem5-triangel/. Enable all of L3/2/1 at once with `--last-level-cache`. Parameters of each level is configured as normal with --lN_size, --lN_assoc, and now also --lN_mshrs.
 - Latency of L2 reduced to 14 cycles from 40, as there's now an L3.
-- Latency of L1-I reduced to 1 cycle to represent using a u-op cache, as per https://github.com/darchr/gem5-skylake-config/blob/master/configuration-details.md.
+- Latency of L1-I reduced to 1 cycle to represent using a u-op cache, as per https://dl.acm.org/doi/10.1145/3613424.3614258
 - Store-to-load forwarding latency is parameterised in BaseO3CPU.py as LSQForwardingLatency with a default of 4 cycles.
 - Stride Prefetcher is set to a default degree of 8, prefetch_on_pf_hit is set to True and prefetch_on_access is set to False.
 
