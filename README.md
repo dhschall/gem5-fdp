@@ -1,5 +1,5 @@
 # The PHAST Memory Dependence predictor
-This Gem5 fork implements the PHAST MDP (https://ieeexplore.ieee.org/document/10476400), a new MDP algorithm which can achieve very high accuracy at low hardware budgets. This Gem5 was originally based on an optimised fork from the University of Murcia (https://github.com/CAPS-UMU/gem5), and has since been extended to include further optimisations over upstream too. 
+This Gem5 v25 fork implements the PHAST MDP (https://ieeexplore.ieee.org/document/10476400), the state of the art in memory dependence prediction. This Gem5 was originally based on an optimised fork from the University of Murcia (https://github.com/CAPS-UMU/gem5), and has since been extended to include further optimisations over upstream too. 
 
 ## MDP Changes:
 PHAST is much more complex than Store Sets and so required several changes and optimisations outside of just the MDP unit to work properly:
