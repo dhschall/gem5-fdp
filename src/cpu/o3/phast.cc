@@ -120,7 +120,7 @@ PredictionResult PHAST::checkInst(Addr load_pc, InstSeqNum load_seq_num, BranchH
     while (begin < branchHistory.size() && branchHistory[begin].seqNum > load_seq_num) {
         begin++;
     }
-    if (begin > branchHistory.size()) return prediction; //no +1 branch
+    if (begin >= branchHistory.size()) return prediction; //no +1 branch
 
     if (historySizes[maxBranches] > branchHistory.size()) {
         int i;
@@ -178,15 +178,16 @@ void PHAST::violation(Addr load_pc, InstSeqNum load_seq_num, InstSeqNum store_se
         }
     }
 
+    uint64_t path_hash = generateBranchHash(i, num_branches, branchHistory, 0);
+
     /*This load was given a prediction but violated anyway, reduce the confidence counter*/
-    if (predicted) {
+    if (predictedHash != path_hash && predicted) {
         paths[predictedPathIndex].updateCommit(load_pc, predictedHash, true);
         ++(memDepUnit->stats.falseDependencies);
         ++(*(memDepUnit->pathReads[predictedPathIndex]));
         ++(*(memDepUnit->pathWrites[predictedPathIndex]));
     }
 
-    uint64_t path_hash = generateBranchHash(i, num_branches, branchHistory, 0);
     paths[i].update(load_pc, path_hash, storeQueueDistance, SQEntries);
 
     maxBranches = std::max(maxBranches, i);
