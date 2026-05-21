@@ -45,7 +45,7 @@ SimObject('BranchPredictor.py',
     sim_objects=[
     'BranchPredictor',
     'ConditionalPredictor',
-    'IndirectPredictor', 'SimpleIndirectPredictor', 'ITTAGE',
+    'IndirectPredictor', 'SimpleIndirectPredictor', #'ITTAGE',
     'BranchTargetBuffer', 'SimpleBTB', 'BTBIndexingPolicy', 'BTBSetAssociative', 'AssociativeBTB',
     'ReturnAddrStack',
     'ITTAGE', 'ITTAGE_TAGE',
@@ -70,7 +70,7 @@ Source('simple_indirect.cc')
 Source('conditional.cc')
 Source('it_tage.cc')
 Source('indirect.cc')
-Source('ittage.cc')
+#Source('ittage.cc')
 Source('ras.cc')
 Source('tournament.cc')
 Source('bi_mode.cc')

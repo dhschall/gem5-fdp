@@ -215,22 +215,22 @@ class SimpleIndirectPredictor(IndirectPredictor):
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
 
-class ITTAGE(IndirectPredictor):
-    type = 'ITTAGE'
-    cxx_class = 'gem5::branch_prediction::ITTAGE'
-    cxx_header = "cpu/pred/ittage.hh"
-
-    indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
-    numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
-    tableSizes = VectorParam.Int(
-        [256] * 15, "the ITTAGE T1~Tn length")
-    TTagBitSizes = VectorParam.Int(
-        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
-    TTagPcShifts = VectorParam.Int(
-        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
-    histLengths = VectorParam.Int(
-        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
-    simpleBTBSize = Param.Unsigned(512, "size of base predictor")
+#class ITTAGE(IndirectPredictor):
+#    type = 'ITTAGE'
+#    cxx_class = 'gem5::branch_prediction::ITTAGE'
+#    cxx_header = "cpu/pred/ittage.hh"
+#
+#    indirectPathLength = Param.Unsigned(3, "Previous indirect targets to use for path history")
+#    numPredictors = Param.Unsigned(11, "Number of TAGE predictors")
+#    tableSizes = VectorParam.Int(
+#        [256] * 15, "the ITTAGE T1~Tn length")
+#    TTagBitSizes = VectorParam.Int(
+#        [9, 9, 13, 13, 13, 13, 13, 13, 13, 13, 15, 15, 15, 15, 15], "the T1~Tn entry's tag bit size")
+#    TTagPcShifts = VectorParam.Int(
+#        [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "when the T1~Tn entry's tag generating, PC right shift")
+#    histLengths = VectorParam.Int(
+#        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
+#    simpleBTBSize = Param.Unsigned(512, "size of base predictor")
 
 class BranchPredictor(SimObject):
     type = "BranchPredictor"
@@ -502,7 +502,7 @@ class TAGE_SC_L_TAGE_128KB(TAGE_SC_L_TAGE):
     nHistoryTables = 40
  
     minHist = 6        # unchanged from 64KB
-    maxHist = 6000     # 64KB = 3000; 2× for 128KB
+    maxHist = 3000     
  
     # One useful bit per entry is sufficient (same as 64KB).
     tagTableUBits = 1
@@ -797,9 +797,7 @@ class TAGE_SC_L(LTAGE):
     )
 
 class TAGE_SC_L_128KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
-    # logSizeLoopPred progression: 8KB=3, 64KB=5, 128KB=6
-    # (roughly one extra bit per 2× budget increase)
-    logSizeLoopPred = 6
+    logSizeLoopPred = 5
 
 class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 5
