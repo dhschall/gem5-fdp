@@ -72,6 +72,10 @@ def _get_cache_opts(level, options):
     if hasattr(options, mshrs_attr):
         opts["mshrs"] = getattr(options, mshrs_attr)
 
+    if level == "l1i" and options.use_fdp: 
+        #l1i prefetcher set manually in se.py
+        return opts
+
     prefetcher_attr = f"{level}_hwp_type"
     if hasattr(options, prefetcher_attr):
         opts["prefetcher"] = _get_hwp(getattr(options, prefetcher_attr))

@@ -228,6 +228,7 @@ class TaggedPrefetcher(QueuedPrefetcher):
     cxx_header = "mem/cache/prefetch/tagged.hh"
 
     degree = Param.Int(2, "Number of prefetches to generate")
+    use_virtual_addresses=True
 
 
 class IndirectMemoryPrefetcher(QueuedPrefetcher):

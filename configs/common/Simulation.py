@@ -553,7 +553,9 @@ def run(options, root, testsys, cpu_class):
 
         testsys.switch_cpus = switch_cpus
         switch_cpu_list = [(testsys.cpu[i], switch_cpus[i]) for i in range(np)]
-        testsys.cpu[0].icache.prefetcher.cpu = switch_cpus[0]
+        if options.use_fdp:
+            testsys.cpu[0].icache.prefetcher.cpu = switch_cpus[0]
+            testsys.cpu[0].icache.prefetcher.registerMMU(switch_cpus[0].mmu)
 
     if options.repeat_switch:
         switch_class = getCPUClass(options.cpu_type)[0]

@@ -312,6 +312,11 @@ def addCommonOptions(parser, default_isa: Optional[ISA] = None):
         help="List available hardware prefetcher types",
     )
     parser.add_argument(
+        "--use-fdp", 
+        action="store_true",
+        help="Use the Fetch Directed Instruction Prefetcher for L1I, overrides --l1i-hwp-prefetcher. Requires a decoupled frontend."
+    )
+    parser.add_argument(
         "--l1i-hwp-type",
         default=None,
         choices=ObjectList.hwp_list.get_names(),
