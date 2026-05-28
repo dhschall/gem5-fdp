@@ -86,7 +86,6 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool limitRet;
     const bool markovUseRecency;
     const bool updateDirOnlyL1;
-    const bool inclusive;
     const bool newPBits;
     const bool onlyCall;
     const bool onlyCallAndBackward;

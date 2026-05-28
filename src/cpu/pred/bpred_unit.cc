@@ -1083,6 +1083,8 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Number of L1 BTB hits per thread and branch type (MultiLevelBTB only)"),
       ADD_STAT(l2btbHits, statistics::units::Count::get(),
               "Number of L2 BTB hits per thread and branch type (MultiLevelBTB only)"),
+      ADD_STAT(l3btbHits, statistics::units::Count::get(),
+              "Number of L3 BTB hits per thread and branch type (MultiLevelBTB only)"),
       ADD_STAT(pBufferHits, statistics::units::Count::get(),
               "Number of pBuffer hits (MultiLevelBTB Policy 4 only)"),
       ADD_STAT(committedPrefetchHits, statistics::units::Count::get(),

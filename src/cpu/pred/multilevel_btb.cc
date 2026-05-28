@@ -238,7 +238,6 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       limitRet(p.limitRet),
       markovUseRecency(p.markovUseRecency),
       updateDirOnlyL1(p.updateDirOnlyL1),
-      inclusive(p.inclusive),
       newPBits(p.newPBits),
       onlyCall(p.onlyCall),
       onlyCallAndBackward(p.onlyCallAndBackward),
@@ -546,27 +545,8 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
     entry->update(target, inst);
     l1btb.accessEntry(entry);
 
-    // If not inclusive we are done.
-    // The L2 will be updated on evictions
-    if (!inclusive)
-        return;
-
-    // L2 update -----------------------
-    entry = l2btb.findEntry({instPC, tid});
-    if (!entry) {
-
-        // L1 miss find victim
-        entry = l2btb.findVictim({instPC, tid}, true);
-        // Initialize new L1 entry
-        l2btb.insertEntry({instPC, tid}, entry);
-        if (usesPrefetchBitPolicy()) {
-            entry->setPrefetchTarget(true);
-            entry->setPrefetchThrough(false);
-        }
-    }
-    entry->update(target, inst);
-    l2btb.accessEntry(entry);
-
+    // L2 will be updated on L1 evictions.
+    return;
 }
 
 //=============================================================================
@@ -852,15 +832,17 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // Insert entry into L1
     // -------------------------------------------------------------------------
 
-    // Access L2 to prevent replacing it.
-    l2btb.accessEntry(l2_entry);
-    DPRINTF(BTB, "%s(pc=%#x) -> L2[pc=%#x tgt=%#x]\n", __func__, instPC,
-            l2_entry->getBranchAddr(), l2_entry->target->instAddr());
+    // Keep hierarchy non-redundant: on L2 hit, migrate the entry to L1.
+    // Snapshot first because freeUpL1Entry() may overwirte l2_entry if l2_entry is invalidated.
+    BTBEntry l2_snapshot(*l2_entry);
+    DPRINTF(BTB, "%s(pc=%#x) -> L2[pc=%#x tgt=%#x], migrate to L1\n", __func__, instPC,
+            l2_snapshot.getBranchAddr(), l2_snapshot.target->instAddr());
+    l2btb.invalidate(l2_entry);
 
     BTBEntry *l1_victim = freeUpL1Entry(tid, instPC);
-    assert(instPC == l2_entry->getBranchAddr()); // Ensure the write back has not modified the L2 entry.
+    assert(instPC == l2_snapshot.getBranchAddr()); // Ensure the write back has not modified the L2 entry.
 
-    l1_victim->update(*l2_entry);
+    l1_victim->update(l2_snapshot);
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l2Latency);
 
@@ -881,8 +863,8 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
     // cleanBitsOnL1Promotion: reset prefetch bits on L2->L1 demand fill
     if (!cleanBitsOnL1Promotion) {
-        l1_victim->setPrefetchThrough(l2_entry->getPrefetchThrough());
-        l1_victim->setPrefetchTarget(l2_entry->getPrefetchTarget());
+        l1_victim->setPrefetchThrough(l2_snapshot.getPrefetchThrough());
+        l1_victim->setPrefetchTarget(l2_snapshot.getPrefetchTarget());
     } else {
         l1_victim->setPrefetchThrough(false);
         l1_victim->setPrefetchTarget(false);
@@ -893,7 +875,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // -------------------------------------------------------------------------
     bool doPrefetch = true;
     if (prefetchOnlyForward) {
-        Addr targetAddr = l2_entry->target->instAddr();
+        Addr targetAddr = l2_snapshot.target->instAddr();
         bool isBackward = (targetAddr < instPC);
         if (type == BranchType::DirectCond || type == BranchType::IndirectCond) {
             if (isBackward && taken) {
@@ -1010,14 +992,14 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     // }
 
     if (bbMap_) {
-        Addr targetAddr = l2_entry->target->instAddr();
+        Addr targetAddr = l2_snapshot.target->instAddr();
         Addr fallThrough = instPC + minInstSize;
         auto baseLatency = l2Latency;
 
-        bool doPfTarget = l2_entry->getPrefetchTarget();
-        bool doPfThrough = l2_entry->getPrefetchThrough();
+        bool doPfTarget = l2_snapshot.getPrefetchTarget();
+        bool doPfThrough = l2_snapshot.getPrefetchThrough();
 
-        bool isBackward = (l2_entry->target->instAddr() < instPC);
+        bool isBackward = (l2_snapshot.target->instAddr() < instPC);
         applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough, L2Hit);
         int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
         prevBwBranch.is_bw = isBackward;
@@ -1043,8 +1025,8 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l2Latency);
 
-    return BTBLookupResult(l2_entry->target.get(), l2Latency,
-                           false, false, true, false, false, false, l2_entry->getDir());
+    return BTBLookupResult(l1_victim->target.get(), l2Latency,
+                           false, false, true, false, false, false, l1_victim->getDir());
 }
 
 
@@ -1054,21 +1036,22 @@ MultiLevelBTB::handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
 {
     multilevelstats.l3Hits++;
 
-    // Access L3 to prevent replacing it.
-    l3btb.accessEntry(l3_entry);
-    DPRINTF(BTB, "%s(pc=%#x) -> L3[pc=%#x tgt=%#x]\n", __func__, instPC,
-            l3_entry->getBranchAddr(), l3_entry->target->instAddr());
+    // Keep hierarchy non-redundant: on L3 hit, migrate the entry to L1..
+    BTBEntry l3_snapshot(*l3_entry);
+    DPRINTF(BTB, "%s(pc=%#x) -> L3[pc=%#x tgt=%#x], migrate to L1\n", __func__, instPC,
+            l3_snapshot.getBranchAddr(), l3_snapshot.target->instAddr());
+    l3btb.invalidate(l3_entry);
 
     BTBEntry *l1_entry = freeUpL1Entry(tid, instPC);
-    assert(instPC == l3_entry->getBranchAddr()); // Ensure the write back has not modified the L3 entry.
+    assert(instPC == l3_snapshot.getBranchAddr()); // Ensure the write back has not modified the L3 entry.
 
-    l1_entry->update(*l3_entry);
+    l1_entry->update(l3_snapshot);
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
     DPRINTF(BTB, "L3 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
             instPC, l3Latency);
 
-    return BTBLookupResult(l3_entry->target.get(), l3Latency,
-                           false, false, false, true, false, false, l3_entry->getDir());
+    return BTBLookupResult(l1_entry->target.get(), l3Latency,
+                           false, false, false, true, false, false, l1_entry->getDir());
 }
 
 void
@@ -1533,7 +1516,7 @@ MultiLevelBTB::freeUpL1Entry(ThreadID tid, Addr instPC)
 
     // Get L1 victim
     BTBEntry *l1_victim = l1btb.findVictim({instPC, tid}, false);
-    if (l1_victim->isValid() && !inclusive) {
+    if (l1_victim->isValid()) {
 
         // Perform writeback
         DPRINTF(BTB, "Evict L1[pc=%#x %s]\n", l1_victim->getBranchAddr(), l1_victim->print());
