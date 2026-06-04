@@ -5,9 +5,11 @@
 #include "cpu/pred/conditional.hh"
 #include "cpu/pred/btb.hh"
 #include "cpu/pred/btb_entry.hh"
+#include "mem/cache/tags/tagged_entry.hh"
 #include "params/MultiLevelBTB.hh"
 #include <deque>
 #include <unordered_set>
+#include <queue>
 #include <vector>
 
 namespace gem5::branch_prediction
@@ -199,6 +201,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar pfTriggerBwExit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerFwExit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerCondAlt;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfInserted;  // branch not in L1 at commit, found in L2
 
         statistics::Scalar skipDuetoDemand;
         statistics::Scalar skipDuetoPresence;
@@ -225,6 +228,32 @@ class MultiLevelBTB : public BranchTargetBuffer
     // key: branch PC (L1 miss, L2 hit)
     // value: map of successor PC -> access frequency
     std::unordered_map<Addr, std::unordered_map<Addr, uint64_t>> markovSuccessors;
+
+    struct MarkovEntry : public TaggedEntry
+    {
+        /** vector containing the state of the cachelines in this zone */
+        std::vector<std::pair<Addr, uint64_t>> successors;
+
+        MarkovEntry(size_t num_entries, TagExtractor ext)
+          : TaggedEntry()
+        {
+            registerTagExtractor(ext);
+        }
+
+        void
+        invalidate() override
+        {
+            TaggedEntry::invalidate();
+            successors.clear();
+        }
+    };
+
+    const bool limitedMarkov;
+    const bool markovOnlyMisses;
+    const int maxMarkovSuccessors;
+    AssociativeCache<MarkovEntry> markov;
+
+    std::queue<std::pair<Addr, bool>> prevBranches;
 
     struct BranchInfo {
         Addr pc;

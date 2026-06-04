@@ -42,6 +42,7 @@
 from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
 from m5.objects.ReplacementPolicies import *
+from m5.objects.Tags import *
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import *
@@ -290,6 +291,31 @@ class MultiLevelBTB(BranchTargetBuffer):
         False,
         "Select Markov successor by recency (curTick) instead of frequency",
     )
+
+    limitedMarkov = Param.Bool(
+        False,
+        "The Markov prefetcher which should be the upper bound to prefetch bits prefetcher",
+    )
+    markovOnlyMisses = Param.Bool(
+        False,
+        "The Markov prefetcher which should be the upper bound to prefetch bits prefetcher",
+    )
+    maxMarkovSuccessors = Param.Unsigned(
+        4, "Max number of active chains in the chain tracker table"
+    )
+    markov_assoc = Param.Int(8, "Associativity of the PC table")
+    markov_entries = Param.MemorySize("2048", "Number of entries of the PC table")
+    markov_indexing_policy = Param.TaggedIndexingPolicy(
+        TaggedSetAssociative(
+            entry_size=1, assoc=Parent.markov_assoc, size=Parent.markov_entries
+        ),
+        "Indexing policy of the PC table",
+    )
+    markov_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the PC table"
+    )
+
+
     updateDirOnlyL1 = Param.Bool(
         True,
         "Only update direction/PBits in L1 BTB",

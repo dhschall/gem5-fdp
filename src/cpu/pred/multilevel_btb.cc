@@ -72,6 +72,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(pfTriggerBwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerFwExit, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(pfTriggerCondAlt, statistics::units::Ratio::get(), "number of L2 updates"),
+      ADD_STAT(pfInserted, statistics::units::Ratio::get(), "number of L2 updates"),
       ADD_STAT(skipDuetoDemand, statistics::units::Count::get(),
                "Prefetch entries dropped: demand access to same PC"),
       ADD_STAT(skipDuetoPresence, statistics::units::Count::get(),
@@ -248,6 +249,16 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       prefetchFwExitOnL1Hit(p.prefetchFwExitOnL1Hit),
       useCompressedTagFilter(p.useCompressedTagFilter),
       multilevelstats(this, this),
+      limitedMarkov(p.limitedMarkov),
+      markovOnlyMisses(p.markovOnlyMisses),
+      maxMarkovSuccessors(p.maxMarkovSuccessors),
+      markov("MarkovTable",
+                     p.markov_entries,
+                     p.markov_assoc,
+                     p.markov_replacement_policy,
+                     p.markov_indexing_policy,
+                     MarkovEntry(p.maxMarkovSuccessors,
+                        genTagExtractor(p.markov_indexing_policy))),
       l1MissL2HitHistory(p.numThreads),
       prevBranchPC(p.numThreads, 0),
       shadowPrevBranchPC(p.numThreads, 0),
@@ -270,7 +281,9 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
 
     chainTable.resize(maxChainTrackerEntries);
 
-    
+
+    for (int i = 0; i < 4; i++)
+        prevBranches.push({i, false});
 }
 
 void
@@ -422,7 +435,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
     // ==========================================================================
     if (l1PrefetchPolicy == 4 || l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
         l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10 ||
-        l1PrefetchPolicy == 11 || finalMarkov || trainBitsOnLookup ||
+        l1PrefetchPolicy == 11 || finalMarkov || limitedMarkov || trainBitsOnLookup ||
         trainBitsOnCommit) {
         BTBEntry *pB_entry = pBuffer.accessEntry({instPC, tid});
         if (pB_entry != nullptr) {
@@ -617,7 +630,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
         }
     }
 
-    if (prefetchOnL1Hit && finalMarkov) {
+    if (prefetchOnL1Hit && (finalMarkov || limitedMarkov)) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
         if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
             numSucc = 2;
@@ -769,7 +782,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     // Markov prefetch chain
     // -------------------------------------------------------------------------
     if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 ||
-        l1PrefetchPolicy == 8 || finalMarkov) {
+        l1PrefetchPolicy == 8 || finalMarkov || limitedMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
         if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
             numSucc = 2;
@@ -947,7 +960,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
         prefetchMarkovSuccessor(tid, instPC, true, 1, false, l2Latency,
                                 type);   // Prefetch 1 to L1
     } else if (l1PrefetchPolicy == 6 || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 ||
-               finalMarkov) {
+               finalMarkov || limitedMarkov) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
         if (limitRet && finalMarkov && prefetchAllMarkovSuccessors && type == BranchType::Return) {
             numSucc = 2;
@@ -1170,22 +1183,39 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
                                        unsigned numSuccessors, bool triggeredByPBHit,
                                        Cycles baseLatency, BranchType triggerType, int depth)
 {
-    auto it = markovSuccessors.find(pc);
-    if (it == markovSuccessors.end() || it->second.empty()) {
-        return;  // No successor data for this PC
+    // Build a vector of (successor, frequency) pairs and sort by frequency
+    std::vector<std::pair<Addr, uint64_t>> successors;
+
+    if (limitedMarkov) {
+
+        const TaggedEntry::KeyType key{pc,true};
+        auto entry = markov.findEntry(key);
+
+        DPRINTF(BTB, "Check Markov pc=%llx hit=%i\n", pc, entry!=nullptr);
+        if (!entry) {
+            return;
+        }
+        markov.accessEntry(entry);
+
+        successors = entry->successors;
+
+    } else {
+
+    // Unlimited Markov
+        auto it = markovSuccessors.find(pc);
+        if (it == markovSuccessors.end() || it->second.empty()) {
+            return;  // No successor data for this PC
+        }
+        for (const auto& [succ, freq] : it->second) {
+            successors.push_back({succ, freq});
+        }
     }
 
     multilevelstats.mkHits++;
 
-    // Build a vector of (successor, frequency) pairs and sort by frequency
-    std::vector<std::pair<Addr, uint64_t>> successors;
-    for (const auto& [succ, freq] : it->second) {
-        successors.push_back({succ, freq});
-    }
-
-    // Sort by frequency (descending)
-    std::sort(successors.begin(), successors.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
+    // // Sort by frequency (descending)
+    // std::sort(successors.begin(), successors.end(),
+    //           [](const auto& a, const auto& b) { return a.second > b.second; });
 
     Cycles arrival = curCycle() + l2Latency + baseLatency;
 
@@ -1202,6 +1232,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
 
         // Check if already in L1
         if (l1ApproxContains(successor, tid)) {
+            arrival += Cycles(1);
             continue;
         }
         // Find in L2
@@ -1219,6 +1250,7 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
 
         // Skip if already in pBuffer (for pBuffer-targeting prefetches)
         if (!toL1 && pbApproxContains(successor, tid)) {
+            arrival += Cycles(1);
             continue;
         }
 
@@ -1229,8 +1261,11 @@ MultiLevelBTB::prefetchMarkovSuccessor(ThreadID tid, Addr pc, bool toL1,
 
         if (depth > 2){
             BranchType nextTriggerType = getBranchType(l2_entry->inst);
-            prefetchMarkovSuccessor(tid, successor, toL1, numSuccessors, triggeredByPBHit, arrival, nextTriggerType, depth - 1);
+            Cycles nextBaseLatency = (arrival > curCycle()) ? (arrival - curCycle()) : Cycles(0);
+            prefetchMarkovSuccessor(tid, successor, toL1, numSuccessors, triggeredByPBHit, nextBaseLatency, nextTriggerType, depth - 1);
         }
+
+        arrival += Cycles(1);
 
         prefetched++;
     }
@@ -1242,9 +1277,72 @@ MultiLevelBTB::trainMarkovOnCommit(ThreadID tid, Addr pc, Addr startAddr,
                                    Addr targetAddr, unsigned instSize,
                                    bool actuallyTaken, bool wasL2Hit)
 {
-    if (!(finalMarkov || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10)) {
+    if (!(finalMarkov || limitedMarkov || l1PrefetchPolicy == 7 || l1PrefetchPolicy == 8 || l1PrefetchPolicy == 9 || l1PrefetchPolicy == 10)) {
         return;
     }
+
+    if (limitedMarkov) {
+        if (markovOnlyMisses && !wasL2Hit)
+            return;
+
+        Addr src, dest;
+        // if (markovOnlyMisses) {
+
+
+        src = prevBranches.front().first;
+        prevBranches.pop();
+        // src = prevBranches[pc];
+        dest = pc;
+
+        prevBranchPC[tid] = pc;
+        prevBranches.push({pc, wasL2Hit});
+
+        DPRINTF(BTB, "Train Markov src=%llx, dest=%llx\n", src, dest);
+
+
+        const TaggedEntry::KeyType key{src,true};
+        auto entry = markov.findEntry(key);
+        if (entry != nullptr) {
+            markov.accessEntry(entry);
+        } else {
+            entry = markov.findVictim(key);
+            assert(entry != nullptr);
+
+            markov.insertEntry(key, entry);
+        }
+
+
+        auto& successors = entry->successors;
+        // Check if successor exists
+        auto it = std::find_if(successors.begin(), successors.end(),
+                    [dest](const auto& a) { return a.first == dest; });
+
+        if (it != successors.end()) {
+            DPRINTF(BTB, "Hit on successor PC=%#x, freq=%i\n", successors.back().first, successors.back().second);
+            it->second++;
+            return;
+        }
+
+        // No entry successor exits
+        if (successors.size() >= maxMarkovSuccessors) {
+
+            // Sort by frequency (descending)
+            std::sort(successors.begin(), successors.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+
+            DPRINTF(BTB, "Evict successor PC=%#x, freq=%i\n", successors.back().first, successors.back().second);
+
+            // evict least recent
+            successors.pop_back();
+        }
+        assert(successors.size() < maxMarkovSuccessors);
+
+        successors.push_back({dest, 1});
+
+        DPRINTF(BTB, "Insert new successor PC=%#x, freq=%i\n", successors.back().first, successors.back().second);
+        return;
+    }
+
     if (finalMarkov) {
         // auto &prev = prevCommitBlockInfo[tid];
         // if (prev.valid) {
