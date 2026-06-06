@@ -320,9 +320,9 @@ class MultiLevelBTB(BranchTargetBuffer):
         True,
         "Only update direction/PBits in L1 BTB",
     )
-    inclusive = Param.Bool(
+    nonexclusive = Param.Bool(
         False,
-        "Only update direction/PBits in L1 BTB",
+        "Make L3 inclusive of L2. On L1 eviction, migrate the entry to both L2 and L3",
     )
     newPBits = Param.Bool(
         False,

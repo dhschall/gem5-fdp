@@ -239,6 +239,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       limitRet(p.limitRet),
       markovUseRecency(p.markovUseRecency),
       updateDirOnlyL1(p.updateDirOnlyL1),
+      nonexclusive(p.nonexclusive),
       newPBits(p.newPBits),
       onlyCall(p.onlyCall),
       onlyCallAndBackward(p.onlyCallAndBackward),
@@ -847,10 +848,16 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
 
     // Keep hierarchy non-redundant: on L2 hit, migrate the entry to L1.
     // Snapshot first because freeUpL1Entry() may overwirte l2_entry if l2_entry is invalidated.
+    if (nonexclusive) {
+        // keep consistent with Ferret paper
+        l2btb.accessEntry(l2_entry);
+    }
     BTBEntry l2_snapshot(*l2_entry);
     DPRINTF(BTB, "%s(pc=%#x) -> L2[pc=%#x tgt=%#x], migrate to L1\n", __func__, instPC,
             l2_snapshot.getBranchAddr(), l2_snapshot.target->instAddr());
-    l2btb.invalidate(l2_entry);
+    if (!nonexclusive) {
+        l2btb.invalidate(l2_entry);
+    }
 
     BTBEntry *l1_victim = freeUpL1Entry(tid, instPC);
     assert(instPC == l2_snapshot.getBranchAddr()); // Ensure the write back has not modified the L2 entry.
@@ -1048,12 +1055,18 @@ MultiLevelBTB::handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
                            BranchType type, bool taken)
 {
     multilevelstats.l3Hits++;
-
+    if (nonexclusive) {
+        // For BTB-Ferret rebuttal, make L3 inclusive
+        l3btb.accessEntry(l3_entry);
+    }
     // Keep hierarchy non-redundant: on L3 hit, migrate the entry to L1..
     BTBEntry l3_snapshot(*l3_entry);
     DPRINTF(BTB, "%s(pc=%#x) -> L3[pc=%#x tgt=%#x], migrate to L1\n", __func__, instPC,
             l3_snapshot.getBranchAddr(), l3_snapshot.target->instAddr());
-    l3btb.invalidate(l3_entry);
+
+    if (!nonexclusive) {
+        l3btb.invalidate(l3_entry);
+    }
 
     BTBEntry *l1_entry = freeUpL1Entry(tid, instPC);
     assert(instPC == l3_snapshot.getBranchAddr()); // Ensure the write back has not modified the L3 entry.
@@ -1657,6 +1670,28 @@ MultiLevelBTB::freeUpL1Entry(ThreadID tid, Addr instPC)
         l2_victim->update(*l1_victim);
         DPRINTF(BTB, "Updated L2[pc=%#x, tgt=%#x] %s\n",
                 l2_victim->getBranchAddr(), l2_victim->target->instAddr(), l2_victim->print());
+        // After L2 writeback (and possible L2->L3 eviction handling), mirror L1 victim to L3.
+        if (nonexclusive && enableL3) {
+            BTBEntry *l3_entry = l3btb.findEntry({l1_victim->getBranchAddr(), tid});
+            if (l3_entry) {
+                l3btb.accessEntry(l3_entry);
+                DPRINTF(BTB, "L1 exists already in L3[pc=%#x %s]\n",
+                        l3_entry->getBranchAddr(), l3_entry->print());
+                multilevelstats.updatesL3hits++;
+            } else {
+                l3_entry = l3btb.findVictim({l1_victim->getBranchAddr(), tid});
+                if (l3_entry && l3_entry->isValid()) {
+                    DPRINTF(BTB, "Evict L3[pc=%#x %s]\n", l3_entry->getBranchAddr(),
+                            l3_entry->print());
+                }
+                l3btb.insertEntry({l1_victim->getBranchAddr(), tid}, l3_entry);
+                multilevelstats.updatesL3miss++;
+            }
+            l3_entry->update(*l1_victim);
+            DPRINTF(BTB, "Updated L3 from L1[pc=%#x, tgt=%#x] %s\n",
+                    l3_entry->getBranchAddr(), l3_entry->target->instAddr(),
+                    l3_entry->print());
+        }
     }
     l1_victim->invalidate();
     l1btb.insertEntry({instPC, tid}, l1_victim);
