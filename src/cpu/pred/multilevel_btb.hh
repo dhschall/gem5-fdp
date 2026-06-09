@@ -413,7 +413,7 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     struct PrevBrInfo {
         bool is_bw;
-        bool is_l2_miss;
+        bool is_l1_miss;
     } prevBwBranch;
 
     enum TriggerLocation { L1Hit, L2Hit, PBHit };
@@ -442,6 +442,15 @@ class MultiLevelBTB : public BranchTargetBuffer
                            BranchType triggerType = BranchType::NoBranch,
                            uint64_t chainId = 0,
                            bool allocateChain = false);
+
+    /**
+     Try triggering a initial prefetch.
+     */
+    void tryInitialTrigger(ThreadID tid, Addr instPC, BranchType type,
+                          Addr targetAddr, bool doPfTarget, bool doPfThrough,
+                          bool takenOrBasePred, TriggerLocation triggerLoc,
+                          Cycles baseLatency, bool triggeredByPBHit,
+                          bool isL1Miss);
 
 };
 } // namespace gem5::branch_prediction

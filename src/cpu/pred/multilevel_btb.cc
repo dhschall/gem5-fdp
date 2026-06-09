@@ -604,32 +604,11 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
     }
 
     // Prefetch-bit prefetcher: trigger prefetch on L1 hit based on prefetch bits
-    if (bbMap_) {
-        Addr targetAddr = l1_entry->target->instAddr();
-        Addr fallThrough = instPC + minInstSize;
-        auto baseLatency = Cycles(0);
-
-        bool doPfTarget = l1_entry->getPrefetchTarget();
-        bool doPfThrough = l1_entry->getPrefetchThrough();
-
-        bool isBackward = (l1_entry->target->instAddr() < instPC);
-        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough, L1Hit);
-        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
-        prevBwBranch.is_bw = isBackward;
-        prevBwBranch.is_l2_miss = false;
-
-        if (doPfTarget || doPfThrough) {
-            uint64_t currentChainId = nextChainId++;
-
-            if (doPfTarget) {
-                prefetchViaBBMap(tid, targetAddr, true, true, effectiveDepth, baseLatency, type, currentChainId, true);
-                baseLatency = baseLatency + Cycles(1);
-            }
-            if (doPfThrough) {
-                prefetchViaBBMap(tid, fallThrough, false, true, effectiveDepth, baseLatency, type, currentChainId, true);
-            }
-        }
-    }
+    tryInitialTrigger(tid, instPC, type,
+                     l1_entry->target->instAddr(),
+                     l1_entry->getPrefetchTarget(), l1_entry->getPrefetchThrough(),
+                     basePrediction, L1Hit,
+                     Cycles(0), /*triggeredByPBHit=*/true, /*isL1Miss=*/false);
 
     if (prefetchOnL1Hit && (finalMarkov || limitedMarkov)) {
         unsigned numSucc = (finalMarkov && prefetchAllMarkovSuccessors) ? 100 : 1;
@@ -747,35 +726,14 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
         }
     }
 
-    if (bbMap_) {
-        Addr targetAddr = pB_entry->target->instAddr();
-        Addr fallThrough = instPC + minInstSize;
-        bool doPfTarget = pB_entry->getPrefetchTarget();
-        bool doPfThrough = pB_entry->getPrefetchThrough();
+    tryInitialTrigger(tid, instPC, type,
+                     pB_entry->target->instAddr(),
+                     pB_entry->getPrefetchTarget(), pB_entry->getPrefetchThrough(),
+                     basePrediction, PBHit,
+                     remainingTime,
+                     /*triggeredByPBHit=*/!isInFlight || coveredCycle > Cycles(0),
+                     /*isL1Miss=*/true);
 
-        bool isBackward = (pB_entry->target->instAddr() < instPC);
-        applyNewPBitsLogic(type, basePrediction, isBackward, doPfTarget, doPfThrough, PBHit);
-
-        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
-        prevBwBranch.is_bw = isBackward;
-        prevBwBranch.is_l2_miss = true;
-
-        bool triggeredByPBHit = !isInFlight || coveredCycle > Cycles(0);
-        auto baseLatency = remainingTime;
-        if (doPfTarget || doPfThrough) {
-            uint64_t currentChainId = nextChainId++;
-            
-            if (doPfTarget) {
-                prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
-                    effectiveDepth, baseLatency, type, currentChainId, true);
-                baseLatency = baseLatency + Cycles(1);
-            }
-            if (doPfThrough) {
-                prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
-                    effectiveDepth, baseLatency, type, currentChainId, true);
-            }
-        }
-    } 
     pBuffer.invalidate(pB_entry);
     pbCompressedTagSync(instPC, tid, TagAction::Invalidate);
 
@@ -1011,34 +969,11 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     //     history.pop_front();
     // }
 
-    if (bbMap_) {
-        Addr targetAddr = l2_snapshot.target->instAddr();
-        Addr fallThrough = instPC + minInstSize;
-        auto baseLatency = l2Latency;
-
-        bool doPfTarget = l2_snapshot.getPrefetchTarget();
-        bool doPfThrough = l2_snapshot.getPrefetchThrough();
-
-        bool isBackward = (l2_snapshot.target->instAddr() < instPC);
-        applyNewPBitsLogic(type, taken, isBackward, doPfTarget, doPfThrough, L2Hit);
-        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
-        prevBwBranch.is_bw = isBackward;
-        prevBwBranch.is_l2_miss = true;
-
-        if (doPfTarget || doPfThrough) {
-            uint64_t currentChainId = nextChainId++;
-            
-            if (doPfTarget) {
-                prefetchViaBBMap(tid, targetAddr, true, false, effectiveDepth,
-                    baseLatency, type, currentChainId, true);
-                baseLatency = baseLatency + Cycles(1);
-            }
-            if (doPfThrough) {
-                prefetchViaBBMap(tid, fallThrough, false, false, effectiveDepth,
-                    baseLatency, type, currentChainId, true);
-            }
-        }
-    }
+    tryInitialTrigger(tid, instPC, type,
+                     l2_snapshot.target->instAddr(),
+                     l2_snapshot.getPrefetchTarget(), l2_snapshot.getPrefetchThrough(),
+                     taken, L2Hit,
+                     l2Latency, /*triggeredByPBHit=*/false, /*isL1Miss=*/true);
 
 
 
@@ -1524,7 +1459,7 @@ MultiLevelBTB::applyNewPBitsLogic(BranchType type, bool taken,
         bool isForwardExit = prevBwBranch.is_bw         // Was previous branch a backward branch
                           && doPfTarget && doPfThrough  // Was alternating
                           && !taken                     // We didn't exit the loop
-                          && prevBwBranch.is_l2_miss    // If the backward branch was an L2 miss
+                          && prevBwBranch.is_l1_miss    // If the backward branch was an L1 miss
                           ;
 
         if (forwardLoopExit && isForwardExit) {
@@ -1746,6 +1681,40 @@ MultiLevelBTB::recordChainEnd(ActiveChainEntry &chain)
     }
     // Reset after recording
     chain.lastEndReason = ChainEndReason::None;
+}
+
+void
+MultiLevelBTB::tryInitialTrigger(ThreadID tid, Addr instPC, BranchType type,
+                                Addr targetAddr, bool doPfTarget, bool doPfThrough,
+                                bool taken, TriggerLocation triggerLoc,
+                                Cycles baseLatency, bool triggeredByPBHit,
+                                bool isL1Miss)
+{
+    if (bbMap_) {
+        Addr fallThrough = instPC + minInstSize;
+        bool isBackward = (targetAddr < instPC);
+
+        applyNewPBitsLogic(type, taken, isBackward,
+                           doPfTarget, doPfThrough, triggerLoc);
+
+        int effectiveDepth = (depthOnlyCall && !isCall(type)) ? 1 : prefetchDepth;
+        prevBwBranch.is_bw = isBackward;
+        prevBwBranch.is_l1_miss = isL1Miss;
+
+        if (doPfTarget || doPfThrough) {
+            uint64_t currentChainId = nextChainId++;
+
+            if (doPfTarget) {
+                prefetchViaBBMap(tid, targetAddr, true, triggeredByPBHit,
+                                 effectiveDepth, baseLatency, type, currentChainId, true);
+                baseLatency = baseLatency + Cycles(1);
+            }
+            if (doPfThrough) {
+                prefetchViaBBMap(tid, fallThrough, false, triggeredByPBHit,
+                                 effectiveDepth, baseLatency, type, currentChainId, true);
+            }
+        }
+    }
 }
 
 void
