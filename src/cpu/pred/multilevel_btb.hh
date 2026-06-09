@@ -405,7 +405,8 @@ class MultiLevelBTB : public BranchTargetBuffer
                          Cycles arrivalCycle, bool toL1,
                          bool triggeredByPBHit, uint8_t pfDistance = 0,
                          bool takenPrefetched = false,
-                         BranchType triggerType = BranchType::NoBranch);
+                         BranchType triggerType = BranchType::NoBranch,
+                         bool fromL3 = false);
 
 
     /** Returns true for policies that use prefetch-bit logic. */

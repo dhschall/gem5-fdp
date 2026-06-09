@@ -154,7 +154,8 @@ class BTBEntry : public ReplaceableEntry
     /** Default constructor */
     BTBEntry(TagExtractor ext)
         : inst(nullptr), extractTag(ext), valid(false), tag({MaxAddr, -1}), branchAddr(0),
-        prefetched(false), takenPrefetched(false), triggeredByPBHit(false), timestamp(0),
+        prefetched(false), takenPrefetched(false), triggeredByPBHit(false),
+        prefetchedFromL3(false), timestamp(0),
         prefetchDistance(0), predTaken(false), fromPBuffer(false), markovPredType(-1),
         prefetchThrough(false), prefetchTarget(false), toL1(false),
         prefetchTriggerType(BranchType::NoBranch),
@@ -208,6 +209,7 @@ class BTBEntry : public ReplaceableEntry
         prefetched = false;
         takenPrefetched = false;
         triggeredByPBHit = false;
+        prefetchedFromL3 = false;
         timestamp = Cycles(0);
         prefetchDistance = 0;
         predTaken = false;
@@ -356,6 +358,9 @@ class BTBEntry : public ReplaceableEntry
 
     bool triggeredByPBHit;
 
+    /** True when this pBuffer entry was filled from L3 (not L2). */
+    bool prefetchedFromL3;
+
   public:
     Addr getBranchAddr() const { return branchAddr; }
     bool isPrefetched() const { return prefetched; }
@@ -366,6 +371,9 @@ class BTBEntry : public ReplaceableEntry
 
     bool isTriggeredByPBHit() const { return triggeredByPBHit; }
     void setTriggeredByPBHit(bool p) { triggeredByPBHit = p; }
+
+    bool isPrefetchedFromL3() const { return prefetchedFromL3; }
+    void setPrefetchedFromL3(bool p) { prefetchedFromL3 = p; }
 
 
     Cycles getTimestamp() const { return timestamp; }

@@ -322,7 +322,8 @@ void
 MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
                                 Cycles arrivalCycle, bool toL1,
                                 bool triggeredByPBHit, uint8_t pfDistance,
-                                bool takenPrefetched, BranchType triggerType)
+                                bool takenPrefetched, BranchType triggerType,
+                                bool fromL3)
 {
     // Skip if already in pBuffer or L1
     if (l1ApproxContains(pc, tid) || pbApproxContains(pc, tid))
@@ -350,6 +351,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
     victim->setTimestamp(arrivalCycle);  // timestamp tracks arrival cycle
     victim->setPrefetched(true);
     victim->setTriggeredByPBHit(triggeredByPBHit);
+    victim->setPrefetchedFromL3(fromL3);
     victim->setPrefetchTarget(l2_entry->getPrefetchTarget());
     victim->setPrefetchThrough(l2_entry->getPrefetchThrough());
     victim->setPrefetchDistance(pfDistance);
@@ -657,7 +659,8 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
 
     if (isInFlight) {
         remainingTime = pB_entry->getTimestamp() - curCycle();
-        coveredCycle = l2Latency - remainingTime;
+        Cycles totalLatency = pB_entry->isPrefetchedFromL3() ? l3Latency : l2Latency;
+        coveredCycle = totalLatency - remainingTime;
     }
 
     BranchType triggerType = pB_entry->getPrefetchTriggerType();
@@ -1850,7 +1853,7 @@ MultiLevelBTB::processDeferredPrefetchQueue()
         if (!hit) {
             BTBEntry *l2_pf = l2btb.findEntry({pc, entry.tid});
             BTBEntry *l3_pf = enableL3 ? l3btb.findEntry({pc, entry.tid}) : nullptr;
-
+            bool fromL3 = false;
             BTBEntry *pf_entry = nullptr;
             Cycles pfLatency = Cycles(0);
             if (l2_pf) {
@@ -1860,6 +1863,7 @@ MultiLevelBTB::processDeferredPrefetchQueue()
             } else if (enableL3 && l3_pf) {
                 pf_entry = l3_pf;
                 pfLatency = l3Latency;
+                fromL3 = true;
                 multilevelstats.pfL3LookupHit++;
             }
 
@@ -1868,7 +1872,8 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                 enqueuePrefetch(pc, entry.tid, pf_entry, arrival,
                                entry.toL1, entry.triggeredByPBHit,
                                0, entry.takenPrefetched,
-                               entry.triggerType);
+                               entry.triggerType,
+                               fromL3);
 
                 if (entry.allocateChain && maxChainTrackerEntries > 0) {
                     int tableIdx = entry.chainId % maxChainTrackerEntries;
