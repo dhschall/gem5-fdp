@@ -197,6 +197,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar pfIssued;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfL2LookupHit;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfL2LookupMiss;  // branch not in L1 at commit, found in L2
+        statistics::Scalar pfL3LookupHit;  // L2 miss but L3 hit in deferred prefetch queue
+        statistics::Scalar pfL3LookupMiss;  // L2 miss but L3 hit in deferred prefetch queue
         statistics::Scalar mkHits;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerCall;  // branch not in L1 at commit, found in L2
         statistics::Scalar pfTriggerBwExit;  // branch not in L1 at commit, found in L2
@@ -215,6 +217,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar chainEndDemand;        // chain killed by demand access
         statistics::Scalar chainEndPresence;      // chain killed by L1/PB hit
         statistics::Scalar chainEndL2Miss;        // chain step failed due to L2 miss
+        statistics::Scalar chainEndL3Miss;        // chain step failed due to L3 miss
         statistics::Scalar chainEndRetFilter;     // chain step filtered by limitRet
         statistics::Scalar chainEndNonEntry;
         statistics::Scalar chainEndDepthExhaust;  // chain reached remaining depth 0 naturally
@@ -308,6 +311,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         Demand,         // chain killed by demand access
         Presence,       // chain killed by L1/PB hit
         L2Miss,         // L2 miss for prefetch target
+        L3Miss,         // L3 miss for prefetch target
         RetFilter,      // filtered by limitRet (Return type)
         DepthExhaust,   // remaining depth reached 0 naturally
     };
@@ -416,7 +420,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         bool is_l1_miss;
     } prevBwBranch;
 
-    enum TriggerLocation { L1Hit, L2Hit, PBHit };
+    enum TriggerLocation { L1Hit, L2Hit, L3Hit, PBHit };
     void applyNewPBitsLogic(BranchType type, bool taken,
                             bool isBackward,
                             bool &doPfTarget, bool &doPfThrough,
@@ -448,7 +452,7 @@ class MultiLevelBTB : public BranchTargetBuffer
      */
     void tryInitialTrigger(ThreadID tid, Addr instPC, BranchType type,
                           Addr targetAddr, bool doPfTarget, bool doPfThrough,
-                          bool takenOrBasePred, TriggerLocation triggerLoc,
+                          bool taken, TriggerLocation triggerLoc,
                           Cycles baseLatency, bool triggeredByPBHit,
                           bool isL1Miss);
 
