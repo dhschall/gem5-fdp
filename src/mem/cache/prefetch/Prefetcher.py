@@ -439,6 +439,45 @@ class AMPMPrefetcher(QueuedPrefetcher):
     )
 
 
+class BertiPrefetcher(QueuedPrefetcher):
+    type = "BertiPrefetcher"
+    cxx_class = "gem5::prefetch::BertiPrefetcher"
+    cxx_header = "mem/cache/prefetch/berti.hh"
+
+    use_virtual_addresses = True
+    prefetch_on_pf_hit = True
+    on_read = True
+    on_write = False
+    on_data  = True
+    on_inst  = False
+
+    addrlist_size = Param.Int(6, "The size of address list")
+
+    deltalist_size = Param.Int(4, "The size of delta list")
+
+    max_deltafound = Param.Int(4, "The maximum number of delta can be found")
+
+    aggressive_pf = Param.Bool(False, "Issue pf reqs as many as possible.")
+    history_table_entries = Param.MemorySize(
+        "64", "Number of history table entries."
+    )
+    history_table_assoc = Param.Int(4, "Associativity of the history table.")
+    history_table_indexing_policy = Param.BaseIndexingPolicy(
+        SetAssociative(
+            entry_size=1,
+            assoc=Parent.history_table_assoc,
+            size=Parent.history_table_entries
+        ),
+        "Indexing policy of history table."
+    )
+    history_table_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(),
+        "Replacement policy of history table"
+    )
+    use_byte_addr = Param.Bool(True, "Use byte address")
+    trigger_pht = Param.Bool(True, "Use Berti's prediction to trigger PHT")
+    dump_top_deltas = Param.Bool(True, "Dump top deltas on exit")
+
 class DeltaCorrelatingPredictionTables(SimObject):
     type = "DeltaCorrelatingPredictionTables"
     cxx_class = "gem5::prefetch::DeltaCorrelatingPredictionTables"
