@@ -121,6 +121,8 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::SparseHistogram dist2HistoryTarget;
 
         statistics::Scalar l1MissL2Hits;
+        statistics::Scalar l1Hits;
+        statistics::Scalar pbHits;
         statistics::Scalar l3Hits;
         statistics::Vector uselessPrefetches;
         statistics::Scalar totalPrefetches;

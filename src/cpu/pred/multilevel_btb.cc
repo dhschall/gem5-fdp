@@ -18,6 +18,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist2HistoryPC, statistics::units::Count::get(), "Distance (PC - 2ndLastPC) for 2-history"),
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
+      ADD_STAT(l1Hits, statistics::units::Count::get(), "Number of lookups that hit in L1"),
+      ADD_STAT(pbHits, statistics::units::Count::get(), "Number of lookups that hit in PB"),
       ADD_STAT(l3Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L3"),
       ADD_STAT(uselessPrefetches, statistics::units::Count::get(), "Number of useless prefetches (L1 direct prefetch evicted)"),
       ADD_STAT(totalPrefetches, statistics::units::Count::get(), "Total number of prefetches"),
@@ -117,6 +119,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     dist2HistoryTarget.init(0).flags(total | pdf);
 
     l1MissL2Hits.flags(total);
+    l1Hits.flags(total);
+    pbHits.flags(total);
     l3Hits.flags(total);
     takenPathPrefetches.flags(total);
     notTakenPathPrefetches.flags(total);
@@ -586,7 +590,7 @@ MultiLevelBTB::handleL1Hit(ThreadID tid, Addr instPC, BTBEntry *l1_entry,
 {
     bool isPrefetchHit = false;
     uint8_t prefetchDistance = 0;
-
+    multilevelstats.l1Hits++;
     // Case 1: Hit on a prefetched entry
     if (l1_entry->isPrefetched()) {
         isPrefetchHit = true;
@@ -720,7 +724,7 @@ MultiLevelBTB::handlePBufferHit(ThreadID tid, Addr instPC,
     }
 
     multilevelstats.l1Installed++;
-
+    multilevelstats.pbHits++;
     if (isCall(type) && bbMap_) {
         multilevelstats.callL2OrPrefetchHits++;
         Addr ft = instPC + minInstSize;
@@ -1752,7 +1756,7 @@ MultiLevelBTB::prefetchViaBBMap(ThreadID tid, Addr lookupAddr,
     BTBEntry *l2_pf = l2btb.findEntry({pfPC, tid});
     BTBEntry *l3_pf = enableL3 ? l3btb.findEntry({pfPC, tid}) : nullptr;
     // Kill the trigger if L2-miss or L3-miss if L3 is enabled
-    if ((!l2_pf || (enableL3 && !l3_pf)) && allocateChain)
+    if (!(l2_pf || l3_pf) && allocateChain)
         return;
     if (limitRet && triggerType == BranchType::Return) {
         return;
