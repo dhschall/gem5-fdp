@@ -98,6 +98,7 @@ class MultiLevelBTB : public BranchTargetBuffer
     const bool allConditional;
     const bool prefetchFwExitOnL1Hit;
     const bool useCompressedTagFilter;
+    const bool indirectAltBit;
 
 
 

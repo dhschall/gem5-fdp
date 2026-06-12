@@ -259,6 +259,7 @@ MultiLevelBTB::MultiLevelBTB(const MultiLevelBTBParams &p)
       allConditional(p.allConditional),
       prefetchFwExitOnL1Hit(p.prefetchFwExitOnL1Hit),
       useCompressedTagFilter(p.useCompressedTagFilter),
+      indirectAltBit(p.indirectAltBit),
       multilevelstats(this, this),
       limitedMarkov(p.limitedMarkov),
       markovOnlyMisses(p.markovOnlyMisses),
@@ -565,6 +566,13 @@ MultiLevelBTB::update(ThreadID tid, Addr instPC,
         if (usesPrefetchBitPolicy()) {
             entry->setPrefetchTarget(true);
             entry->setPrefetchThrough(false);
+        }
+    } else if (usesPrefetchBitPolicy() && indirectAltBit) {
+        bool isIndirect = (type == BranchType::CallIndirect || type == BranchType::IndirectUncond || type == BranchType::IndirectCond);
+        if (isIndirect && entry->target->instAddr() != target.instAddr()) {
+            // Do not prefetch for indirect branches with changing targets
+            entry->setPrefetchTarget(true);
+            entry->setPrefetchThrough(true);
         }
     }
     l1CompressedTagSync(instPC, tid, TagAction::Insert);
@@ -1717,6 +1725,16 @@ MultiLevelBTB::tryInitialTrigger(ThreadID tid, Addr instPC, BranchType type,
         Addr fallThrough = instPC + minInstSize;
         bool isBackward = (targetAddr < instPC);
 
+        // newPBits: skip prefetch for indirect branches with changing targets
+        // (both bits set means the branch was marked Alt via target change detection)
+        if (indirectAltBit && newPBits && doPfTarget && doPfThrough) {
+            bool isIndirect = (type == BranchType::CallIndirect ||
+                               type == BranchType::IndirectUncond ||
+                               type == BranchType::IndirectCond);
+            if (isIndirect)
+                return;
+        }
+
         applyNewPBitsLogic(type, taken, isBackward,
                            doPfTarget, doPfThrough, triggerLoc);
 
@@ -1916,7 +1934,15 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                     Cycles nextBaseLatency = (arrival > curCycle()) ? (arrival - curCycle()) : Cycles(0);
                     BranchType pfType = getBranchType(pf_entry->inst);
 
-                    if (pf_entry->getPrefetchTarget() && !completedChain) {
+                    bool isIndirectAlt = indirectAltBit &&
+                        (pfType == BranchType::CallIndirect ||
+                         pfType == BranchType::IndirectUncond ||
+                         pfType == BranchType::IndirectCond) &&
+                        pf_entry->getPrefetchTarget() &&
+                        pf_entry->getPrefetchThrough();
+
+                    if (pf_entry->getPrefetchTarget() && !completedChain &&
+                            !isIndirectAlt) {
                         prefetchViaBBMap(entry.tid, targetAddr, true, entry.triggeredByPBHit,
                                      1, nextBaseLatency, pfType, entry.chainId);
                         nextBaseLatency += Cycles(1);
@@ -1924,7 +1950,8 @@ MultiLevelBTB::processDeferredPrefetchQueue()
                             chainEntry->lastEndReason = ChainEndReason::RetFilter;
                         }
                     }
-                    if (pf_entry->getPrefetchThrough() && !completedChain) {
+                    if (pf_entry->getPrefetchThrough() && !completedChain &&
+                            !isIndirectAlt) {
                         prefetchViaBBMap(entry.tid, fallThrough, false, entry.triggeredByPBHit,
                                      1, nextBaseLatency, pfType, entry.chainId);
                     }

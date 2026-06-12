@@ -359,6 +359,11 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Only apply prefetch logic to call or backward instructions in applyNewPBitsLogic",
     )
 
+    indirectAltBit = Param.Bool(
+        False,
+        "Skip prefetching for indirect branches with changing targets "
+    )
+
 
     useCompressedTagFilter = Param.Bool(
         False,
