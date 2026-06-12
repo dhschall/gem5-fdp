@@ -123,6 +123,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
         statistics::Scalar l1MissL2Hits;
         statistics::Scalar l1Hits;
+        statistics::Scalar l1HitInOverriding;
+        statistics::Scalar l1MissInOverriding;
         statistics::Scalar pbHits;
         statistics::Scalar l3Hits;
         statistics::Vector uselessPrefetches;

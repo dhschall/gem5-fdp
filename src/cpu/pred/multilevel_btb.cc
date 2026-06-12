@@ -19,6 +19,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
       ADD_STAT(l1Hits, statistics::units::Count::get(), "Number of lookups that hit in L1"),
+      ADD_STAT(l1HitInOverriding, statistics::units::Count::get(), "Number of L1 hits in lookupL1 (overriding lookup)"),
+      ADD_STAT(l1MissInOverriding, statistics::units::Count::get(), "Number of L1 misses in lookupL1 (overriding lookup)"),
       ADD_STAT(pbHits, statistics::units::Count::get(), "Number of lookups that hit in PB"),
       ADD_STAT(l3Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L3"),
       ADD_STAT(uselessPrefetches, statistics::units::Count::get(), "Number of useless prefetches (L1 direct prefetch evicted)"),
@@ -516,8 +518,10 @@ MultiLevelBTB::lookupL1(ThreadID tid, Addr inst_pc)
 {
     BTBEntry *l1_entry = l1btb.findEntry({inst_pc, tid});
     if (l1_entry) {
+        multilevelstats.l1HitInOverriding++;
         return l1_entry->target->instAddr();
     }
+    multilevelstats.l1MissInOverriding++;
     return MaxAddr;
 }
 
