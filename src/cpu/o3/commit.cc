@@ -811,7 +811,7 @@ Commit::commit()
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
                     tid, *fromIEW->pc[tid]);
 
-            commitStatus[tid] = ROBSquashing;
+            commitStatus[tid] = squashedDueToMemOrder ? ROBSquashingDueToMemOrder : ROBSquashing;
 
             // If we want to include the squashing instruction in the squash,
             // then use one older sequence number.
