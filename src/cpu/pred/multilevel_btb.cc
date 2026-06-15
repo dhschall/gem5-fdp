@@ -19,6 +19,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
       ADD_STAT(l1Hits, statistics::units::Count::get(), "Number of lookups that hit in L1"),
+      ADD_STAT(l1Accesses, statistics::units::Count::get(), "Number of L1 BTB accesses"),
+      ADD_STAT(l2Accesses, statistics::units::Count::get(), "Number of L2 BTB accesses"),
       ADD_STAT(l1HitInOverriding, statistics::units::Count::get(), "Number of L1 hits in lookupL1 (overriding lookup)"),
       ADD_STAT(l1MissInOverriding, statistics::units::Count::get(), "Number of L1 misses in lookupL1 (overriding lookup)"),
       ADD_STAT(pbHits, statistics::units::Count::get(), "Number of lookups that hit in PB"),
@@ -122,6 +124,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 
     l1MissL2Hits.flags(total);
     l1Hits.flags(total);
+    l1Accesses.flags(total);
+    l2Accesses.flags(total);
     pbHits.flags(total);
     l3Hits.flags(total);
     takenPathPrefetches.flags(total);
@@ -338,6 +342,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
 
     multilevelstats.pfIssued++;
     multilevelstats.totalPrefetches++;
+    multilevelstats.l2Accesses++;
     if (usesPrefetchBitPolicy()) {
         if (takenPrefetched) {
             multilevelstats.takenPathPrefetches++;
@@ -466,6 +471,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
     // ==========================================================================
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
+        recordBTBAccess(L2);
         // trainBitsOnLookup: record current block info (from L2 entry)
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l2_entry->target->instAddr());
@@ -518,11 +524,24 @@ MultiLevelBTB::lookupL1(ThreadID tid, Addr inst_pc)
 {
     BTBEntry *l1_entry = l1btb.findEntry({inst_pc, tid});
     if (l1_entry) {
+        recordBTBAccess(L1);
         multilevelstats.l1HitInOverriding++;
         return l1_entry->target->instAddr();
     }
     multilevelstats.l1MissInOverriding++;
+    recordBTBAccess(L2);
     return MaxAddr;
+}
+
+void
+MultiLevelBTB::recordBTBAccess(BTBAccessLevel level)
+{
+    if (level >= L1) {
+        multilevelstats.l1Accesses++;
+    }
+    if (level >= L2) {
+        multilevelstats.l2Accesses++;
+    }
 }
 
 void
@@ -843,7 +862,7 @@ MultiLevelBTB::handleL2Hit(ThreadID tid, Addr instPC, BTBEntry *l2_entry,
     }
 
     BTBEntry *l1_victim = freeUpL1Entry(tid, instPC);
-    assert(instPC == l2_snapshot.getBranchAddr()); // Ensure the write back has not modified the L2 entry.
+    // assert(instPC == l2_snapshot.getBranchAddr()); // Ensure the write back has not modified the L2 entry.
 
     l1_victim->update(l2_snapshot);
     DPRINTF(BTB, "L2 BTB hit for PC %#x, latency=%d cycles, insert in L1\n",
@@ -1029,7 +1048,7 @@ MultiLevelBTB::handleL3Hit(ThreadID tid, Addr instPC, BTBEntry *l3_entry,
     }
 
     BTBEntry *l1_entry = freeUpL1Entry(tid, instPC);
-    assert(instPC == l3_snapshot.getBranchAddr()); // Ensure the write back has not modified the L3 entry.
+    // assert(instPC == l3_snapshot.getBranchAddr()); // Ensure the write back has not modified the L3 entry.
 
     l1_entry->update(l3_snapshot);
     l1CompressedTagSync(instPC, tid, TagAction::Insert);

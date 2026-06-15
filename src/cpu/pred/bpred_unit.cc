@@ -259,6 +259,14 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     //     totalLatency = Cycles(0);
     // }
     totalLatency = std::max(cbp_latency, btb_res.latency);
+    if ( btb_res.latency == Cycles(0) &&
+        cbp_latency > Cycles(0)) {
+        stats.l1btbHitBpLatency++;
+    }
+
+    if (isMultiLevelBTB && totalLatency == Cycles(0)) {
+        btb->recordBTBAccess(BranchTargetBuffer::L1);
+    }
     // Correctify totalLatency for BIM&TAGE = not-taken, L2 hit
     // if (cbp_latency == 0 && !hist->uncond && !hist->condPred && btb_res.latency != Cycles(0)) {
     //     totalLatency = Cycles(0);
@@ -1097,6 +1105,8 @@ BPredUnit::BPredUnitStats::BPredUnitStats(BPredUnit *bp)
               "Number of L2 BTB hits with Base Prediction"),
       ADD_STAT(l1btbHitOverridePred, statistics::units::Count::get(),
               "Number of L1 BTB hits with Override Prediction"),
+      ADD_STAT(l1btbHitBpLatency, statistics::units::Count::get(),
+              "Number of L1 BTB hits where conditional predictor latency is non-zero"),
       ADD_STAT(l2btbHitOverridePred, statistics::units::Count::get(),
               "Number of L2 BTB hits with Override Prediction"),
       ADD_STAT(l1btbHitBasePredRatio, statistics::units::Ratio::get(),

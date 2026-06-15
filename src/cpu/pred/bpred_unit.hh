@@ -202,6 +202,11 @@ class BPredUnit : public SimObject
 
     Addr predictL1(ThreadID tid, Addr pc);
 
+    void recordBTBAccess(BranchTargetBuffer::BTBAccessLevel level)
+    {
+        btb->recordBTBAccess(level);
+    }
+
     void dump();
 
     /** Branch Predictor Unit (BPU) history object `PredictorHistory`
@@ -610,6 +615,7 @@ class BPredUnit : public SimObject
         statistics::Scalar l1btbHitBasePred;
         statistics::Scalar l2btbHitBasePred;
         statistics::Scalar l1btbHitOverridePred;
+        statistics::Scalar l1btbHitBpLatency;
         statistics::Scalar l2btbHitOverridePred;
 
         statistics::Formula l1btbHitBasePredRatio;

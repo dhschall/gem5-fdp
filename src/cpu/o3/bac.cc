@@ -741,6 +741,7 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             }
 
             if (!branch_found) {
+                bpu->recordBTBAccess(branch_prediction::BranchTargetBuffer::L2);
                 search_addr += fetchTargetWidth;
             }
 

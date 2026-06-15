@@ -364,7 +364,6 @@ class MultiLevelBTB(BranchTargetBuffer):
         "Skip prefetching for indirect branches with changing targets "
     )
 
-
     useCompressedTagFilter = Param.Bool(
         False,
         "Use compressed tag array for filtering prefetches",

@@ -88,6 +88,12 @@ class BranchTargetBuffer : public ClockedObject
   public:
     typedef BranchTargetBufferParams Params;
     typedef enums::BranchType BranchType;
+    enum BTBAccessLevel
+    {
+        L1 = 1,
+        L2 = 2,
+        L3 = 3,
+    };
 
     BranchTargetBuffer(const Params &params);
 
@@ -146,6 +152,7 @@ class BranchTargetBuffer : public ClockedObject
 
     virtual void updateDirection(ThreadID tid, Addr inst_pc, bool taken) {}
     virtual Addr lookupL1(ThreadID tid, Addr instPC) { panic("Not Implemented"); return 0; }
+    virtual void recordBTBAccess(BTBAccessLevel level) {}
 
   protected:
     /** Number of the threads for which the branch history is maintained. */
