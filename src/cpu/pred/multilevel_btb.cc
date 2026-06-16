@@ -21,6 +21,8 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(l1Hits, statistics::units::Count::get(), "Number of lookups that hit in L1"),
       ADD_STAT(l1Accesses, statistics::units::Count::get(), "Number of L1 BTB accesses"),
       ADD_STAT(l2Accesses, statistics::units::Count::get(), "Number of L2 BTB accesses"),
+      ADD_STAT(l2AccessesByReason, statistics::units::Count::get(),
+               "Number of L2 BTB accesses by reason"),
       ADD_STAT(l1HitInOverriding, statistics::units::Count::get(), "Number of L1 hits in lookupL1 (overriding lookup)"),
       ADD_STAT(l1MissInOverriding, statistics::units::Count::get(), "Number of L1 misses in lookupL1 (overriding lookup)"),
       ADD_STAT(pbHits, statistics::units::Count::get(), "Number of lookups that hit in PB"),
@@ -126,6 +128,12 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
     l1Hits.flags(total);
     l1Accesses.flags(total);
     l2Accesses.flags(total);
+    l2AccessesByReason.init(NumBTBAccessReasons).flags(total | pdf);
+    l2AccessesByReason.subname(BTBMiss, "BTBMiss");
+    l2AccessesByReason.subname(NonEntry, "NonEntry");
+    l2AccessesByReason.subname(Prefetch, "Prefetch");
+    l2AccessesByReason.subname(NormalL2Hit, "NormalL2Hit");
+    l2AccessesByReason.subname(OverrideL1Miss, "OverrideL1Miss");
     pbHits.flags(total);
     l3Hits.flags(total);
     takenPathPrefetches.flags(total);
@@ -342,7 +350,7 @@ MultiLevelBTB::enqueuePrefetch(Addr pc, ThreadID tid, BTBEntry *l2_entry,
 
     multilevelstats.pfIssued++;
     multilevelstats.totalPrefetches++;
-    multilevelstats.l2Accesses++;
+    recordBTBAccess(L2, Prefetch);
     if (usesPrefetchBitPolicy()) {
         if (takenPrefetched) {
             multilevelstats.takenPathPrefetches++;
@@ -471,7 +479,7 @@ MultiLevelBTB::lookupWithLatency(ThreadID tid, Addr instPC, BranchType type,
     // ==========================================================================
     BTBEntry *l2_entry = l2btb.accessEntry({instPC, tid});
     if (l2_entry != nullptr) {
-        recordBTBAccess(L2);
+        recordBTBAccess(L2, NormalL2Hit);
         // trainBitsOnLookup: record current block info (from L2 entry)
         if (trainBitsOnLookup && blockStartAddr != 0)
             recordPrevBlockInfo(tid, instPC, l2_entry->target->instAddr());
@@ -529,18 +537,21 @@ MultiLevelBTB::lookupL1(ThreadID tid, Addr inst_pc)
         return l1_entry->target->instAddr();
     }
     multilevelstats.l1MissInOverriding++;
-    recordBTBAccess(L2);
+    recordBTBAccess(L2, OverrideL1Miss);
     return MaxAddr;
 }
 
 void
-MultiLevelBTB::recordBTBAccess(BTBAccessLevel level)
+MultiLevelBTB::recordBTBAccess(BTBAccessLevel level, BTBAccessReason reason)
 {
     if (level >= L1) {
         multilevelstats.l1Accesses++;
     }
     if (level >= L2) {
         multilevelstats.l2Accesses++;
+        if (reason != NoReason) {
+            multilevelstats.l2AccessesByReason[reason]++;
+        }
     }
 }
 

@@ -94,6 +94,16 @@ class BranchTargetBuffer : public ClockedObject
         L2 = 2,
         L3 = 3,
     };
+    enum BTBAccessReason
+    {
+        NoReason,
+        BTBMiss,
+        NonEntry,
+        Prefetch,
+        NormalL2Hit,
+        OverrideL1Miss,
+        NumBTBAccessReasons
+    };
 
     BranchTargetBuffer(const Params &params);
 
@@ -152,7 +162,8 @@ class BranchTargetBuffer : public ClockedObject
 
     virtual void updateDirection(ThreadID tid, Addr inst_pc, bool taken) {}
     virtual Addr lookupL1(ThreadID tid, Addr instPC) { panic("Not Implemented"); return 0; }
-    virtual void recordBTBAccess(BTBAccessLevel level) {}
+    virtual void recordBTBAccess(BTBAccessLevel level,
+                                 BTBAccessReason reason = NoReason) {}
 
   protected:
     /** Number of the threads for which the branch history is maintained. */

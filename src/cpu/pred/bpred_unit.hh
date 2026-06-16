@@ -202,9 +202,11 @@ class BPredUnit : public SimObject
 
     Addr predictL1(ThreadID tid, Addr pc);
 
-    void recordBTBAccess(BranchTargetBuffer::BTBAccessLevel level)
+    void recordBTBAccess(BranchTargetBuffer::BTBAccessLevel level,
+                         BranchTargetBuffer::BTBAccessReason reason =
+                             BranchTargetBuffer::NoReason)
     {
-        btb->recordBTBAccess(level);
+        btb->recordBTBAccess(level, reason);
     }
 
     void dump();

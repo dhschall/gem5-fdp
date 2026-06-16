@@ -727,6 +727,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             // If there is no end address or the end is smaller than the beginning fall back.
             if ((br_addr == MaxAddr) || (br_addr < search_addr)) {
                 DPRINTF(Branch, "[tid:%i] BB [%#x -> unknown].\n", tid, search_addr);
+                bpu->recordBTBAccess(
+                    branch_prediction::BranchTargetBuffer::L2,
+                    branch_prediction::BranchTargetBuffer::NonEntry);
                 // // hit = false;
                 // // curAddr += fetchTargetWidth;
                 // // branchFound = false;
@@ -737,11 +740,14 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
                 if (bpu->BTBValid(tid, br_addr)) {
                     search_addr = br_addr;
                     branch_found = true;
+                } else {
+                    bpu->recordBTBAccess(
+                        branch_prediction::BranchTargetBuffer::L2,
+                        branch_prediction::BranchTargetBuffer::BTBMiss);
                 }
             }
 
             if (!branch_found) {
-                bpu->recordBTBAccess(branch_prediction::BranchTargetBuffer::L2);
                 search_addr += fetchTargetWidth;
             }
 

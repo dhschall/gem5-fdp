@@ -35,7 +35,8 @@ class MultiLevelBTB : public BranchTargetBuffer
 
     Addr lookupL1(ThreadID tid, Addr instPC) override;
 
-    void recordBTBAccess(BTBAccessLevel level) override;
+    void recordBTBAccess(BTBAccessLevel level,
+                         BTBAccessReason reason = NoReason) override;
 
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
@@ -127,6 +128,7 @@ class MultiLevelBTB : public BranchTargetBuffer
         statistics::Scalar l1Hits;
         statistics::Scalar l1Accesses;
         statistics::Scalar l2Accesses;
+        statistics::Vector l2AccessesByReason;
         statistics::Scalar l1HitInOverriding;
         statistics::Scalar l1MissInOverriding;
         statistics::Scalar pbHits;
