@@ -19,6 +19,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
       ADD_STAT(dist2HistoryTarget, statistics::units::Count::get(), "Distance (PC - 2ndLastTarget) for 2-history"),
       ADD_STAT(l1MissL2Hits, statistics::units::Count::get(), "Number of L1 misses that hit in L2"),
       ADD_STAT(l1Hits, statistics::units::Count::get(), "Number of lookups that hit in L1"),
+      ADD_STAT(normalL1Hits, statistics::units::Count::get(), "Number of normal L1 hits"),
       ADD_STAT(l1Accesses, statistics::units::Count::get(), "Number of L1 BTB accesses"),
       ADD_STAT(l2Accesses, statistics::units::Count::get(), "Number of L2 BTB accesses"),
       ADD_STAT(l2AccessesByReason, statistics::units::Count::get(),
@@ -126,6 +127,7 @@ MultiLevelBTB::MultiLevelBTBStats::MultiLevelBTBStats(statistics::Group *parent,
 
     l1MissL2Hits.flags(total);
     l1Hits.flags(total);
+    normalL1Hits.flags(total);
     l1Accesses.flags(total);
     l2Accesses.flags(total);
     l2AccessesByReason.init(NumBTBAccessReasons).flags(total | pdf);
@@ -546,6 +548,10 @@ MultiLevelBTB::recordBTBAccess(BTBAccessLevel level, BTBAccessReason reason)
 {
     if (level >= L1) {
         multilevelstats.l1Accesses++;
+    }
+    if (level == L1 && reason == NoReason) {
+        // normal L1 hit OR PB hit (all belong to L1 accesses)
+        multilevelstats.normalL1Hits++;
     }
     if (level >= L2) {
         multilevelstats.l2Accesses++;

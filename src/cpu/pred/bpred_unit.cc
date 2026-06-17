@@ -265,7 +265,7 @@ BPredUnit::predict(const StaticInstPtr &inst, const InstSeqNum &seqNum,
     }
 
     if (isMultiLevelBTB && totalLatency == Cycles(0)) {
-        btb->recordBTBAccess(BranchTargetBuffer::L1);
+        btb->recordBTBAccess(BranchTargetBuffer::L1, BranchTargetBuffer::NoReason);
     }
     // Correctify totalLatency for BIM&TAGE = not-taken, L2 hit
     // if (cbp_latency == 0 && !hist->uncond && !hist->condPred && btb_res.latency != Cycles(0)) {
