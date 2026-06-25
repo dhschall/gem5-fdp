@@ -522,6 +522,10 @@ BAC::squash(const PCStateBase &new_pc, ThreadID tid)
 
     // Then squash all fetch targets
     ftq->squash(tid);
+
+    // Also clear BPU stall cycles
+    branchPredictRemaining[tid] = Cycles(0);
+    stalls[tid].bpu = false;
 }
 
 void
@@ -782,6 +786,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
             status_change = true;
             break;
         }
+
+        if (branchPredictRemaining[tid] != 0)
+            break;
     }
     stats.ftNumber.sample(num_ft);
 }
