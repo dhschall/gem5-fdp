@@ -48,6 +48,7 @@ from m5.objects.IndexingPolicies import *
 from m5.objects.IQUnit import *
 from m5.objects.ReplacementPolicies import *
 from m5.objects.SMT import *
+from m5.objects.ValuePredictionUnit import *
 from m5.params import *
 from m5.proxy import *
 from m5.SimObject import *
@@ -150,7 +151,7 @@ class BaseO3CPU(BaseCPU):
         "loads & stores or just stores",
     )
     store_set_clear_period = Param.Unsigned(
-        128*244,
+        128 * 244,
         "Number of load/store insts before the dep predictor "
         "should be invalidated",
     )
@@ -198,6 +199,10 @@ class BaseO3CPU(BaseCPU):
         ),
         "Branch Predictor",
     )
+    valuePred = Param.ValuePredictor(
+        NULL, "Value Predictor. NULL will disable the value predictor"
+    )
+
     needsTSO = Param.Bool(False, "Enable TSO Memory model")
 
     recvRespThrottling = Param.Bool(

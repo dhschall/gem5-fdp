@@ -387,6 +387,84 @@ class DynInst : public ExecContext, public RefCounted
         bool predicted = false;
     } memDepInfo;
 
+    /** Infos needed for the Value Predictor */
+    struct ValPredInfo
+    {
+        bool predicted = false;
+        RegVal predValue = 0;
+        RegVal actualValue = 0;
+
+        bool valueMispred = false;
+        bool verified = false;
+        bool corrected = false;
+
+        Tick pred_tick = 0;
+    } vpInfo;
+
+    /** Check whether the instruction is eligible for value prediction
+     * For now only loads with a single destination register
+     */
+    bool
+    canValuePredict()
+    {
+        return isLoad() && numDestRegs() == 1 &&
+               destRegIdx(0).classValue() == RegClassType::IntRegClass;
+    }
+
+    /** Set the value predicted information for later verification */
+    void
+    setVPInfo(bool predict, RegVal value, Tick ptick = 0)
+    {
+        vpInfo.predicted = predict;
+        vpInfo.predValue = value;
+        vpInfo.pred_tick = ptick;
+    }
+
+    bool
+    isValuePredicted()
+    {
+        return vpInfo.predicted;
+    }
+
+    /** Read predicted value from the VP */
+    RegVal
+    getPredictedValue()
+    {
+        return vpInfo.predValue;
+    }
+
+    /** Read correct value from the VP */
+    RegVal
+    getActualValue()
+    {
+        assert(vpInfo.verified);
+        return vpInfo.actualValue;
+    }
+
+    /** Update the correct values. Will be used at commit to update the VP */
+    bool
+    updateActualValue(RegVal value, Tick tick = 0)
+    {
+        assert(!vpInfo.verified);
+        vpInfo.actualValue = value;
+        vpInfo.valueMispred = vpInfo.predicted && (vpInfo.predValue != value);
+        vpInfo.pred_tick = tick - vpInfo.pred_tick;
+        vpInfo.verified = true;
+        return vpInfo.valueMispred;
+    }
+
+    void
+    vpSanityCheck()
+    {
+        if (!vpInfo.predicted) {
+            return;
+        }
+        assert(vpInfo.verified);
+        if (vpInfo.valueMispred) {
+            assert(vpInfo.corrected);
+        }
+    }
+
     /////////////////////// TLB Miss //////////////////////
     /**
      * Saved memory request (needed when the DTB address translation is
@@ -729,6 +807,15 @@ class DynInst : public ExecContext, public RefCounted
     /** Return the size of the instResult queue. */
     uint8_t resultSize() { return instResult.size(); }
 
+    InstResult
+    getInstResult()
+    {
+        if (!instResult.empty()) {
+            return instResult.front();
+        }
+        return InstResult();
+    }
+
     /** Pops a result off the instResult queue.
      * If the result stack is empty, return the default value.
      * */
@@ -753,6 +840,14 @@ class DynInst : public ExecContext, public RefCounted
             instResult.emplace(reg_class, std::forward<T>(t));
         }
     }
+
+    /** Return the size of the instResult queue. */
+    std::queue<InstResult> &
+    getResultQueue()
+    {
+        return instResult;
+    }
+
     /** @} */
 
     /** Records that one of the source registers is ready. */

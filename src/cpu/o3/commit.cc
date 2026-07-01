@@ -63,6 +63,7 @@
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/O3PipeView.hh"
+#include "debug/VP.hh"
 #include "inst_queue.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
@@ -105,6 +106,7 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
+      valuePred(params.valuePred),
       cpu(_cpu),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
@@ -140,6 +142,7 @@ Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
         changedROBNumEntries[tid] = false;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
+        valueMispred[tid] = false;
         squashAfterInst[tid] = nullptr;
         pc[tid].reset(params.isa[0]->newPCState());
         youngestSeqNum[tid] = 0;
@@ -319,6 +322,7 @@ Commit::clearStates(ThreadID tid)
     committedStores[tid] = false;
     trapSquash[tid] = false;
     tcSquash[tid] = false;
+    valueMispred[tid] = false; // TODO remove not needed
     pc[tid].reset(cpu->tcBase(tid)->getIsaPtr()->newPCState());
     lastCommitedSeqNum[tid] = 0;
     squashAfterInst[tid] = NULL;
@@ -391,6 +395,7 @@ Commit::takeOverFrom()
         changedROBNumEntries[tid] = false;
         trapSquash[tid] = false;
         tcSquash[tid] = false;
+        valueMispred[tid] = false;
         squashAfterInst[tid] = NULL;
     }
     rob->takeOverFrom();
@@ -523,6 +528,11 @@ Commit::squashAll(ThreadID tid)
     rob->squash(squashed_inst, tid, false);
     changedROBNumEntries[tid] = true;
 
+    // Also squash value prediction.
+    if (valuePred) {
+        valuePred->squash(squashed_inst);
+    }
+
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
@@ -592,14 +602,18 @@ Commit::squashFromSquashAfter(ThreadID tid)
 }
 
 void
-Commit::squashAfter(ThreadID tid, const DynInstPtr &head_inst)
+Commit::squashAfter(ThreadID tid, const DynInstPtr &head_inst,
+                    bool value_mispred)
 {
-    DPRINTF(Commit, "Executing squash after for [tid:%i] inst [sn:%llu]\n",
-            tid, head_inst->seqNum);
+    DPRINTF(Commit,
+            "Executing squash after for [tid:%i] inst [sn:%llu], "
+            "valueMispred=%i\n",
+            tid, head_inst->seqNum, value_mispred);
 
     assert(!squashAfterInst[tid] || squashAfterInst[tid] == head_inst);
     commitStatus[tid] = SquashAfterPending;
     squashAfterInst[tid] = head_inst;
+    valueMispred[tid] = value_mispred; // TODO remove
 }
 
 void
@@ -618,15 +632,14 @@ Commit::tick()
         // this cycle.
         committedStores[tid] = false;
 
-        if (commitStatus[tid] == ROBSquashing || commitStatus[tid] == ROBSquashingDueToMemOrder) {
+        if (commitStatus[tid] == ROBSquashing) {
 
             if (rob->isDoneSquashing(tid)) {
                 commitStatus[tid] = Running;
             } else {
                 DPRINTF(Commit,"[tid:%i] Still Squashing, cannot commit any"
                         " insts this cycle.\n", tid);
-                bool squashingDueToMemOrder = commitStatus[tid] == ROBSquashingDueToMemOrder ? true : false;
-                rob->doSquash(tid, squashingDueToMemOrder);
+                rob->doSquash(tid, squashReason[tid] == MemViolation);
                 toIEW->commitInfo[tid].robSquashing = true;
                 wroteToTimeBuffer = true;
             }
@@ -763,10 +776,10 @@ Commit::commit()
     ////////////////////////////////////
 
     int num_squashing_threads = 0;
-    bool squashedDueToMemOrder = false;
 
     for (ThreadID tid : *activeThreads) {
         stats.status[commitStatus[tid]]++;
+        squashReason[tid] = NoSquash;
         // Not sure which one takes priority.  I think if we have
         // both, that's a bad sign.
         if (trapSquash[tid]) {
@@ -803,17 +816,28 @@ Commit::commit()
                     tid,
                     fromIEW->mispredictInst[tid]->pcState().instAddr(),
                     fromIEW->squashedSeqNum[tid]);
-            } else {
+                squashReason[tid] = BranchMispred;
+            } else if (fromIEW->memoryViolation[tid]) {
                 DPRINTF(Commit,
                     "[tid:%i] Squashing due to order violation [sn:%llu]\n",
                     tid, fromIEW->squashedSeqNum[tid]);
-                squashedDueToMemOrder = true;
+                squashReason[tid] = MemViolation;
+            } else if (fromIEW->valueMisprediction[tid]) {
+                DPRINTF(Commit,
+                        "[tid:%i] Squashing due to value misprediction "
+                        "[sn:%llu]\n",
+                        tid, fromIEW->squashedSeqNum[tid]);
+                squashReason[tid] = ValueMispred;
+            } else {
+                panic("undefined in commit squash\n");
             }
 
             DPRINTF(Commit, "[tid:%i] Redirecting to PC %#x\n",
                     tid, *fromIEW->pc[tid]);
 
-            commitStatus[tid] = squashedDueToMemOrder ? ROBSquashingDueToMemOrder : ROBSquashing;
+            // @todo add new state for value prediction squash or new enum with
+            // squash reason
+            commitStatus[tid] = ROBSquashing;
 
             // If we want to include the squashing instruction in the squash,
             // then use one older sequence number.
@@ -827,8 +851,12 @@ Commit::commit()
             // number as the youngest instruction in the ROB.
             youngestSeqNum[tid] = squashed_inst;
 
-            rob->squash(squashed_inst, tid, squashedDueToMemOrder);
+            rob->squash(squashed_inst, tid, squashReason[tid] == MemViolation);
             changedROBNumEntries[tid] = true;
+
+            if (valuePred) {
+                valuePred->squash(squashed_inst);
+            }
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
 
@@ -854,7 +882,7 @@ Commit::commit()
             set(toIEW->commitInfo[tid].pc, fromIEW->pc[tid]);
         }
 
-        if (commitStatus[tid] == ROBSquashing || commitStatus[tid] == ROBSquashingDueToMemOrder) {
+        if (commitStatus[tid] == ROBSquashing) {
             num_squashing_threads++;
         }
     }
@@ -1327,6 +1355,9 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
     if (head_inst->isHtmStart())
         iewStage->setLastRetiredHtmUid(tid, head_inst->getHtmTransactionUid());
 
+    // Update Value predictor
+    updateValuePredictor(tid, head_inst);
+
     // Finally clear the head ROB entry.
     rob->retireHead(tid);
 
@@ -1346,6 +1377,34 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
     // Return true to indicate that we have committed an instruction.
     return true;
+}
+
+void
+Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
+{
+    if (!valuePred) {
+        return;
+    }
+
+    // Only update for predictable instructions
+    if (!inst->canValuePredict()) {
+        return;
+    }
+
+    // Update the VP for all instructions
+    Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
+    valuePred->update(inst->threadNumber, inst->pcState().instAddr(),
+                      inst->seqNum, inst->effAddr, inst->getActualValue(),
+                      inst->getPredictedValue(), inst->isValuePredicted(),
+                      clk);
+    // debug statement to see if we are speculating
+    DPRINTF(Commit,
+            "Verify value prediction for inst [sn=%llu] "
+            "Predicted=%i, mispred=%i\n",
+            inst->seqNum, inst->isValuePredicted(), inst->vpInfo.valueMispred);
+
+    // Sanity check
+    inst->vpSanityCheck();
 }
 
 void

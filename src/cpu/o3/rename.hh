@@ -53,6 +53,7 @@
 #include "cpu/o3/iew.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/vp/value_predictor.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -257,6 +258,9 @@ class Rename
 
     /** Should we SerializeBefore the current instruction */
     void handleMiscRegWaW(DynInstPtr &inst, ThreadID tid);
+
+    /** Predicts the value of an instructions destination register. */
+    void valuePredict(const DynInstPtr &inst, ThreadID tid);
 
     /** Calculates the number of free ROB entries for a specific thread. */
     int calcFreeROBEntries(ThreadID tid);
@@ -465,6 +469,9 @@ class Rename
 
     /** The maximum skid buffer size. */
     unsigned skidBufferMax;
+
+    /** Value Predictor (Access to make predictions)*/
+    ValuePredictor *valuePred;
 
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.

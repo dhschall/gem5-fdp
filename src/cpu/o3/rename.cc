@@ -86,6 +86,7 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
       numThreads(params.numThreads),
+      valuePred(params.valuePred),
       stats(_cpu)
 {
     if (renameWidth > MaxWidth)
@@ -760,6 +761,8 @@ Rename::renameInsts(ThreadID tid)
 
         renameDestRegs(inst, inst->threadNumber);
 
+        valuePredict(inst, inst->threadNumber);
+
         if (inst->isAtomic() || inst->isStore()) {
             storesInProgress[tid]++;
         } else if (inst->isLoad()) {
@@ -1221,6 +1224,48 @@ Rename::handleMiscRegWaW(DynInstPtr &inst, ThreadID tid)
             return;
         }
     }
+}
+
+void
+Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
+{
+    if (!valuePred) {
+        return;
+    }
+
+    // Check whether this instruction can be value predicted
+    if (!inst->canValuePredict()) {
+        return;
+    }
+
+    // Make the actual prediction
+    VPResult vp_result =
+        valuePred->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
+    inst->setVPInfo(vp_result.predict, vp_result.value, curTick());
+
+    // Check whether we are going predict this instruction or not.
+    if (!vp_result.predict) {
+        return;
+    }
+
+    // We want to predict the value and set the destination reg as ready for
+    // dependent instructions here if it is predictable
+    DPRINTF(
+        Rename,
+        "[tid:%i] Issue: Predictable Load encountered, predicting value.\n",
+        tid);
+    // Specutively set the register with the predicted value
+    // This should get corrected later if its wrong and if so we can flush and
+    // re-execute the instructions
+    inst->setRegOperand(inst->staticInst.get(), 0, vp_result.value);
+    // Pop the predicted value from instruction itself.
+    inst->popResult();
+
+    // Mark the destination register as ready for dependent instructions
+    DPRINTF(IEW, "Speculatively setting Destination Register %i (%s), [%d]\n",
+            inst->renamedDestIdx(0)->index(),
+            inst->renamedDestIdx(0)->className(), inst->seqNum);
+    scoreboard->setReg(inst->renamedDestIdx(0));
 }
 
 int
