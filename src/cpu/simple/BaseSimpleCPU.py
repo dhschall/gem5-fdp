@@ -28,6 +28,7 @@ from m5.defines import buildEnv
 from m5.objects.BaseCPU import BaseCPU
 from m5.objects.BranchPredictor import *
 from m5.objects.DummyChecker import DummyChecker
+from m5.objects.ValuePredictionUnit import *
 from m5.params import *
 
 
@@ -38,3 +39,4 @@ class BaseSimpleCPU(BaseCPU):
     cxx_class = "gem5::BaseSimpleCPU"
 
     branchPred = Param.BranchPredictor(NULL, "Branch Predictor")
+    valuePred = Param.ValuePredictor(NULL, "Value Predictor")

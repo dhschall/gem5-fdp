@@ -102,6 +102,10 @@ class SimpleExecContext : public ExecContext
                        "Number of branches predicted as taken"),
               ADD_STAT(numBranchMispred, statistics::units::Count::get(),
                        "Number of branch mispredictions"),
+              ADD_STAT(numPredictedValues, statistics::units::Count::get(),
+                       "Number of branches predicted as taken"),
+              ADD_STAT(numValueMispred, statistics::units::Count::get(),
+                       "Number of branch mispredictions"),
               numRegReads{
                   &(cpu->executeStats[thread->threadId()]->numIntRegReads),
                   &(cpu->executeStats[thread->threadId()]->numFpRegReads),
@@ -157,6 +161,10 @@ class SimpleExecContext : public ExecContext
         /// Number of misprediced branches
         statistics::Scalar numBranchMispred;
         /// @}
+        /// Number of branches predicted as taken
+        statistics::Scalar numPredictedValues;
+        /// Number of misprediced branches
+        statistics::Scalar numValueMispred;
 
         std::array<statistics::Scalar *, CCRegClass + 1> numRegReads;
         std::array<statistics::Scalar *, CCRegClass + 1> numRegWrites;
@@ -201,6 +209,16 @@ class SimpleExecContext : public ExecContext
         if (reg.is(InvalidRegClass))
             return 0;
         (*execContextStats.numRegReads[reg.classValue()])++;
+        return thread->getReg(reg);
+    }
+
+    RegVal
+    getDestRegOperand(const StaticInst *si, int idx)
+    {
+        const RegId &reg = si->destRegIdx(idx);
+        if (reg.is(InvalidRegClass)) {
+            return 0;
+        }
         return thread->getReg(reg);
     }
 

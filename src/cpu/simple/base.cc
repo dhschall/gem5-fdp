@@ -84,6 +84,7 @@ BaseSimpleCPU::BaseSimpleCPU(const BaseSimpleCPUParams &p)
     : BaseCPU(p),
       curThread(0),
       branchPred(p.branchPred),
+      valuePred(p.valuePred),
       traceData(NULL),
       _status(Idle)
 {
@@ -438,6 +439,30 @@ BaseSimpleCPU::postExecute()
     Addr instAddr = threadContexts[curThread]->pcState().instAddr();
     auto op_class = curStaticInst->opClass();
     t_info.issueStats.issuedInstType[curThread][op_class]++;
+
+    // Do the value prediction here
+    if (valuePred && curStaticInst && curStaticInst->canValuePredict()) {
+        // Use a fake sequence number since we only have one
+        // instruction in flight at the same time.
+        const InstSeqNum cur_sn(0);
+
+        // Make the prediction
+        auto vp_result = valuePred->lookup(curThread, instAddr, cur_sn);
+
+        // Get the correct value
+        RegVal actual_val = t_info.getDestRegOperand(curStaticInst.get(), 0);
+
+        // Update the predictor
+        valuePred->update(curThread, instAddr, cur_sn, 0, actual_val,
+                          vp_result.value, vp_result.predict, Cycles(0));
+
+        if (vp_result.predict) {
+            ++t_info.execContextStats.numPredictedValues;
+            if (vp_result.value != actual_val) {
+                ++t_info.execContextStats.numValueMispred;
+            }
+        }
+    }
 
     if (curStaticInst->isMemRef()) {
         executeStats[t_info.thread->threadId()]->numMemRefs++;

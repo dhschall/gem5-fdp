@@ -241,6 +241,13 @@ class StaticInst : public RefCounted, public StaticInstFlags
 
     virtual uint64_t getEMI() const { return 0; }
 
+    bool
+    canValuePredict() const
+    {
+        return isLoad() && numDestRegs() == 1 &&
+               destRegIdx(0).classValue() == RegClassType::IntRegClass;
+    }
+
   protected:
 
     /**

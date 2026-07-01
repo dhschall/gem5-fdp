@@ -407,8 +407,7 @@ class DynInst : public ExecContext, public RefCounted
     bool
     canValuePredict()
     {
-        return isLoad() && numDestRegs() == 1 &&
-               destRegIdx(0).classValue() == RegClassType::IntRegClass;
+        return staticInst->canValuePredict();
     }
 
     /** Set the value predicted information for later verification */
