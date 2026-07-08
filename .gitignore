@@ -36,5 +36,6 @@ configs/example/memcheck.cfg
 configs/dram/lowp_sweep.cfg
 .pyenv
 .vscode
+.devcontainer/devcontainer-lock.json
 typings
 .DS_Store
