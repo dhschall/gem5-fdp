@@ -64,6 +64,7 @@ class ValuePredictor : public SimObject
      * @param bp_history Pointer to any bp history state.
      * @return Whether or not the branch is taken.
      */
+    // GETS CALLED DURING FETCH
     virtual VPResult lookup(ThreadID tid, Addr inst_addr,
                             InstSeqNum seq_num) = 0;
 
@@ -71,12 +72,14 @@ class ValuePredictor : public SimObject
      *  @param inst_pc The address of the branch being updated.
      *  @param target_pc The target address of the branch.
      */
+    // GETS CALLED DURING COMMIT
     virtual void update(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
                         Addr load_address, RegVal correct_val,
                         RegVal predicted_val, bool value_predicted,
                         Cycles rn_to_ex_delay) = 0;
 
     // If predict error, squash the inflight instructions in value predictor.
+    // GETS (hopefully not) CALLED DURING COMMIT
     virtual void squash(const InstSeqNum seq_num) {};
 
   protected:
