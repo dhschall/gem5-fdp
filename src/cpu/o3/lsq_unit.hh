@@ -376,6 +376,8 @@ class LSQUnit
     void recvRetry();
 
     unsigned int cacheLineSize();
+
+    bool isInLoadQueue(InstSeqNum seqNum) const;
   private:
     /** Reset the LSQ state */
     void resetState();

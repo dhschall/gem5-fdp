@@ -1370,6 +1370,21 @@ LSQUnit::cacheLineSize()
     return cpu->cacheLineSize();
 }
 
+bool
+LSQUnit::isInLoadQueue(InstSeqNum seqNum) const
+{
+    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
+        const LQEntry &entry = *it;
+
+        const DynInstPtr &inst = entry.instruction();
+
+        if (inst->seqNum == seqNum) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {
