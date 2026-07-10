@@ -38,6 +38,15 @@
 #include "base/types.hh"
 
 namespace gem5 {
-    uint16_t lfsr_fibonacci_16(uint16_t lsfr);
-    const uint16_t lfsr_seed = 0x3c59; //Random initial seed. Cannot be zero
+
+    class LFSR16 {
+        public:
+            LFSR16(uint16_t seed=0x7ecb);
+
+            uint16_t next();
+            uint16_t get_state();
+
+        private:
+            uint16_t state;
+    };
 }

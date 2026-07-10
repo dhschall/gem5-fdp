@@ -37,12 +37,19 @@
 #include "cpu/random/lsfr16.hh"
 
 namespace gem5 {
-    uint16_t lfsr_fibonacci_16(uint16_t lsfr) {
 
+    LFSR16::LFSR16(uint16_t seed) : state(seed) {}
+
+    uint16_t LFSR16::next() {
         //Calculate the bit
-        uint16_t bit = ((lsfr >> 15) ^ (lsfr >> 13) ^ (lsfr >> 12) ^ (lsfr >> 10));
+        uint16_t bit = ((state >> 15) ^ (state >> 13) ^ (state >> 12) ^ (state >> 10));
 
-        //Insert the bit
-        return (lsfr >> 1) | (bit << 15);
+        //Update the state and return it.
+        state = (state >> 1) | (bit << 15);
+        return state;
+    }
+
+    uint16_t LFSR16::get_state() {
+        return state;
     }
 }
