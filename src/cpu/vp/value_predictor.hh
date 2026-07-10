@@ -46,12 +46,14 @@
 namespace gem5
 {
 
+/** Represents the result of the value predictor.  */
 struct VPResult
 {
     RegVal value;
     bool predict;
 };
 
+/** Abstract ValuePredictor */
 class ValuePredictor : public SimObject
 {
   public:
