@@ -47,6 +47,11 @@ ValuePredictor::ValuePredictor(const ValuePredictorParams &params)
       stats(this)
 {}
 
+void
+ValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {
+    this->cpu = cpu;
+}
+
 ValuePredictor::ValuePredictorStats::ValuePredictorStats(
     statistics::Group *parent)
     : statistics::Group(parent),

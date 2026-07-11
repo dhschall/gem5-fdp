@@ -108,6 +108,13 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
         serializeInst[tid] = nullptr;
         serializeOnNextInst[tid] = false;
     }
+
+    //Set the CPU where the value predictor is ran.
+    /*
+    I thing this only has to be set here, as valuePred
+    is a pointer and therefore Commit stage will also have this change done
+    */
+    valuePred->setO3CPU(cpu);
 }
 
 std::string

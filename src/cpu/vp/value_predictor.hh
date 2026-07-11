@@ -43,6 +43,11 @@
 #include "params/ValuePredictor.hh"
 #include "sim/clocked_object.hh"
 
+//Forward declaration
+namespace gem5::o3 {
+  class CPU;
+}
+
 namespace gem5
 {
 
@@ -58,6 +63,9 @@ class ValuePredictor : public SimObject
 {
   public:
     ValuePredictor(const ValuePredictorParams &params);
+
+    /** Sets the CPU that the value predictor is in. */
+    void setO3CPU(gem5::o3::CPU *cpu);
 
     /**
      * Looks up the given instruction address and returns
@@ -90,6 +98,9 @@ class ValuePredictor : public SimObject
 
     /** Instruction shift amount */
     const unsigned instShiftAmt;
+
+    /** Pointer to the O3 CPU used */
+    gem5::o3::CPU *cpu;
 
     struct ValuePredictorStats : public statistics::Group
     {
