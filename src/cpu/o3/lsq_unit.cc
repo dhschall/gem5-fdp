@@ -1371,14 +1371,16 @@ LSQUnit::cacheLineSize()
 }
 
 bool
-LSQUnit::isInLoadQueue(InstSeqNum seqNum) const
+LSQUnit::isInLoadQueue(Addr inst_addr) const
 {
     for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
         const LQEntry &entry = *it;
 
         const DynInstPtr &inst = entry.instruction();
 
-        if (inst->seqNum == seqNum) {
+        Addr instructionAddress = inst->pcState().instAddr();
+
+        if (instructionAddress == inst_addr) {
             return true;
         }
     }
