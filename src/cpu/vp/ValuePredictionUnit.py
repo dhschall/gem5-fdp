@@ -44,4 +44,4 @@ class StrideLVP(ValuePredictor):
     confidence_reset_to_zero = Param.Bool(
         False, "Reset confidence to 0 on misprediction"
     )
-    use_stride = Param.Bool(True, "Reset confidence to 0 on misprediction")
+    use_stride = Param.Bool(True, "Use stride (true) or use constant (false)")
