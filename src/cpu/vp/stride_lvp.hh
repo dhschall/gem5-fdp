@@ -56,7 +56,7 @@ class StrideLVP : public ValuePredictor
     StrideLVP(const StrideLVPParams &params);
 
     VPResult lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num) override;
-    void update(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+    void updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
                 Addr load_address, RegVal correct_val, RegVal predicted_val,
                 bool value_predicted, Cycles rn_to_ex_delay) override;
     void squash(const InstSeqNum seq_num) override;

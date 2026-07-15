@@ -453,7 +453,7 @@ BaseSimpleCPU::postExecute()
         RegVal actual_val = t_info.getDestRegOperand(curStaticInst.get(), 0);
 
         // Update the predictor
-        valuePred->update(curThread, instAddr, cur_sn, 0, actual_val,
+        valuePred->updateWhenLoad(curThread, instAddr, cur_sn, 0, actual_val,
                           vp_result.value, vp_result.predict, Cycles(0));
 
         if (vp_result.predict) {

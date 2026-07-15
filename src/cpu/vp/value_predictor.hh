@@ -40,8 +40,9 @@
 
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
-#include "params/ValuePredictor.hh"
 #include "sim/clocked_object.hh"
+#include "enums/ByteOrder.hh"
+#include "params/ValuePredictor.hh"
 
 //Forward declaration
 namespace gem5::o3 {
@@ -83,10 +84,15 @@ class ValuePredictor : public SimObject
      *  @param target_pc The target address of the branch.
      */
     // GETS CALLED DURING COMMIT
-    virtual void update(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+    virtual void updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
                         Addr load_address, RegVal correct_val,
                         RegVal predicted_val, bool value_predicted,
                         Cycles rn_to_ex_delay) = 0;
+
+    // GETS CALLED DURING COMMIT
+    virtual void updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+                        Addr store_address, uint8_t *data_written,
+                        unsigned effective_size, ByteOrder guest_byte_order) {};
 
     // If predict error, squash the inflight instructions in value predictor.
     // GETS (hopefully not) CALLED DURING COMMIT

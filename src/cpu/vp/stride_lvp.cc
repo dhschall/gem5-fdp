@@ -103,7 +103,7 @@ StrideLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
 }
 
 void
-StrideLVP::update(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+StrideLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
                   Addr load_address, RegVal correct_val, RegVal predicted_val,
                   bool value_predicted, Cycles rn_to_ex_delay)
 {

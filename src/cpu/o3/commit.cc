@@ -1386,25 +1386,31 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
         return;
     }
 
-    // Only update for predictable instructions
-    if (!inst->canValuePredict()) {
-        return;
+    // Only update for predictable instructions (loads)
+    if (inst->canValuePredict()) {
+        // Update the VP for all instructions
+        Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
+        valuePred->updateWhenLoad(inst->threadNumber, inst->pcState().instAddr(),
+                        inst->seqNum, inst->effAddr, inst->getActualValue(),
+                        inst->getPredictedValue(), inst->isValuePredicted(),
+                        clk);
+        // debug statement to see if we are speculating
+        DPRINTF(Commit,
+                "Verify value prediction for inst [sn=%llu] "
+                "Predicted=%i, mispred=%i\n",
+                inst->seqNum, inst->isValuePredicted(), inst->vpInfo.valueMispred);
+
+        // Sanity check
+        inst->vpSanityCheck();
     }
 
-    // Update the VP for all instructions
-    Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
-    valuePred->update(inst->threadNumber, inst->pcState().instAddr(),
-                      inst->seqNum, inst->effAddr, inst->getActualValue(),
-                      inst->getPredictedValue(), inst->isValuePredicted(),
-                      clk);
-    // debug statement to see if we are speculating
-    DPRINTF(Commit,
-            "Verify value prediction for inst [sn=%llu] "
-            "Predicted=%i, mispred=%i\n",
-            inst->seqNum, inst->isValuePredicted(), inst->vpInfo.valueMispred);
-
-    // Sanity check
-    inst->vpSanityCheck();
+    //If it is a store, also update
+    if (inst->isStore()) {
+        ByteOrder guestByteOrder = inst->tcBase()->getSystemPtr()->getGuestByteOrder();
+        valuePred->updateWhenStore(inst->threadNumber, inst->pcState().instAddr(),
+                        inst->seqNum, inst->physEffAddr, inst->memData,
+                        inst->effSize, guestByteOrder);
+    }
 }
 
 void
