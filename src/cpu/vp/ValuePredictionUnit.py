@@ -49,8 +49,8 @@ class StrideLVP(ValuePredictor):
 
 class StrideAvppLVP(ValuePredictor):
     type = "StrideAvppLVP"
-    cxx_class = "gem5::StrideAvppLVP"
-    cxx_header = "cpu/vp/stride_avpp_lvp.hh"
+    cxx_class = "gem5::avpp::StrideAvppLVP"
+    cxx_header = "cpu/vp/avpp/stride_avpp_lvp.hh"
 
     pdis_max_value = Param.Unsigned(8, "Max prefetch distance")
 
@@ -110,7 +110,7 @@ class StrideAvppLVP(ValuePredictor):
         "Port for requesting speculative prefetch of the VT table."
     )
 
-    size_prefetch_block_queue = Param.Unsigned(
-        2,
+    size_prefetch_inflight_queue = Param.Unsigned(
+        4,
         "How many prefetchs can be in a state of not-being able to be sent at the same time to memory.",
     )

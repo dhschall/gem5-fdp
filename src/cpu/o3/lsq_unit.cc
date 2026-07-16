@@ -1370,23 +1370,6 @@ LSQUnit::cacheLineSize()
     return cpu->cacheLineSize();
 }
 
-bool
-LSQUnit::isInLoadQueue(Addr inst_addr) const
-{
-    for (auto it = loadQueue.begin(); it != loadQueue.end(); ++it) {
-        const LQEntry &entry = *it;
-
-        const DynInstPtr &inst = entry.instruction();
-
-        Addr instructionAddress = inst->pcState().instAddr();
-
-        if (instructionAddress == inst_addr) {
-            return true;
-        }
-    }
-    return false;
-}
-
 Fault
 LSQUnit::read(LSQRequest *request, ssize_t load_idx)
 {

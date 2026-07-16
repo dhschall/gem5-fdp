@@ -908,9 +908,6 @@ class LSQ
 
     void sendRetryResp();
 
-    /** Returns the LSQUnit of a certain thread */
-    LSQUnit *getLSQUnit(ThreadID tid);
-
   protected:
     /** D-cache is blocked */
     bool _cacheBlocked;

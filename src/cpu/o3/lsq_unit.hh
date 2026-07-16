@@ -376,8 +376,6 @@ class LSQUnit
     void recvRetry();
 
     unsigned int cacheLineSize();
-
-    bool isInLoadQueue(Addr inst_addr) const;
   private:
     /** Reset the LSQ state */
     void resetState();

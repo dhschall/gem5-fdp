@@ -854,12 +854,6 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     return inst->getFault();
 }
 
-LSQUnit*
-LSQ::getLSQUnit(ThreadID tid)
-{
-    return thread[tid].get();
-}
-
 void
 SingleDataRequest::finish(const Fault &fault, const RequestPtr &request,
                           gem5::ThreadContext *tc, BaseMMU::Mode mode)
