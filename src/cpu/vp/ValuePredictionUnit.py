@@ -1,3 +1,4 @@
+from m5.objects.ClockedObject import ClockedObject
 from m5.objects.IndexingPolicies import *
 from m5.objects.ReplacementPolicies import *
 from m5.objects.Tags import *
@@ -12,6 +13,33 @@ class AtomicValuePredictor(SimObject):
     abstract = True
 
     numThreads = Param.Unsigned(0, "Number of threads")
+    instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
+
+
+class TimingValuePredictor(ClockedObject):
+    type = "TimingValuePredictor"
+    cxx_class = "gem5::TimingValuePredictor"
+    cxx_header = "cpu/vp/timing_value_predictor.hh"
+    abstract = True
+
+    clk_domain = Param.ClockDomain(
+        Parent.clk_domain, "Clock domain of the value predictor"
+    )
+
+    lookup_latency = Param.Cycles(
+        1, "Number of cycles that takes to make the prediction"
+    )
+
+    update_load_latency = Param.Cycles(
+        1,
+        "Number of cycles that takes to update the predictor in case of a load",
+    )
+
+    update_store_latency = Param.Cycles(
+        1,
+        "Number of cycles that takes to update the predictor in case of a store",
+    )
+
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
 
