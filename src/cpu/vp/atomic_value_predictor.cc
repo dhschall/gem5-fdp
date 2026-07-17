@@ -35,12 +35,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "cpu/vp/value_predictor.hh"
+#include "cpu/vp/atomic_value_predictor.hh"
 
 namespace gem5
 {
 
-ValuePredictor::ValuePredictor(const ValuePredictorParams &params)
+AtomicValuePredictor::AtomicValuePredictor(
+    const AtomicValuePredictorParams &params)
     : SimObject(params),
       numThreads(params.numThreads),
       instShiftAmt(params.instShiftAmt),
@@ -48,11 +49,11 @@ ValuePredictor::ValuePredictor(const ValuePredictorParams &params)
 {}
 
 void
-ValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {
+AtomicValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {
     this->cpu = cpu;
 }
 
-ValuePredictor::ValuePredictorStats::ValuePredictorStats(
+AtomicValuePredictor::AtomicValuePredictorStats::AtomicValuePredictorStats(
     statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(lookups, statistics::units::Count::get(),

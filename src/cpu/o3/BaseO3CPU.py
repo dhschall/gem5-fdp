@@ -199,7 +199,7 @@ class BaseO3CPU(BaseCPU):
         ),
         "Branch Predictor",
     )
-    valuePred = Param.ValuePredictor(
+    valuePred = Param.AtomicValuePredictor(
         NULL, "Value Predictor. NULL will disable the value predictor"
     )
 

@@ -40,9 +40,9 @@
 
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
-#include "sim/clocked_object.hh"
 #include "enums/ByteOrder.hh"
-#include "params/ValuePredictor.hh"
+#include "params/AtomicValuePredictor.hh"
+#include "sim/clocked_object.hh"
 
 //Forward declaration
 namespace gem5::o3 {
@@ -59,11 +59,11 @@ struct VPResult
     bool predict;
 };
 
-/** Abstract ValuePredictor */
-class ValuePredictor : public SimObject
+/** Abstract AtomicValuePredictor */
+class AtomicValuePredictor : public SimObject
 {
   public:
-    ValuePredictor(const ValuePredictorParams &params);
+    AtomicValuePredictor(const AtomicValuePredictorParams &params);
 
     /** Sets the CPU that the value predictor is in. */
     void setO3CPU(gem5::o3::CPU *cpu);
@@ -84,15 +84,16 @@ class ValuePredictor : public SimObject
      *  @param target_pc The target address of the branch.
      */
     // GETS CALLED DURING COMMIT
-    virtual void updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-                        Addr load_address, RegVal correct_val,
-                        RegVal predicted_val, bool value_predicted,
-                        Cycles rn_to_ex_delay) = 0;
+    virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
+                        InstSeqNum seq_num, Addr load_address,
+                        RegVal correct_val, RegVal predicted_val,
+                        bool value_predicted, Cycles rn_to_ex_delay) = 0;
 
     // GETS CALLED DURING COMMIT
-    virtual void updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-                        Addr store_address, uint8_t *data_written,
-                        unsigned effective_size, ByteOrder guest_byte_order) {};
+    virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
+                        InstSeqNum seq_num, Addr store_address,
+                        uint8_t *data_written, unsigned effective_size,
+                        ByteOrder guest_byte_order) {};
 
     // If predict error, squash the inflight instructions in value predictor.
     // GETS (hopefully not) CALLED DURING COMMIT
@@ -108,9 +109,9 @@ class ValuePredictor : public SimObject
     /** Pointer to the O3 CPU used */
     gem5::o3::CPU *cpu;
 
-    struct ValuePredictorStats : public statistics::Group
+    struct AtomicValuePredictorStats : public statistics::Group
     {
-        ValuePredictorStats(statistics::Group *parent);
+        AtomicValuePredictorStats(statistics::Group *parent);
 
         statistics::Scalar lookups;
         statistics::Scalar misses;

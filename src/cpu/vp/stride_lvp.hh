@@ -43,14 +43,14 @@
 #include "base/cache/associative_cache.hh"
 #include "base/logging.hh"
 #include "base/types.hh"
-#include "cpu/vp/value_predictor.hh"
+#include "cpu/vp/atomic_value_predictor.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "params/StrideLVP.hh"
 
 namespace gem5
 {
 
-class StrideLVP : public ValuePredictor
+class StrideLVP : public AtomicValuePredictor
 {
   public:
     StrideLVP(const StrideLVPParams &params);

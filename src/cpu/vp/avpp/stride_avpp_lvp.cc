@@ -51,7 +51,7 @@ namespace gem5::avpp
 {
 
 StrideAvppLVP::StrideAvppLVP(const StrideAvppLVPParams &params)
-    : ValuePredictor(params),
+    : AtomicValuePredictor(params),
     params(params),
     requestPort(params.name + ".prefetch_request_port", this),
     addressTable("VT", params.at_table_entries, params.at_table_assoc,
@@ -363,7 +363,7 @@ StrideAvppLVP::getPort(const std::string &if_name, PortID idx)
         return requestPort;
     } else {
         //Pass the burn to the parent class
-        return ValuePredictor::getPort(if_name, idx);
+        return AtomicValuePredictor::getPort(if_name, idx);
     }
 }
 

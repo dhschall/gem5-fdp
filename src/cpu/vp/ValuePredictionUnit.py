@@ -5,17 +5,17 @@ from m5.params import *
 from m5.SimObject import SimObject
 
 
-class ValuePredictor(SimObject):
-    type = "ValuePredictor"
-    cxx_class = "gem5::ValuePredictor"
-    cxx_header = "cpu/vp/value_predictor.hh"
+class AtomicValuePredictor(SimObject):
+    type = "AtomicValuePredictor"
+    cxx_class = "gem5::AtomicValuePredictor"
+    cxx_header = "cpu/vp/atomic_value_predictor.hh"
     abstract = True
 
     numThreads = Param.Unsigned(0, "Number of threads")
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
 
-class StrideLVP(ValuePredictor):
+class StrideLVP(AtomicValuePredictor):
     type = "StrideLVP"
     cxx_class = "gem5::StrideLVP"
     cxx_header = "cpu/vp/stride_lvp.hh"
@@ -47,7 +47,7 @@ class StrideLVP(ValuePredictor):
     use_stride = Param.Bool(True, "Use stride (true) or use constant (false)")
 
 
-class StrideAvppLVP(ValuePredictor):
+class StrideAvppLVP(AtomicValuePredictor):
     type = "StrideAvppLVP"
     cxx_class = "gem5::avpp::StrideAvppLVP"
     cxx_header = "cpu/vp/avpp/stride_avpp_lvp.hh"

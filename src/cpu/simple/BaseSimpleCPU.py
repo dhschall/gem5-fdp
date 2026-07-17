@@ -39,4 +39,4 @@ class BaseSimpleCPU(BaseCPU):
     cxx_class = "gem5::BaseSimpleCPU"
 
     branchPred = Param.BranchPredictor(NULL, "Branch Predictor")
-    valuePred = Param.ValuePredictor(NULL, "Value Predictor")
+    valuePred = Param.AtomicValuePredictor(NULL, "Value Predictor")

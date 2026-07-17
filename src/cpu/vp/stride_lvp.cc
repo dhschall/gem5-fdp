@@ -47,7 +47,7 @@ namespace gem5
 {
 
 StrideLVP::StrideLVP(const StrideLVPParams &p)
-    : ValuePredictor(p),
+    : AtomicValuePredictor(p),
       vpTable("VPT", p.table_entries, p.table_assoc,
               p.table_replacement_policy, p.table_indexing_policy,
               LVPEntry(genTagExtractor(p.table_indexing_policy))),

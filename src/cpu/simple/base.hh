@@ -52,7 +52,7 @@
 #include "cpu/pc_event.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/static_inst.hh"
-#include "cpu/vp/value_predictor.hh"
+#include "cpu/vp/atomic_value_predictor.hh"
 #include "mem/packet.hh"
 #include "mem/port.hh"
 #include "mem/request.hh"
@@ -86,7 +86,7 @@ class BaseSimpleCPU : public BaseCPU
   protected:
     ThreadID curThread;
     branch_prediction::BPredUnit *branchPred;
-    ValuePredictor *valuePred;
+    AtomicValuePredictor *valuePred;
 
     void checkPcEventQueue();
     void swapActiveThread();

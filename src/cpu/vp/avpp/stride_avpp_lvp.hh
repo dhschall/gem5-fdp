@@ -46,8 +46,8 @@
 #include "base/types.hh"
 #include "cpu/o3/lsq_unit.hh"
 #include "cpu/random/lsfr16.hh"
+#include "cpu/vp/atomic_value_predictor.hh"
 #include "cpu/vp/avpp/entries.hh"
-#include "cpu/vp/value_predictor.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/port.hh"
@@ -63,7 +63,7 @@ namespace gem5::avpp::fetchers
 namespace gem5::avpp
 {
 
-class StrideAvppLVP : public ValuePredictor
+class StrideAvppLVP : public AtomicValuePredictor
 {
     public:
 

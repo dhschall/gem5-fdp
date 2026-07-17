@@ -53,7 +53,7 @@
 #include "cpu/o3/rename_map.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/timebuf.hh"
-#include "cpu/vp/value_predictor.hh"
+#include "cpu/vp/atomic_value_predictor.hh"
 #include "enums/CommitPolicy.hh"
 #include "sim/probe/probe.hh"
 
@@ -145,7 +145,7 @@ class Commit
     BranchHistory committedBranchHistory;
 
     /** The value predictor (For update) */
-    ValuePredictor *valuePred;
+    AtomicValuePredictor *valuePred;
 
     /** Mark the thread as processing a trap. */
     void processTrapEvent(ThreadID tid);

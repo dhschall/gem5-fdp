@@ -37,13 +37,13 @@
 Import('*')
 SimObject('ValuePredictionUnit.py',
     sim_objects=[
-        'ValuePredictor',
+        'AtomicValuePredictor',
         'StrideLVP',
         'StrideAvppLVP'
     ],
     enums=[])
 
-Source('value_predictor.cc')
+Source('atomic_value_predictor.cc')
 Source('stride_lvp.cc')
 Source('avpp/stride_avpp_lvp.cc')
 
