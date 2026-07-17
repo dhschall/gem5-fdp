@@ -42,6 +42,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/vp/structs.hh"
 #include "enums/ByteOrder.hh"
 #include "enums/InflightPendingUpdatePolicy.hh"
@@ -80,13 +81,19 @@ class TimingValuePredictor : public ClockedObject
         */
 
         // GETS CALLED DURING FETCH
-        void startLookup(ThreadID tid, Addr inst_addr,
-                        InstSeqNum seq_num,
-                        std::function<void(VPResult result)> callback);
+        void startLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback);
 
-        void finishLookup(ThreadID tid, Addr inst_addr,
-                        InstSeqNum seq_num,
-                        std::function<void(VPResult result)> callback);
+        void finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback);
 
         virtual VPResult lookup(ThreadID tid, Addr inst_addr,
                             InstSeqNum seq_num) = 0;
@@ -131,10 +138,17 @@ class TimingValuePredictor : public ClockedObject
         // If predict error, squash the inflight instructions in value predictor.
         // GETS (hopefully not) CALLED DURING COMMIT
 
+        //the internal policies
+
+        gem5::enums::PredictorUpdatePolicy predictorUpdatePolicy;
+        gem5::enums::PredictorAvailabilityPolicy predictorAvailabilityPolicy;
+        gem5::enums::InflightPendingUpdatePolicy inflightPendingUpdatePolicy;
+
+    protected:
+
         /** Notifies the child of the squash */
         virtual void squashNotify(const InstSeqNum seq_num) {};
 
-    protected:
         Cycles lookupLatency;
 
         Cycles updateLoadLatency;
@@ -176,12 +190,6 @@ class TimingValuePredictor : public ClockedObject
         std::deque<VPTimingInflight> lookupInflight;
         std::deque<VPTimingInflight> updateWhenLoadInflight;
         std::deque<VPTimingInflight> updateWhenStoreInflight;
-
-        //the internal policies
-
-        gem5::enums::PredictorUpdatePolicy predictorUpdatePolicy;
-        gem5::enums::PredictorAvailabilityPolicy predictorAvailabilityPolicy;
-        gem5::enums::InflightPendingUpdatePolicy inflightPendingUpdatePolicy;
 };
 
 } //namespace gem5

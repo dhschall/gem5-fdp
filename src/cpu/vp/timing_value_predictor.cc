@@ -43,14 +43,14 @@ namespace gem5
 TimingValuePredictor::TimingValuePredictor(
     const TimingValuePredictorParams &params)
     : ClockedObject(params),
+    predictorUpdatePolicy(params.predictor_update_policy),
+    predictorAvailabilityPolicy(params.predictor_availability_policy),
+    inflightPendingUpdatePolicy(params.inflight_pending_update_policy),
     lookupLatency(params.lookup_latency),
     updateLoadLatency(params.update_load_latency),
     updateStoreLatency(params.update_store_latency),
     instShiftAmt(params.instShiftAmt),
     stats(this),
-    predictorUpdatePolicy(params.predictor_update_policy),
-    predictorAvailabilityPolicy(params.predictor_availability_policy),
-    inflightPendingUpdatePolicy(params.inflight_pending_update_policy)
 {
 
     //TODO: progressively keep implementing them to delete these panic_if
@@ -74,13 +74,16 @@ TimingValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {
 }
 
 void
-TimingValuePredictor::startLookup(ThreadID tid, Addr inst_addr,
-                                InstSeqNum seq_num,
-                                std::function<void(VPResult result)> callback)
+TimingValuePredictor::startLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback)
 {
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
-        finishLookup(tid, inst_addr, seq_num, callback);
+        finishLookup(inst, tid, inst_addr, seq_num, callback);
     };
 
     auto event = EventFunctionWrapper(lambda, name());
@@ -94,16 +97,19 @@ TimingValuePredictor::startLookup(ThreadID tid, Addr inst_addr,
 }
 
 void
-TimingValuePredictor::finishLookup(ThreadID tid, Addr inst_addr,
-                                InstSeqNum seq_num,
-                                std::function<void(VPResult result)> callback)
+TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback)
 {
     //Check that the events are completed in-order of how they where scheduled
     assert(lookupInflight.front().seqNum == seq_num);
 
     VPResult predictionResult = lookup(tid, inst_addr, seq_num);
 
-    callback(predictionResult);
+    callback(inst, tid, inst_addr, seq_num, predictionResult);
 
     lookupInflight.pop_front();
 }
