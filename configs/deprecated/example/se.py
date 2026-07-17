@@ -296,8 +296,7 @@ if args.wait_gdb:
 
 if args.use_fdp:
     for i in range(np):
-        system.cpu[i].icache.prefetcher = TaggedPrefetcher(use_virtual_addresses=True)
-        #system.cpu[i].icache.prefetcher = FetchDirectedPrefetcher(use_virtual_addresses=True, cpu=system.cpu[i])
+        system.cpu[i].icache.prefetcher = FetchDirectedPrefetcher(use_virtual_addresses=True, cpu=system.cpu[i])
 
 root = Root(full_system=False, system=system)
 Simulation.run(args, root, system, FutureClass)
