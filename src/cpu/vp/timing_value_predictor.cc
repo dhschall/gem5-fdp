@@ -60,8 +60,8 @@ TimingValuePredictor::TimingValuePredictor(
         "Currently speculative update policy is not supported!");
 
     panic_if(predictorAvailabilityPolicy
-        == gem5::enums::PredictorAvailabilityPolicy::NotDelay,
-        "Currently not-delay dispatch availability policy is not supported!");
+        == gem5::enums::PredictorAvailabilityPolicy::Delay,
+        "Currently delay dispatch availability policy is not supported!");
 
     panic_if(inflightPendingUpdatePolicy
         == gem5::enums::InflightPendingUpdatePolicy::InflightWait,
