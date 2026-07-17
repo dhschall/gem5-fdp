@@ -78,7 +78,7 @@ class TimingValuePredictor : public ClockedObject
         void setO3CPU(gem5::o3::CPU *cpu);
 
         /*Children should override the ones that actually perform real work,
-          The semantic ones: lookup, updateWhenLoad, updateWhenStore.
+          The semantic ones: lookup, updateWhenLoad, updateWhenStore, squashNotify.
           This updates one are optional as you may not train.
         */
 
