@@ -54,6 +54,7 @@
 #include "cpu/o3/limits.hh"
 #include "cpu/timebuf.hh"
 #include "cpu/vp/atomic_value_predictor.hh"
+#include "cpu/vp/timing_value_predictor.hh"
 #include "sim/probe/probe.hh"
 
 namespace gem5
@@ -471,7 +472,8 @@ class Rename
     unsigned skidBufferMax;
 
     /** Value Predictor (Access to make predictions)*/
-    AtomicValuePredictor *valuePred;
+    AtomicValuePredictor *valuePredAtomic;
+    TimingValuePredictor *valuePredTiming;
 
     /** Enum to record the source of a structure full stall.  Can come from
      * either ROB, IQ, LSQ, and it is priortized in that order.

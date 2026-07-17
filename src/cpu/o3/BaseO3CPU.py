@@ -199,8 +199,13 @@ class BaseO3CPU(BaseCPU):
         ),
         "Branch Predictor",
     )
-    valuePred = Param.AtomicValuePredictor(
-        NULL, "Value Predictor. NULL will disable the value predictor"
+
+    valuePredAtomic = Param.AtomicValuePredictor(
+        NULL, "Atomic Value Predictor. NULL will disable the value predictor"
+    )
+
+    valuePredTiming = Param.TimingValuePredictor(
+        NULL, "Timing Value Predictor. NULL will disable the value predictor"
     )
 
     needsTSO = Param.Bool(False, "Enable TSO Memory model")

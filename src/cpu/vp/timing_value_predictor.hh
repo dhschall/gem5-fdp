@@ -42,6 +42,7 @@
 
 #include "base/types.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/vp/structs.hh"
 #include "enums/ByteOrder.hh"
 #include "params/TimingValuePredictor.hh"
 #include "sim/clocked_object.hh"
@@ -61,13 +62,6 @@ struct VPTimingInflight
     InstSeqNum seqNum;
 
     EventFunctionWrapper event;
-};
-
-/** Represents the result of the value predictor.  */
-struct VPResult
-{
-    RegVal value;
-    bool predict;
 };
 
 class TimingValuePredictor : public ClockedObject

@@ -106,7 +106,8 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
-      valuePred(params.valuePred),
+      valuePredAtomic(params.valuePredAtomic),
+      valuePredTiming(params.valuePredTiming),
       cpu(_cpu),
       iewToCommitDelay(params.iewToCommitDelay),
       commitToIEWDelay(params.commitToIEWDelay),
@@ -529,8 +530,8 @@ Commit::squashAll(ThreadID tid)
     changedROBNumEntries[tid] = true;
 
     // Also squash value prediction.
-    if (valuePred) {
-        valuePred->squash(squashed_inst);
+    if (valuePredAtomic) {
+        valuePredAtomic->squash(squashed_inst);
     }
 
     // Send back the sequence number of the squashed instruction.
@@ -854,8 +855,8 @@ Commit::commit()
             rob->squash(squashed_inst, tid, squashReason[tid] == MemViolation);
             changedROBNumEntries[tid] = true;
 
-            if (valuePred) {
-                valuePred->squash(squashed_inst);
+            if (valuePredAtomic) {
+                valuePredAtomic->squash(squashed_inst);
             }
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -1382,7 +1383,7 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 void
 Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
 {
-    if (!valuePred) {
+    if (!valuePredAtomic) {
         return;
     }
 
@@ -1390,7 +1391,8 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
     if (inst->canValuePredict()) {
         // Update the VP for all instructions
         Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
-        valuePred->updateWhenLoad(inst->threadNumber, inst->pcState().instAddr(),
+        valuePredAtomic->updateWhenLoad(inst->threadNumber,
+                        inst->pcState().instAddr(),
                         inst->seqNum, inst->effAddr, inst->getActualValue(),
                         inst->getPredictedValue(), inst->isValuePredicted(),
                         clk);
@@ -1407,7 +1409,8 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
     //If it is a store, also update
     if (inst->isStore()) {
         ByteOrder guestByteOrder = inst->tcBase()->getSystemPtr()->getGuestByteOrder();
-        valuePred->updateWhenStore(inst->threadNumber, inst->pcState().instAddr(),
+        valuePredAtomic->updateWhenStore(inst->threadNumber,
+                        inst->pcState().instAddr(),
                         inst->seqNum, inst->physEffAddr, inst->memData,
                         inst->effSize, guestByteOrder);
     }

@@ -86,7 +86,8 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
       commitToRenameDelay(params.commitToRenameDelay),
       renameWidth(params.renameWidth),
       numThreads(params.numThreads),
-      valuePred(params.valuePred),
+      valuePredAtomic(params.valuePredAtomic),
+      valuePredTiming(params.valuePredTiming),
       stats(_cpu)
 {
     if (renameWidth > MaxWidth)
@@ -111,10 +112,10 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
 
     //Set the CPU where the value predictor is ran.
     /*
-    I thing this only has to be set here, as valuePred
+    I thing this only has to be set here, as valuePredAtomic
     is a pointer and therefore Commit stage will also have this change done
     */
-    valuePred->setO3CPU(cpu);
+    valuePredAtomic->setO3CPU(cpu);
 }
 
 std::string
@@ -1236,7 +1237,7 @@ Rename::handleMiscRegWaW(DynInstPtr &inst, ThreadID tid)
 void
 Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
 {
-    if (!valuePred) {
+    if (!valuePredAtomic) {
         return;
     }
 
@@ -1247,7 +1248,7 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
 
     // Make the actual prediction
     VPResult vp_result =
-        valuePred->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
+        valuePredAtomic->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
     inst->setVPInfo(vp_result.predict, vp_result.value, curTick());
 
     // Check whether we are going predict this instruction or not.

@@ -40,6 +40,7 @@
 
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
+#include "cpu/vp/structs.hh"
 #include "enums/ByteOrder.hh"
 #include "params/AtomicValuePredictor.hh"
 #include "sim/clocked_object.hh"
@@ -51,13 +52,6 @@ namespace gem5::o3 {
 
 namespace gem5
 {
-
-/** Represents the result of the value predictor.  */
-struct VPResult
-{
-    RegVal value;
-    bool predict;
-};
 
 /** Abstract AtomicValuePredictor */
 class AtomicValuePredictor : public SimObject
