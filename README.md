@@ -22,7 +22,7 @@ PHAST is much more complex than Store Sets and so required several changes and o
 - Latency of L1-I reduced to 1 cycle to represent using a u-op cache, as per https://dl.acm.org/doi/10.1145/3613424.3614258
 - Store-to-load forwarding latency is parameterised in BaseO3CPU.py as LSQForwardingLatency with a default of 4 cycles.
 - Stride Prefetcher is set to a default degree of 8, prefetch_on_pf_hit is set to True and prefetch_on_access is set to False.
-- Prefetchers that require access to the core's MMU don't work by default with checkpoint restoration. Modified Simulation.py to call `.registerMMU` on each prefetcher, and added `--use-fdp` to `se.py` to make fetch directed prefetching work too. 
+- Prefetchers that require access to the core's MMU don't work by default with checkpoint restoration. Modified Simulation.py to call `.registerMMU` on each prefetcher, and added `--use-fdp` to `se.py` to make fetch directed prefetching work too. This overrides `--l1i-hwp-type`.
 
 ## Using and Configuring PHAST
 There isn't currently a nice python interface to select the MDP algorithm like with choosing the branch predictor. For now, just change the include file and type of the `depPred` class in `mem_dep_unit.hh` like so:
