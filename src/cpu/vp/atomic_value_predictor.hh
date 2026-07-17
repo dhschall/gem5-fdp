@@ -35,8 +35,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __CPU_VALUE_PREDICTOR_HH__
-#define __CPU_VALUE_PREDICTOR_HH__
+#ifndef __CPU_ATOMIC_VALUE_PREDICTOR_HH__
+#define __CPU_ATOMIC_VALUE_PREDICTOR_HH__
 
 #include "base/statistics.hh"
 #include "cpu/inst_seq.hh"
@@ -134,4 +134,4 @@ class AtomicValuePredictor : public SimObject
 
 } // namespace gem5
 
-#endif // __CPU_LVP_VALUE_PREDICTOR_HH__
+#endif // __CPU_ATOMIC_VALUE_PREDICTOR_HH__
