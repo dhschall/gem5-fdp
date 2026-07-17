@@ -50,12 +50,11 @@ SimObject('BranchPredictor.py',
     'ReturnAddrStack',
     'ITTAGE', 'ITTAGE_TAGE',
     'LocalBP', 'TournamentBP', 'BiModeBP', 'TAGEBase', 'TAGE', 'LoopPredictor',
-    'TAGE_SC_L_TAGE', 'TAGE_SC_L_TAGE_64KB', 'TAGE_SC_L_TAGE_8KB', 'TAGE_EMILIO', 'TAGE_SC_L_TAGE_128KB',
+    'TAGE_SC_L_TAGE', 'TAGE_SC_L_TAGE_64KB', 'TAGE_SC_L_TAGE_8KB', 'TAGE_EMILIO', 
     'LTAGE', 'TAGE_SC_L_LoopPredictor', 'StatisticalCorrector', 'TAGE_SC_L',
-    'TAGE_SC_L_128KB_StatisticalCorrector',
     'TAGE_SC_L_64KB_StatisticalCorrector',
     'TAGE_SC_L_8KB_StatisticalCorrector',
-    'TAGE_SC_L_128KB', 'TAGE_SC_L_64KB', 'TAGE_SC_L_8KB', 'MultiperspectivePerceptron',
+    'TAGE_SC_L_64KB', 'TAGE_SC_L_8KB', 'MultiperspectivePerceptron',
     'MultiperspectivePerceptron8KB', 'MultiperspectivePerceptron64KB',
     'MPP_TAGE', 'MPP_LoopPredictor', 'MPP_StatisticalCorrector',
     'MultiperspectivePerceptronTAGE', 'MPP_StatisticalCorrector_64KB',
@@ -88,7 +87,6 @@ Source('statistical_corrector.cc')
 Source('tage_sc_l.cc')
 Source('tage_sc_l_8KB.cc')
 Source('tage_sc_l_64KB.cc')
-Source('tage_sc_l_128KB.cc')
 Source('tage_sc_l_emilio.cc')
 Source('gshare.cc')
 Source('btb.cc')

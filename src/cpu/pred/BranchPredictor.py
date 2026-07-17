@@ -149,7 +149,7 @@ class AssociativeBTB(BranchTargetBuffer):
     cxx_class = "gem5::branch_prediction::AssociativeBTB"
     cxx_header = "cpu/pred/associative_btb.hh"
 
-    numEntries = Param.Unsigned(4096, "Number of entries of BTB entries")
+    numEntries = Param.Unsigned(2**13, "Number of entries of BTB entries")
     assoc = Param.Unsigned(8, "Associativity of the BTB")
     replacement_policy = Param.BaseReplacementPolicy(
         LRURP(), "Replacement policy of the table"
@@ -491,58 +491,6 @@ class TAGE_SC_L_TAGE(TAGEBase):
     truncatePathHist = Param.Bool(
         True, "Truncate the path history to its configured size"
     )
-
-class TAGE_SC_L_TAGE_128KB(TAGE_SC_L_TAGE):
-    type = "TAGE_SC_L_TAGE_128KB"
-    cxx_class = "gem5::branch_prediction::TAGE_SC_L_TAGE_128KB"
-    cxx_header = "cpu/pred/tage_sc_l_128KB.hh"
- 
-    # Four additional history tables compared to 64KB, extending the
-    # maximum history length from ~3000 to ~6000 cycles.
-    nHistoryTables = 40
- 
-    minHist = 6        # unchanged from 64KB
-    maxHist = 3000     
- 
-    # One useful bit per entry is sufficient (same as 64KB).
-    tagTableUBits = 1
- 
-    # Bimodal base table: one extra bit of addressing doubles its size.
-    # 64KB used 13; 128KB uses 14.
-    logTagTableSizes = [14]
- 
-    # Bank-interleaved noSkip for 40 history tables (41 entries total).
-    # Entries 0–36 reproduce the 64KB pattern exactly; entries 37–40 add
-    # four new tables following the same odd/even interleaving convention.
-    noSkip = [
-        0,                        # 0  – bimodal, always ignored
-        0, 1,                     # 1-2
-        0, 0, 0, 1,               # 3-6
-        0, 0, 1,                  # 7-9
-        1, 1, 1, 1, 1, 1, 1,     # 10-16
-        1, 1, 1, 1, 1, 1,        # 17-22
-        0, 1, 0, 1, 0, 1,        # 23-28  (alternating, saving odd-index bits)
-        0, 0, 0, 1,              # 29-32
-        0, 0, 0, 1,              # 33-36
-        0, 1,                    # 37-38  (new; odd skipped, even enabled)
-        0, 1,                    # 39-40  (new; odd skipped, even enabled)
-    ]
- 
-    # Each tagged table holds 2× as many entries as in 64KB.
-    # 64KB: logTagTableSize=10  →  128KB: logTagTableSize=11
-    logTagTableSize = 11
- 
-    # Scaling factors used internally when computing the number of short/long
-    # tag entries.  Increased by 1 each relative to 64KB.
-    shortTagsTageFactor = 11    # 64KB = 10
-    longTagsTageFactor  = 22    # 64KB = 20
- 
-    # One extra bit of tag precision for long-range tables.
-    longTagsSize = 13           # 64KB = 12
- 
-    # The boundary between short-tag and long-tag tables moves one position
-    # further out to reflect the larger total table count.
-    firstLongTagTable = 14      # 64KB = 13
  
 class TAGE_SC_L_TAGE_64KB(TAGE_SC_L_TAGE):
     type = "TAGE_SC_L_TAGE_64KB"
@@ -795,10 +743,7 @@ class TAGE_SC_L(LTAGE):
     statistical_corrector = Param.StatisticalCorrector(
         "Statistical Corrector. Set to NULL to disable it"
     )
-
-class TAGE_SC_L_128KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
-    logSizeLoopPred = 5
-
+ 
 class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 5
 
@@ -806,66 +751,6 @@ class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
 class TAGE_SC_L_8KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 3
 
-class TAGE_SC_L_128KB_StatisticalCorrector(StatisticalCorrector):
-    type = "TAGE_SC_L_128KB_StatisticalCorrector"
-    cxx_class = "gem5::branch_prediction::TAGE_SC_L_128KB_StatisticalCorrector"
-    cxx_header = "cpu/pred/tage_sc_l_128KB.hh"
- 
-    # ---- Variation global branch GEHL (P tables) ----
-    # History lengths unchanged; table size doubles (+1 log).
-    pnb    = Param.Unsigned(3, "Num variation global branch GEHL lengths")
-    pm     = VectorParam.Int([25, 16, 9], "Variation global branch GEHL lengths")
-    logPnb = Param.Unsigned(10, "Log number of variation global branch GEHL entries")
-    #   64KB: logPnb=9  →  128KB: logPnb=10
- 
-    # ---- Second local history GEHL (S tables) ----
-    snb    = Param.Unsigned(3, "Num second local history GEHL lengths")
-    sm     = VectorParam.Int([16, 11, 6], "Second local history GEHL lengths")
-    logSnb = Param.Unsigned(10, "Log number of second local history GEHL entries")
-    #   64KB: logSnb=9  →  128KB: logSnb=10
- 
-    # ---- Third local history GEHL (T tables) ----
-    tnb    = Param.Unsigned(2, "Num third local history GEHL lengths")
-    tm     = VectorParam.Int([9, 4], "Third local history GEHL lengths")
-    logTnb = Param.Unsigned(11, "Log number of third local history GEHL entries")
-    #   64KB: logTnb=10  →  128KB: logTnb=11
- 
-    # ---- Second IMLI GEHL ----
-    imnb    = Param.Unsigned(2, "Num second IMLI GEHL lengths")
-    imm     = VectorParam.Int([10, 4], "Second IMLI history GEHL lengths")
-    logImnb = Param.Unsigned(10, "Log number of second IMLI GEHL entries")
-    #   64KB: logImnb=9  →  128KB: logImnb=10
- 
-    # ---- Local history table sizes ----
-    # Double all three local-history tables compared to 64KB.
-    numEntriesSecondLocalHistories = Param.Unsigned(
-        32, "Number of entries for second local histories"
-    )   # 64KB = 16
-    numEntriesThirdLocalHistories  = Param.Unsigned(
-        32, "Number of entries for third local histories"
-    )   # 64KB = 16
-    numEntriesFirstLocalHistories  = 512
-    #   64KB = 256  →  128KB = 512
- 
-    # ---- Bias tables ----
-    logBias = 9     # 64KB = 8  →  128KB = 9
- 
-    # ---- Global backward branch GEHL (BW tables) ----
-    bwnb             = 3
-    bwm              = [40, 24, 10]
-    logBwnb          = 11   # 64KB = 10  →  128KB = 11
-    bwWeightInitValue = 7
- 
-    # ---- First local history GEHL (L tables) ----
-    lnb              = 3
-    lm               = [11, 6, 3]
-    logLnb           = 11   # 64KB = 10  →  128KB = 11
-    lWeightInitValue = 7
- 
-    # ---- IMLI GEHL ----
-    logInb           = 9    # 64KB = 8   →  128KB = 9
-    iWeightInitValue = 7
- 
 class TAGE_SC_L_64KB_StatisticalCorrector(StatisticalCorrector):
     type = "TAGE_SC_L_64KB_StatisticalCorrector"
     cxx_class = "gem5::branch_prediction::TAGE_SC_L_64KB_StatisticalCorrector"
@@ -944,24 +829,6 @@ class TAGE_SC_L_8KB_StatisticalCorrector(StatisticalCorrector):
     logInb = 7
     iWeightInitValue = 7
 
-class TAGE_SC_L_128KB(TAGE_SC_L):
-    """
-    128KB TAGE-SC-L branch predictor.
- 
-    Composed of:
-      - TAGE_SC_L_TAGE_128KB      : 40-table TAGE with extended history and
-                                     larger tables than the 64KB variant.
-      - TAGE_SC_L_128KB_LoopPredictor : loop predictor scaled to 128KB budget.
-      - TAGE_SC_L_128KB_StatisticalCorrector : all SC tables doubled relative
-                                               to the 64KB configuration.
-    """
-    type = "TAGE_SC_L_128KB"
-    cxx_class = "gem5::branch_prediction::TAGE_SC_L_128KB"
-    cxx_header = "cpu/pred/tage_sc_l_128KB.hh"
- 
-    tage                 = TAGE_SC_L_TAGE_128KB()
-    loop_predictor       = TAGE_SC_L_128KB_LoopPredictor()
-    statistical_corrector = TAGE_SC_L_128KB_StatisticalCorrector()
 
 # 64KB TAGE-SC-L branch predictor as described in
 # http://www.jilp.org/cbp2016/paper/AndreSeznecLimited.pdf
