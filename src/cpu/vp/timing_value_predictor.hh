@@ -44,6 +44,9 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/vp/structs.hh"
 #include "enums/ByteOrder.hh"
+#include "enums/InflightPendingUpdatePolicy.hh"
+#include "enums/PredictorAvailabilityPolicy.hh"
+#include "enums/PredictorUpdatePolicy.hh"
 #include "params/TimingValuePredictor.hh"
 #include "sim/clocked_object.hh"
 
@@ -174,6 +177,11 @@ class TimingValuePredictor : public ClockedObject
         std::deque<VPTimingInflight> updateWhenLoadInflight;
         std::deque<VPTimingInflight> updateWhenStoreInflight;
 
+        //the internal policies
+
+        gem5::enums::PredictorUpdatePolicy predictorUpdatePolicy;
+        gem5::enums::PredictorAvailabilityPolicy predictorAvailabilityPolicy;
+        gem5::enums::InflightPendingUpdatePolicy inflightPendingUpdatePolicy;
 };
 
 } //namespace gem5

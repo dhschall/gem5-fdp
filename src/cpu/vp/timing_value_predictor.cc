@@ -47,8 +47,26 @@ TimingValuePredictor::TimingValuePredictor(
     updateLoadLatency(params.update_load_latency),
     updateStoreLatency(params.update_store_latency),
     instShiftAmt(params.instShiftAmt),
-    stats(this)
-{}
+    stats(this),
+    predictorUpdatePolicy(params.predictor_update_policy),
+    predictorAvailabilityPolicy(params.predictor_availability_policy),
+    inflightPendingUpdatePolicy(params.inflight_pending_update_policy)
+{
+
+    //TODO: progressively keep implementing them to delete these panic_if
+
+    panic_if(predictorUpdatePolicy
+        == gem5::enums::PredictorUpdatePolicy::Speculative,
+        "Currently speculative update policy is not supported!");
+
+    panic_if(predictorAvailabilityPolicy
+        == gem5::enums::PredictorAvailabilityPolicy::NotDelay,
+        "Currently not-delay dispatch availability policy is not supported!");
+
+    panic_if(inflightPendingUpdatePolicy
+        == gem5::enums::InflightPendingUpdatePolicy::InflightWait,
+        "Currently in-flight wait pending update policy is not supported!");
+}
 
 void
 TimingValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {

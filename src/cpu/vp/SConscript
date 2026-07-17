@@ -42,7 +42,11 @@ SimObject('ValuePredictionUnit.py',
         'StrideLVP',
         'StrideAvppLVP'
     ],
-    enums=[])
+    enums=[
+        'PredictorUpdatePolicy',
+        'PredictorAvailabilityPolicy',
+        'InflightPendingUpdatePolicy'
+    ])
 
 Source('timing_value_predictor.cc')
 Source('atomic_value_predictor.cc')

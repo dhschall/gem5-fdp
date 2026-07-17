@@ -16,6 +16,18 @@ class AtomicValuePredictor(SimObject):
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
 
+class PredictorUpdatePolicy(Enum):
+    vals = ["Correct", "Speculative"]
+
+
+class PredictorAvailabilityPolicy(Enum):
+    vals = ["Delay", "NotDelay"]
+
+
+class InflightPendingUpdatePolicy(Enum):
+    vals = ["InflightIgnore", "InflightWait"]
+
+
 class TimingValuePredictor(ClockedObject):
     type = "TimingValuePredictor"
     cxx_class = "gem5::TimingValuePredictor"
@@ -41,6 +53,21 @@ class TimingValuePredictor(ClockedObject):
     )
 
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
+
+    predictor_update_policy = Param.PredictorUpdatePolicy(
+        "Correct",
+        "The Predictor Update Policy. Follows the AVPP paper taxonomy.",
+    )
+
+    predictor_availability_policy = Param.PredictorAvailabilityPolicy(
+        "Delay",
+        "The Predictor Availability Policy. Follows the AVPP paper taxonomy.",
+    )
+
+    inflight_pending_update_policy = Param.InflightPendingUpdatePolicy(
+        "InflightIgnore",
+        "The In-flight Pending Update Policy. Follows the AVPP paper taxonomy.",
+    )
 
 
 class StrideLVP(AtomicValuePredictor):
