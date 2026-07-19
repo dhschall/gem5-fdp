@@ -64,8 +64,8 @@ TimingValuePredictor::TimingValuePredictor(
         "Currently delay dispatch availability policy is not supported!");
 
     panic_if(inflightPendingUpdatePolicy
-        == gem5::enums::InflightPendingUpdatePolicy::InflightWait,
-        "Currently in-flight wait pending update policy is not supported!");
+        == gem5::enums::InflightPendingUpdatePolicy::InflightIgnore,
+        "Currently in-flight ignore pending update policy is not supported!");
 }
 
 void
