@@ -113,9 +113,12 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
     //Set the CPU where the value predictor is ran.
     /*
     I thing this only has to be set here, as valuePredAtomic
-    is a pointer and therefore Commit stage will also have this change done
+    and valuePredTiming is a pointer and therefore Commit
+    stage will also have this change done
     */
-    valuePredAtomic->setO3CPU(cpu);
+    if (valuePredAtomic) {
+        valuePredAtomic->setO3CPU(cpu);
+    }
 }
 
 std::string
@@ -1249,7 +1252,7 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
     // Make the actual prediction
     VPResult vp_result =
         valuePredAtomic->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
-    inst->setVPInfo(vp_result.predict, vp_result.value, curTick());
+    inst->setVPInfo(vp_result.predict, vp_result.value, true, curTick());
 
     // Check whether we are going predict this instruction or not.
     if (!vp_result.predict) {

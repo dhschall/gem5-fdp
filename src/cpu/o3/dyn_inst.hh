@@ -398,6 +398,8 @@ class DynInst : public ExecContext, public RefCounted
         bool verified = false;
         bool corrected = false;
 
+        bool generatedValue = false;
+
         Tick pred_tick = 0;
     } vpInfo;
 
@@ -412,11 +414,12 @@ class DynInst : public ExecContext, public RefCounted
 
     /** Set the value predicted information for later verification */
     void
-    setVPInfo(bool predict, RegVal value, Tick ptick = 0)
+    setVPInfo(bool predict, RegVal value, bool generatedValue, Tick ptick = 0)
     {
         vpInfo.predicted = predict;
         vpInfo.predValue = value;
         vpInfo.pred_tick = ptick;
+        vpInfo.generatedValue = generatedValue;
     }
 
     bool
@@ -459,6 +462,7 @@ class DynInst : public ExecContext, public RefCounted
             return;
         }
         assert(vpInfo.verified);
+        assert(vpInfo.generatedValue);
         if (vpInfo.valueMispred) {
             assert(vpInfo.corrected);
         }
