@@ -116,9 +116,10 @@ TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
 
 void
 TimingValuePredictor::startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr load_address,
-                                    RegVal correct_val, RegVal predicted_val,
-                                    bool value_predicted, Cycles rn_to_ex_delay)
+                                InstSeqNum seq_num, Addr load_address,
+                                RegVal correct_val, RegVal predicted_val,
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback)
 {
     auto lambda = [=, this] {
         finishUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
@@ -137,15 +138,18 @@ TimingValuePredictor::startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 
 void
 TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr load_address,
-                                    RegVal correct_val, RegVal predicted_val,
-                                    bool value_predicted, Cycles rn_to_ex_delay)
+                                InstSeqNum seq_num, Addr load_address,
+                                RegVal correct_val, RegVal predicted_val,
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback)
 {
     //Check that the events are completed in-order of how they where scheduled
     assert(updateWhenLoadInflight.front().seqNum == seq_num);
 
     updateWhenLoad(tid, inst_addr, seq_num, load_address,
             correct_val, predicted_val, value_predicted, rn_to_ex_delay);
+
+    callback(); //Notify commit stage that the update has finished.
 
     updateWhenLoadInflight.pop_front();
 }
@@ -154,7 +158,8 @@ void
 TimingValuePredictor::startUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
                                     uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order)
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback)
 {
     auto lambda = [=, this] {
         finishUpdateWhenStore(tid, inst_addr, seq_num, store_address,
@@ -170,13 +175,16 @@ void
 TimingValuePredictor::finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
                                     uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order)
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback)
 {
     //Check that the events are completed in-order of how they where scheduled
     assert(updateWhenStoreInflight.front().seqNum == seq_num);
 
     updateWhenStore(tid, inst_addr, seq_num, store_address,
                 data_written, effective_size, guest_byte_order);
+
+    callback(); //Notify commit stage that the update has finished.
 
     updateWhenStoreInflight.pop_front();
 }

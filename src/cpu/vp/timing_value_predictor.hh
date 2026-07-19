@@ -102,12 +102,14 @@ class TimingValuePredictor : public ClockedObject
         void startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay);
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback);
 
         void finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay);
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback);
 
         virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr load_address,
@@ -119,12 +121,14 @@ class TimingValuePredictor : public ClockedObject
         void startUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
                                     uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order);
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback);
 
         void finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
                                     uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order);
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback);
 
         virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
