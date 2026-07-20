@@ -40,6 +40,7 @@
 
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
+#include "mem/packet_access.hh"
 
 //Forward declaration
 namespace gem5::o3 {
@@ -48,6 +49,9 @@ namespace gem5::o3 {
 
 namespace gem5::avpp::fetchers
 {
+
+struct PrefetchRequest;
+using PrefetchRequestPtr = PrefetchRequest*;
 
 /** Represents a prefetch request
  * It handles the translation basically for free. */
@@ -95,8 +99,6 @@ struct PrefetchRequest : public BaseMMU::Translation
     markDelayed() override
     {}
 };
-
-using PrefetchRequestPtr = PrefetchRequest*;
 
 struct PrefetchSenderState : public Packet::SenderState
 {

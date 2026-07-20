@@ -40,7 +40,8 @@ SimObject('ValuePredictionUnit.py',
         'AtomicValuePredictor',
         'TimingValuePredictor',
         'StrideLVP',
-        'AtomicStrideAvppLVP'
+        'AtomicStrideAvppLVP',
+        'TimingStrideAvppLVP'
     ],
     enums=[
         'PredictorUpdatePolicy',
@@ -48,10 +49,11 @@ SimObject('ValuePredictionUnit.py',
         'InflightPendingUpdatePolicy'
     ])
 
-Source('timing_value_predictor.cc')
 Source('atomic_value_predictor.cc')
+Source('timing_value_predictor.cc')
 Source('stride_lvp.cc')
 Source('structs.cc')
 Source('avpp/atomic_stride_avpp_lvp.cc')
+Source('avpp/timing_stride_avpp_lvp.cc')
 
 DebugFlag('VP', "For debugging the value predictor")

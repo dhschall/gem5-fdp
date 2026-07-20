@@ -169,3 +169,72 @@ class AtomicStrideAvppLVP(AtomicValuePredictor):
         4,
         "How many prefetchs can be in a state of not-being able to be sent at the same time to memory.",
     )
+
+
+class TimingStrideAvppLVP(TimingValuePredictor):
+    type = "TimingStrideAvppLVP"
+    cxx_class = "gem5::avpp::TimingStrideAvppLVP"
+    cxx_header = "cpu/vp/avpp/timing_stride_avpp_lvp.hh"
+
+    pdis_max_value = Param.Unsigned(8, "Max prefetch distance")
+
+    # -----------------
+    # AT
+    # -----------------
+    at_table_entries = Param.MemorySize(
+        "512", "Number of entries in the address table"
+    )
+    at_table_assoc = Param.Unsigned(1, "Associativity of the value table")
+    at_table_indexing_policy = Param.TaggedIndexingPolicy(
+        TaggedSetAssociative(
+            entry_size=1,
+            assoc=Parent.at_table_assoc,
+            size=Parent.at_table_entries,
+        ),
+        "Indexing policy of the value table",
+    )
+    at_table_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the value table"
+    )
+
+    # -----------------
+    # VT
+    # -----------------
+    vt_table_entries = Param.MemorySize(
+        "64", "Number of entries in the value table"
+    )
+    vt_table_assoc = Param.Unsigned(1, "Associativity of the value table")
+    vt_table_indexing_policy = Param.TaggedIndexingPolicy(
+        TaggedSetAssociative(
+            entry_size=1,
+            assoc=Parent.vt_table_assoc,
+            size=Parent.vt_table_entries,
+        ),
+        "Indexing policy of the value table",
+    )
+    vt_table_replacement_policy = Param.BaseReplacementPolicy(
+        LRURP(), "Replacement policy of the value table"
+    )
+
+    confidence_threshold = Param.Unsigned(
+        2, "Confidence threshold for predictions"
+    )
+    confidence_reset_to_zero = Param.Bool(
+        False, "Reset confidence to 0 on misprediction"
+    )
+
+    use_stride = Param.Bool(True, "Use stride (true) or use constant (false)")
+
+    prob_up = Param.Unsigned(
+        3,
+        "The probability, expressed like 1/2^P, of incrementing or decreasing the prefetch distance. Therefore 1 means 1/2, 2 means 1/4, ...",
+    )
+
+    prefetch_request_port = RequestPort(
+        "Port for requesting speculative prefetch of the VT table."
+    )
+
+    size_prefetch_inflight_queue = Param.Unsigned(
+        4,
+        "How many prefetchs can be in a state of not-being able to be sent at the same time to memory.",
+    )

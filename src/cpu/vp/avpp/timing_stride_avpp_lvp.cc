@@ -34,24 +34,15 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
+#include "cpu/vp/avpp/timing_stride_avpp_lvp.hh"
 
-#include <bit>
-
-#include "base/intmath.hh"
-#include "base/trace.hh"
 #include "cpu/o3/cpu.hh"
-#include "cpu/o3/lsq_unit.hh"
-#include "cpu/vp/avpp/inject_fetcher.hh"
 #include "debug/VP.hh"
-#include "mem/packet_access.hh"
-#include "sim/byteswap.hh"
 
 namespace gem5::avpp
 {
-
-AtomicStrideAvppLVP::AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params)
-    : AtomicValuePredictor(params),
+TimingStrideAvppLVP::TimingStrideAvppLVP(const TimingStrideAvppLVPParams &params)
+    : TimingValuePredictor(params),
     params(params),
     requestPort(params.name + ".prefetch_request_port", this),
     addressTable("VT", params.at_table_entries, params.at_table_assoc,
@@ -62,25 +53,25 @@ AtomicStrideAvppLVP::AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params
                 VTEntry(genTagExtractor(params.vt_table_indexing_policy))),
     lfsr16(),
     lvpstats(this)
-    {
-        DPRINTF(VP, "Creating Atomic Stride AVPP Value Predictor\n");
+{
+    DPRINTF(VP, "Creating Timing Stride AVPP Value Predictor\n");
 
-        //Do some checks:
-        if (!isPowerOf2(params.at_table_entries)) {
-            fatal("Address table entries is not a power of 2!");
-        }
-
-        if (!isPowerOf2(params.vt_table_entries)) {
-            fatal("Value table entries is not a power of 2!");
-        }
-
-        if (params.prob_up > 15) {
-            fatal("Currently probUp can be as minimum as 1/32768 (p=15) and as maximum of 1/1 (p=0)");
-        }
+    //Do some checks:
+    if (!isPowerOf2(params.at_table_entries)) {
+        fatal("Address table entries is not a power of 2!");
     }
 
+    if (!isPowerOf2(params.vt_table_entries)) {
+        fatal("Value table entries is not a power of 2!");
+    }
+
+    if (params.prob_up > 15) {
+        fatal("Currently probUp can be as minimum as 1/32768 (p=15) and as maximum of 1/1 (p=0)");
+    }
+}
+
 void
-AtomicStrideAvppLVP::init()
+TimingStrideAvppLVP::init()
 {
     //Check that the port is initalized
     if (!requestPort.isConnected()) {
@@ -92,7 +83,8 @@ AtomicStrideAvppLVP::init()
 }
 
 VPResult
-AtomicStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
+TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
+                    InstSeqNum seq_num)
 {
 
     /*
@@ -116,29 +108,29 @@ AtomicStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
     addressResult.predict = false;
 
     if (addressEntry && addressEntry->tid == tid) {
-        // Get the number of inflights
-        unsigned inflights = numInflights(inst_addr);
 
         // ---------------------------
         // GENERATE PREDICTED ADDRESS
         // ---------------------------
 
-        // The address is this instance + in-flights * the stride
-        addressResult.predictedAddress = addressEntry->predictedAddress + ((inflights + 1) * addressEntry->stride);
+        // The address is this instance + in-flight * the stride
+        addressResult.predictedAddress = addressEntry->predictedAddress + addressEntry->stride;
+        // Notice that it doesn't take into accunt the in-flights as that is left to policies.
 
         // ---------------------------
         // GENERATE PREFETCH ADDRESS
         // ---------------------------
 
-        //As this is a stride predictor, prefetching N positions ahead is simply adding N factor to stride
-        addressResult.prefetchAddress = addressEntry->predictedAddress + ((inflights + 1 + addressEntry->pdis) * addressEntry->stride);
+        // As this is a stride predictor, prefetching N positions ahead is simply adding N factor to stride
+        addressResult.prefetchAddress = addressEntry->predictedAddress + (1 + addressEntry->pdis) * addressEntry->stride;
 
         // Only predict if the confidence is high enough
         addressResult.predict = addressEntry->confidence >= params.confidence_threshold;
+
         DPRINTF(VP,
             "Address Prediction for [pc=%#x, sn=%i]: lastaddr=%llu, stride=%i, "
-            "inflights=%i, conf=%i\n",
-            inst_addr, seq_num, addressEntry->predictedAddress, addressEntry->stride, inflights,
+            "conf=%i\n",
+            inst_addr, seq_num, addressEntry->predictedAddress, addressEntry->stride,
             addressEntry->confidence);
 
         addressTable.accessEntry(addressEntry);
@@ -149,23 +141,20 @@ AtomicStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
         }
     }
 
-    //Push the address prediction in the front. Notice that one address prediction is always equal to one value prediction.
-    inflightPred.push_front({inst_addr, seq_num});
-
     // -------------------------------
     // SECOND LOOKUP (VT Table)
     // -------------------------------
 
-    //The result of the value prediction:
+    // The result of the value prediction:
     VPResult valueResult;
     valueResult.predict = false;
 
     if (addressResult.predict) {
-        VTEntry::KeyType vtKey = indexVT(tid, addressResult.predictedAddress); //Notice that VTEntry::KeyType is the same as TaggedEntry::KeyType (because inheritance)
+        VTEntry::KeyType vtKey = indexVT(tid, addressResult.predictedAddress);
         VTEntry *valueEntry = valueTable.findEntry(vtKey);
 
         if (valueEntry && valueEntry->tid == tid) {
-            //Predict value directly
+            //Predict the value directly
             valueResult.value = valueEntry->value;
             valueResult.predict = true;
             valueTable.accessEntry(valueEntry);
@@ -208,11 +197,10 @@ AtomicStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
 }
 
 void
-AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-    Addr load_address, RegVal correct_val, RegVal predicted_val,
+TimingStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr,
+    InstSeqNum seq_num, Addr load_address, RegVal correct_val, RegVal predicted_val,
     bool value_predicted, Cycles rn_to_ex_delay)
 {
-
     //COMMIT UPDATE: update only the AT
 
     stats.totalLoads++;
@@ -231,9 +219,6 @@ AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq
         entry->stride = 0;
         entry->predictedAddress = load_address;
         DPRINTF(VP, "Allocate new entry; %llu\n", entry->predictedAddress);
-        assert(inflightPred.size()); //Check that there is are at least one inflight instruction
-        assert(inflightPred.back().sn == seq_num); //check that the last inflight instruction is this one.
-        inflightPred.pop_back(); //pop it
         return;
     }
 
@@ -243,10 +228,6 @@ AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq
     Addr lastPredictionValue = entry->predictedAddress + entry->stride; //The value that was predicted
     int64_t stride = (int64_t)load_address - (int64_t)lastPredictedAddress;
     entry->predictedAddress = load_address;
-
-    assert(inflightPred.size());
-    assert(inflightPred.back().sn == seq_num);
-    inflightPred.pop_back();
 
     if (lastPredictionValue != correct_val) {
         if (entry->confidence > 0) {
@@ -277,17 +258,16 @@ AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq
     }
 
     DPRINTF(VP,
-        "Entry update: pred=%i, conf=%i, val=%li, stride=%li, IFsize=%i\n",
+        "Entry update: pred=%i, conf=%i, val=%li, stride=%li",
         predicted_val != correct_val, entry->confidence, entry->predictedAddress,
-        entry->stride, inflightPred.size());
+        entry->stride);
 }
 
 void
-AtomicStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-    Addr store_address, uint8_t *data_written,
+TimingStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr,
+    InstSeqNum seq_num, Addr store_address, uint8_t* data_written,
     unsigned effective_size, ByteOrder guest_byte_order)
 {
-
     //First of all, check that there is a load in the same store address. I.e. a VT entry exists
     /*
     IMPORTANT NOTE: By doing these we assume that the load and the store go to the exact same address.
@@ -327,14 +307,12 @@ AtomicStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum se
 }
 
 void
-AtomicStrideAvppLVP::squash(const InstSeqNum seq_num)
+TimingStrideAvppLVP::squashNotify(const InstSeqNum seq_num)
 {
-    DPRINTF(VP, "Squash inflight prediction until sn:%llu\n", seq_num);
-    while (!inflightPred.empty() && inflightPred.front().sn > seq_num) {
-        inflightPred.pop_front();
-    }
 
-    //Squash also the prefetches:
+    DPRINTF(VP, "Squash inflight prediction until sn:%llu\n", seq_num);
+
+    //Squash the prefetches:
     for (auto it = inflightPrefetchRequests.begin(); it != inflightPrefetchRequests.end(); ) {
         auto prefetchRequest = *it;
 
@@ -358,7 +336,7 @@ AtomicStrideAvppLVP::squash(const InstSeqNum seq_num)
 }
 
 Port&
-AtomicStrideAvppLVP::getPort(const std::string &if_name, PortID idx)
+TimingStrideAvppLVP::getPort(const std::string &if_name, PortID idx)
 {
     panic_if(idx != InvalidPortID, "No support for vector ports");
 
@@ -366,20 +344,19 @@ AtomicStrideAvppLVP::getPort(const std::string &if_name, PortID idx)
         return requestPort;
     } else {
         //Pass the burn to the parent class
-        return AtomicValuePredictor::getPort(if_name, idx);
+        return TimingValuePredictor::getPort(if_name, idx);
     }
 }
 
 bool
-AtomicStrideAvppLVP::PrefetchRequestPort::recvTimingResp(PacketPtr pkt)
+TimingStrideAvppLVP::PrefetchRequestPort::recvTimingResp(PacketPtr pkt)
 {
     return owner->ownerRecvTimingResp(pkt);
 }
 
 bool
-AtomicStrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
+TimingStrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
 {
-
     //Change to dynamic_cast if problems.
     auto *state = static_cast<gem5::avpp::fetchers::PrefetchSenderState*>(pkt->popSenderState());
 
@@ -422,15 +399,14 @@ AtomicStrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
 }
 
 void
-AtomicStrideAvppLVP::PrefetchRequestPort::recvReqRetry()
+TimingStrideAvppLVP::PrefetchRequestPort::recvReqRetry()
 {
     owner->ownerRecvReqRetry();
 }
 
 void
-AtomicStrideAvppLVP::ownerRecvReqRetry()
+TimingStrideAvppLVP::ownerRecvReqRetry()
 {
-
     while (!blockedPrefetchRequests.empty()) {
         auto prefetchRequest = blockedPrefetchRequests.front();
 
@@ -444,7 +420,7 @@ AtomicStrideAvppLVP::ownerRecvReqRetry()
 }
 
 void
-AtomicStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefetchRequest, const Fault &fault)
+TimingStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefetchRequest, const Fault &fault)
 {
     if (fault != NoFault) {
         //Abort the whole prefetch
@@ -479,9 +455,8 @@ AtomicStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefet
 }
 
 void
-AtomicStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum, Addr prefetchAddress)
+TimingStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum, Addr prefetchAddress)
 {
-
     assert(inflightPrefetchRequests.size() < params.size_prefetch_inflight_queue);
 
     //Aliases:
@@ -500,41 +475,29 @@ AtomicStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum 
 }
 
 Addr
-AtomicStrideAvppLVP::indexAT(Addr inst_addr)
+TimingStrideAvppLVP::indexAT(Addr inst_addr)
 {
     return (inst_addr >> instShiftAmt);
 }
 
 TaggedEntry::KeyType
-AtomicStrideAvppLVP::indexAT(ThreadID tid, Addr inst_addr)
+TimingStrideAvppLVP::indexAT(ThreadID tid, Addr inst_addr)
 {
                                 //address                          //secure
     return TaggedEntry::KeyType{(inst_addr >> instShiftAmt) ^ tid, false};
 }
 
 TaggedEntry::KeyType
-AtomicStrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
+TimingStrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
 {
                             //address                 //secure
-    return TaggedEntry::KeyType{(predicted_addr >> 3) ^ tid, false};
+    return TaggedEntry::KeyType{predicted_addr ^ tid, false};
 
-    //Aligned to 8 bytes, as each VT entry stores that.
-}
-
-unsigned
-AtomicStrideAvppLVP::numInflights(Addr iaddr)
-{
-    unsigned n = 0;
-    for (auto &e : inflightPred) {
-        if (e.iaddr == iaddr) {
-            n++;
-        }
-    }
-    return n;
+    //Here no instShiftAmt is used because it could be byte-aligned. I assume byte-addressable CPU.
 }
 
 //Register the statistics
-AtomicStrideAvppLVP::AtomicStrideAvppLVPStats::AtomicStrideAvppLVPStats(statistics::Group *parent) :
+TimingStrideAvppLVP::TimingStrideAvppLVPStats::TimingStrideAvppLVPStats(statistics::Group *parent) :
     statistics::Group(parent),
     ADD_STAT(constantCorrect, statistics::units::Count::get(),
             "Number of VP lookups"),
