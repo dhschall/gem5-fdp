@@ -84,7 +84,7 @@ class TimingValuePredictor : public ClockedObject
 
         /*Children should override the ones that actually perform real work,
           The semantic ones: lookup, updateWhenLoad, updateWhenStore, squashNotify.
-          This updates one are optional as you may not train.
+          The updates one are optional as you may not train.
         */
 
         // GETS CALLED DURING FETCH
@@ -102,9 +102,6 @@ class TimingValuePredictor : public ClockedObject
                             InstSeqNum seq_num, VPResult result)>
                             callback);
 
-        virtual VPResult lookup(ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num) = 0;
-
         // GETS CALLED DURING COMMIT
         void startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
@@ -118,12 +115,6 @@ class TimingValuePredictor : public ClockedObject
                                 bool value_predicted, Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
-        virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr load_address,
-                                    RegVal correct_val, RegVal predicted_val,
-                                    bool value_predicted, Cycles rn_to_ex_delay)
-                                    {};
-
         // GETS CALLED DURING COMMIT
         void startUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
@@ -136,13 +127,6 @@ class TimingValuePredictor : public ClockedObject
                                     uint8_t* data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
-
-        virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order)
-                                    {};
-
 
         void squash(const InstSeqNum seq_num); //The "real" squash function
 
@@ -162,6 +146,21 @@ class TimingValuePredictor : public ClockedObject
         bool checkInflightWait(Addr inst_addr);
 
     protected:
+
+        virtual VPResult lookup(ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num) = 0;
+
+        virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
+                                    InstSeqNum seq_num, Addr load_address,
+                                    RegVal correct_val, RegVal predicted_val,
+                                    bool value_predicted, Cycles rn_to_ex_delay)
+                                    {};
+
+        virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
+                                    InstSeqNum seq_num, Addr store_address,
+                                    uint8_t* data_written, unsigned effective_size,
+                                    ByteOrder guest_byte_order)
+                                    {};
 
         /** Notifies the child of the squash */
         virtual void squashNotify(const InstSeqNum seq_num) {};
