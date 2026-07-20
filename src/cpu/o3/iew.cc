@@ -1038,8 +1038,7 @@ IEW::dispatchInsts(ThreadID tid)
             // We want to predict the value
             // and set the destination reg as ready for
             // dependent instructions here if it is predictable
-            DPRINTF(
-                Rename,
+            DPRINTF(IEW,
                 "[tid:%i] Issue: Predictable Load encountered,"
                 " predicting value.\n",
                 tid);

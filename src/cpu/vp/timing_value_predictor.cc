@@ -50,7 +50,7 @@ TimingValuePredictor::TimingValuePredictor(
     updateLoadLatency(params.update_load_latency),
     updateStoreLatency(params.update_store_latency),
     instShiftAmt(params.instShiftAmt),
-    stats(this),
+    stats(this)
 {
 
     //TODO: progressively keep implementing them to delete these panic_if
@@ -121,7 +121,7 @@ TimingValuePredictor::startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 {
     auto lambda = [=, this] {
         finishUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
-            predicted_val, value_predicted, rn_to_ex_delay);
+            predicted_val, value_predicted, rn_to_ex_delay, callback);
     };
 
     auto event = EventFunctionWrapper(lambda, name());
@@ -164,7 +164,7 @@ TimingValuePredictor::startUpdateWhenStore(ThreadID tid, Addr inst_addr,
 {
     auto lambda = [=, this] {
         finishUpdateWhenStore(tid, inst_addr, seq_num, store_address,
-            data_written, effective_size, guest_byte_order);
+            data_written, effective_size, guest_byte_order, callback);
     };
 
     auto event = EventFunctionWrapper(lambda, name());
