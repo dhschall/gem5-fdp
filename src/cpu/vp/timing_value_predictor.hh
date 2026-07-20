@@ -59,13 +59,19 @@ namespace gem5::o3 {
 namespace gem5
 {
 
-struct VPTimingInflight
+struct VPTimingInflightEvent
 {
 
     Addr instAddr;
     InstSeqNum seqNum;
 
     EventFunctionWrapper event;
+};
+
+struct VPTimingInflight
+{
+    Addr instAddr;
+    InstSeqNum seqNum;
 };
 
 class TimingValuePredictor : public ClockedObject
@@ -148,6 +154,12 @@ class TimingValuePredictor : public ClockedObject
         gem5::enums::PredictorAvailabilityPolicy predictorAvailabilityPolicy;
         gem5::enums::InflightPendingUpdatePolicy inflightPendingUpdatePolicy;
 
+        /** Checks if there is at least one in-flight instace
+         * of a certain instruction.
+         * Returns true if yes, false if not.
+         */
+        bool checkInflightWait(Addr inst_addr);
+
     protected:
 
         /** Notifies the child of the squash */
@@ -191,9 +203,12 @@ class TimingValuePredictor : public ClockedObject
 
         //Deques containing the inflight events + metadata
 
-        std::deque<VPTimingInflight> lookupInflight;
-        std::deque<VPTimingInflight> updateWhenLoadInflight;
-        std::deque<VPTimingInflight> updateWhenStoreInflight;
+        std::deque<VPTimingInflightEvent> lookupInflight;
+        std::deque<VPTimingInflightEvent> updateWhenLoadInflight;
+        std::deque<VPTimingInflightEvent> updateWhenStoreInflight;
+
+        /** General in-flight predictions */
+        std::deque<VPTimingInflight> generalInflight;
 };
 
 } //namespace gem5

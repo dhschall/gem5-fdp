@@ -433,6 +433,9 @@ class Rename
     /** Tracks which stages are telling decode to stall. */
     Stalls stalls[MaxThreads];
 
+    /** Value prediction stalls */
+    DynInstPtr valuePredStall[MaxThreads];
+
     /** The serialize instruction that rename has stalled on. */
     DynInstPtr serializeInst[MaxThreads];
 

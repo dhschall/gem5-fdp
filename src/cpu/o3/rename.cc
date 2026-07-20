@@ -1299,6 +1299,29 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
             recvValuePredict(inst, tid, inst_addr, seq_num, result);
         };
 
+        //Only request IF a previous in-flight has already updated the state:
+        if (valuePredTiming->inflightPendingUpdatePolicy
+            == gem5::enums::InflightPendingUpdatePolicy::InflightWait) {
+
+            if (valuePredTiming->checkInflightWait(
+                inst->pcState().instAddr())) {
+                //Mark what instruction causes the stall
+                valuePredStall[tid] = inst;
+                block(tid); //Stall
+                return;
+            } else {
+                // No problem, can continue
+            }
+
+        } else if (valuePredTiming->inflightPendingUpdatePolicy
+            == gem5::enums::InflightPendingUpdatePolicy::InflightIgnore) {
+
+            //Do absolutely nothing
+
+        } else {
+            fatal("Not recognixzed policy");
+        }
+
         //Request the prediction
         valuePredTiming->startLookup(inst, tid, inst->pcState().instAddr(),
                                     inst->seqNum, lambda);
@@ -1436,6 +1459,11 @@ Rename::checkStall(ThreadID tid)
                 "empty.\n",
                 tid);
         ret_val = true;
+    } else if (valuePredStall[tid] && valuePredTiming) {
+        if (valuePredTiming->checkInflightWait(valuePredStall[tid]->pcState()
+                .instAddr())) {
+            ret_val = true;
+        }
     }
 
     return ret_val;

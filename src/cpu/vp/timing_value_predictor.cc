@@ -62,10 +62,6 @@ TimingValuePredictor::TimingValuePredictor(
     panic_if(predictorAvailabilityPolicy
         == gem5::enums::PredictorAvailabilityPolicy::Delay,
         "Currently delay dispatch availability policy is not supported!");
-
-    panic_if(inflightPendingUpdatePolicy
-        == gem5::enums::InflightPendingUpdatePolicy::InflightIgnore,
-        "Currently in-flight ignore pending update policy is not supported!");
 }
 
 void
@@ -91,9 +87,11 @@ TimingValuePredictor::startLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
     schedule(event, clockEdge(lookupLatency));
 
     //Create the inflight entry
-    VPTimingInflight timingInflight = {inst_addr, seq_num, event};
+    VPTimingInflightEvent timingInflight = {inst_addr, seq_num, event};
 
     lookupInflight.push_back(timingInflight);
+
+    generalInflight.push_back({inst_addr, seq_num});
 }
 
 void
@@ -131,7 +129,7 @@ TimingValuePredictor::startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     schedule(event, clockEdge(updateLoadLatency));
 
     //Create the inflight entry
-    VPTimingInflight timingInflight = {inst_addr, seq_num, event};
+    VPTimingInflightEvent timingInflight = {inst_addr, seq_num, event};
 
     updateWhenLoadInflight.push_back(timingInflight);
 }
@@ -152,6 +150,9 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     callback(); //Notify commit stage that the update has finished.
 
     updateWhenLoadInflight.pop_front();
+
+    assert(generalInflight.front().seqNum == seq_num);
+    generalInflight.pop_front();
 }
 
 void
@@ -169,6 +170,11 @@ TimingValuePredictor::startUpdateWhenStore(ThreadID tid, Addr inst_addr,
     auto event = EventFunctionWrapper(lambda, name());
 
     schedule(event, clockEdge(updateStoreLatency));
+
+    //Create the inflight entry
+    VPTimingInflightEvent timingInflight = {inst_addr, seq_num, event};
+
+    updateWhenStoreInflight.push_back(timingInflight);
 }
 
 void
@@ -210,7 +216,24 @@ TimingValuePredictor::squash(const InstSeqNum seq_num)
         updateWhenStoreInflight.pop_back();
     }
 
+    while (!generalInflight.empty() &&
+            generalInflight.back().seqNum > seq_num) {
+        generalInflight.pop_back();
+    }
+
     squashNotify(seq_num); //Notify the child of the squash
+}
+
+bool
+TimingValuePredictor::checkInflightWait(Addr inst_addr)
+{
+    for (auto &inflight: generalInflight) {
+        if (inflight.instAddr == inst_addr) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(
