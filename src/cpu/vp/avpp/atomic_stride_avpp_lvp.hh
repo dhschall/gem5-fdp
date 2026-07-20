@@ -48,17 +48,11 @@
 #include "cpu/random/lsfr16.hh"
 #include "cpu/vp/atomic_value_predictor.hh"
 #include "cpu/vp/avpp/entries.hh"
+#include "cpu/vp/avpp/inject_fetcher.hh"
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/port.hh"
 #include "params/AtomicStrideAvppLVP.hh"
-
-//Forward definition of the PrefetchTranslationRequest
-namespace gem5::avpp::fetchers
-{
-    struct PrefetchRequest;
-    using PrefetchRequestPtr = PrefetchRequest*;
-}
 
 namespace gem5::avpp
 {
@@ -66,8 +60,6 @@ namespace gem5::avpp
 class AtomicStrideAvppLVP : public AtomicValuePredictor
 {
     public:
-
-        friend struct gem5::avpp::fetchers::PrefetchRequest;
 
         AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params);
 

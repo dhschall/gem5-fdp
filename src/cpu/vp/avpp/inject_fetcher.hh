@@ -40,7 +40,6 @@
 
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
-#include "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
 
 //Forward declaration
 namespace gem5::o3 {
