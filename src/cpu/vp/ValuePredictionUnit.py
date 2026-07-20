@@ -34,10 +34,6 @@ class TimingValuePredictor(ClockedObject):
     cxx_header = "cpu/vp/timing_value_predictor.hh"
     abstract = True
 
-    clk_domain = Param.ClockDomain(
-        Parent.clk_domain, "Clock domain of the value predictor"
-    )
-
     lookup_latency = Param.Cycles(
         1, "Number of cycles that takes to make the prediction"
     )
