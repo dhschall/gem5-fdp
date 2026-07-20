@@ -63,7 +63,7 @@ AtomicStrideAvppLVP::AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params
     lfsr16(),
     lvpstats(this)
     {
-        DPRINTF(VP, "Creating Stride AVPP Value Predictor\n");
+        DPRINTF(VP, "Creating Atomic Stride AVPP Value Predictor\n");
 
         //Do some checks:
         if (!isPowerOf2(params.at_table_entries)) {
@@ -485,7 +485,11 @@ AtomicStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum 
     using PrefetchRequestPtr = gem5::avpp::fetchers::PrefetchRequestPtr;
     using PrefetchRequest = gem5::avpp::fetchers::PrefetchRequest;
 
-    PrefetchRequestPtr prefetchRequest = new PrefetchRequest(*this, prefetchAddress, tid, seqNum);
+    auto lambda = [this](PrefetchRequestPtr prefetchRequest, const Fault &fault) {
+        ownerFinish(prefetchRequest, fault);
+    };
+
+    PrefetchRequestPtr prefetchRequest = new PrefetchRequest(cpu, requestorID, prefetchAddress, tid, seqNum, lambda);
 
     inflightPrefetchRequests.insert(prefetchRequest);
 

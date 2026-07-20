@@ -35,8 +35,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__
-#define __CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__
+#ifndef __CPU_ATOMIC_STRIDE_AVPP_LVP_HH__
+#define __CPU_ATOMIC_STRIDE_AVPP_LVP_HH__
 
 #include <deque>
 #include <unordered_set>
@@ -170,4 +170,4 @@ class AtomicStrideAvppLVP : public AtomicValuePredictor
 
 } //namespace gem5::avpp
 
-#endif //__CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__
+#endif //__CPU_ATOMIC_STRIDE_AVPP_LVP_HH__

@@ -42,30 +42,31 @@
 #include "base/statistics.hh"
 #include "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
 
+//Forward declaration
+namespace gem5::o3 {
+  class CPU;
+}
+
 namespace gem5::avpp::fetchers
 {
-
-using PrefetchRequestPtr = PrefetchRequest*;
-
-
-struct PrefetchSenderState : public Packet::SenderState
-{
-    PrefetchRequestPtr prefetchRequest;
-
-    PrefetchSenderState(PrefetchRequestPtr prefetchRequest)
-        : prefetchRequest(prefetchRequest) {}
-};
 
 /** Represents a prefetch request
  * It handles the translation basically for free. */
 struct PrefetchRequest : public BaseMMU::Translation
 {
-    PrefetchRequest(AtomicStrideAvppLVP &owner, Addr vaddr,
-                    ThreadID tid, InstSeqNum seqNum);
+    PrefetchRequest(gem5::o3::CPU *cpu, RequestorID requestorID, Addr vaddr,
+                    ThreadID tid, InstSeqNum seqNum,
+                    std::function<void(PrefetchRequestPtr, const Fault&)> callback);
     ~PrefetchRequest();
 
-    /** Owner of the request */
-    AtomicStrideAvppLVP &owner;
+    /** Pointer to the CPU */
+    gem5::o3::CPU *cpu;
+
+    /** Requestor ID */
+    RequestorID requestorID;
+
+    /** callback function */
+    std::function<void(PrefetchRequestPtr, const Fault&)> callback;
 
     /** The virtual address */
     const Addr vaddr;
@@ -94,6 +95,16 @@ struct PrefetchRequest : public BaseMMU::Translation
     void
     markDelayed() override
     {}
+};
+
+using PrefetchRequestPtr = PrefetchRequest*;
+
+struct PrefetchSenderState : public Packet::SenderState
+{
+    PrefetchRequestPtr prefetchRequest;
+
+    PrefetchSenderState(PrefetchRequestPtr prefetchRequest)
+        : prefetchRequest(prefetchRequest) {}
 };
 
 } //namespace gem5::avpp::fetchers

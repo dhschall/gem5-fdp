@@ -42,9 +42,12 @@
 namespace gem5::avpp::fetchers
 {
 
-PrefetchRequest::PrefetchRequest(AtomicStrideAvppLVP &owner, Addr vaddr,
-                    ThreadID tid, InstSeqNum seqNum)
-                : owner(owner),
+PrefetchRequest::PrefetchRequest(gem5::o3::CPU *cpu, RequestorID requestorID, Addr vaddr,
+                    ThreadID tid, InstSeqNum seqNum,
+                    std::function<void(PrefetchRequestPtr, const Fault&)> callback)
+                : cpu(cpu),
+                requestorID(requestorID),
+                callback(callback),
                 vaddr(vaddr),
                 tid(tid),
                 seqNum(seqNum),
@@ -54,9 +57,9 @@ PrefetchRequest::PrefetchRequest(AtomicStrideAvppLVP &owner, Addr vaddr,
         vaddr,
         8, //ASSUME SIZE IS 64-bit
         Request::Flags(0), //ASSUME NO FLAGS
-        owner.requestorID,
+        requestorID,
         vaddr, //PC. TODO: CHANGE
-        owner.cpu->getContext(tid)->contextId()
+        cpu->getContext(tid)->contextId()
     );
     assert(req);
 }
@@ -80,15 +83,15 @@ PrefetchRequest::finish(const Fault &fault, const RequestPtr &finishedReq,
                     ThreadContext *tc, BaseMMU::Mode mode)
 {
     //Forward only the needed data
-    owner.ownerFinish(this, fault);
+    callback(this, fault);
 }
 
 void
 PrefetchRequest::startTranslation()
 {
-    assert(owner.cpu->mmu != nullptr);
-    auto tc = owner.cpu->getContext(tid);
-    owner.cpu->mmu->translateTiming(req, tc, this, BaseMMU::Read);
+    assert(cpu->mmu != nullptr);
+    auto tc = cpu->getContext(tid);
+    cpu->mmu->translateTiming(req, tc, this, BaseMMU::Read);
 }
 
 } //namespace gem5::avpp::fetchers
