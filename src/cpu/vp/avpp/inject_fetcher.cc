@@ -56,12 +56,16 @@ PrefetchRequest::PrefetchRequest(gem5::o3::CPU *cpu, RequestorID requestorID, Ad
     req = std::make_shared<Request>(
         vaddr,
         8, //ASSUME SIZE IS 64-bit
-        Request::Flags(0), //ASSUME NO FLAGS
+        0, //ASSUME NO FLAGS
         requestorID,
         vaddr, //PC. TODO: CHANGE
         cpu->getContext(tid)->contextId()
     );
+
     assert(req);
+
+    //Mark as prefetch
+    req->setFlags(Request::PREFETCH);
 }
 
 PrefetchRequest::~PrefetchRequest()
@@ -74,7 +78,7 @@ PrefetchRequest::~PrefetchRequest()
 void
 PrefetchRequest::createPkt()
 {
-    pkt = new Packet(req, MemCmd::ReadReq);
+    pkt = new Packet(req, MemCmd::HardPFReq);
     pkt->allocate();
 }
 
