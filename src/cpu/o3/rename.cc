@@ -49,6 +49,7 @@
 #include "cpu/reg_class.hh"
 #include "debug/Activity.hh"
 #include "debug/Rename.hh"
+#include "enums/PredictorAvailabilityPolicy.hh"
 #include "params/BaseO3CPU.hh"
 
 namespace gem5
@@ -118,6 +119,9 @@ Rename::Rename(CPU *_cpu, const BaseO3CPUParams &params)
     */
     if (valuePredAtomic) {
         valuePredAtomic->setO3CPU(cpu);
+    }
+    if (valuePredTiming) {
+        valuePredTiming->setO3CPU(cpu);
     }
 }
 
@@ -1240,7 +1244,7 @@ Rename::handleMiscRegWaW(DynInstPtr &inst, ThreadID tid)
 void
 Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
 {
-    if (!valuePredAtomic) {
+    if (!(valuePredAtomic || valuePredTiming)) {
         return;
     }
 
@@ -1249,34 +1253,91 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
         return;
     }
 
-    // Make the actual prediction
-    VPResult vp_result =
-        valuePredAtomic->lookup(tid, inst->pcState().instAddr(), inst->seqNum);
-    inst->setVPInfo(vp_result.predict, vp_result.value, true, curTick());
+    if (valuePredAtomic) {
 
-    // Check whether we are going predict this instruction or not.
-    if (!vp_result.predict) {
-        return;
-    }
+        // Make the actual prediction
+        VPResult vp_result =
+            valuePredAtomic->lookup(tid,
+                inst->pcState().instAddr(), inst->seqNum);
 
-    // We want to predict the value and set the destination reg as ready for
-    // dependent instructions here if it is predictable
-    DPRINTF(
-        Rename,
+        inst->setVPInfo(vp_result.predict, vp_result.value,
+            vp_result.predict, curTick());
+
+        // Check whether we are going predict this instruction or not.
+        if (!vp_result.predict) {
+            return;
+        }
+
+        // We want to predict the value and
+        // set the destination reg as ready for
+        // dependent instructions here if it is predictable
+        DPRINTF(
+            Rename,
         "[tid:%i] Issue: Predictable Load encountered, predicting value.\n",
-        tid);
-    // Specutively set the register with the predicted value
-    // This should get corrected later if its wrong and if so we can flush and
-    // re-execute the instructions
-    inst->setRegOperand(inst->staticInst.get(), 0, vp_result.value);
-    // Pop the predicted value from instruction itself.
-    inst->popResult();
+            tid);
+        // Specutively set the register with the predicted value
+        // This should get corrected later if its wrong
+        // and if so we can flush and
+        // re-execute the instructions
+        inst->setRegOperand(inst->staticInst.get(), 0, vp_result.value);
+        // Pop the predicted value from instruction itself.
+        inst->popResult();
 
-    // Mark the destination register as ready for dependent instructions
-    DPRINTF(IEW, "Speculatively setting Destination Register %i (%s), [%d]\n",
+        // Mark the destination register as ready for dependent instructions
+        DPRINTF(IEW,
+            "Speculatively setting Destination Register %i (%s), [%d]\n",
             inst->renamedDestIdx(0)->index(),
             inst->renamedDestIdx(0)->className(), inst->seqNum);
-    scoreboard->setReg(inst->renamedDestIdx(0));
+        scoreboard->setReg(inst->renamedDestIdx(0));
+
+    }
+
+    if (valuePredTiming) {
+
+        auto lambda = [this] (DynInstPtr inst, ThreadID tid, Addr inst_addr,
+                    InstSeqNum seq_num, VPResult result) {
+            recvValuePredict(inst, tid, inst_addr, seq_num, result);
+        };
+
+        //Request the prediction
+        valuePredTiming->startLookup(inst, tid, inst->pcState().instAddr(),
+                                    inst->seqNum, lambda);
+
+        if (valuePredTiming->predictorAvailabilityPolicy
+            == gem5::enums::PredictorAvailabilityPolicy::Delay) {
+
+            fatal("Currently not supported!");
+            //If supported, here would be a stall.
+        } else if (valuePredTiming->predictorAvailabilityPolicy
+            == gem5::enums::PredictorAvailabilityPolicy::NotDelay) {
+
+            return; //Do nothing more
+
+        } else {
+            fatal("Not recognized policy");
+        }
+    }
+}
+
+void
+Rename::recvValuePredict(DynInstPtr inst, ThreadID tid, Addr inst_addr,
+                    InstSeqNum seq_num, VPResult result)
+{
+    if (!inst) {
+        fatal("The instruction \"dissapeared\"!");
+    }
+
+    //TODO: continue from here
+    /*
+    Should update some internal VP metadata to mark the prediction.
+    Then dispatchInst() in iew.cc should check it and use it.
+    */
+
+    //Don't set as "predicted" because that will be done at dispatch,
+    //but mark as possibily generated and store the predicted value
+    inst->setVPInfo(false, result.value, result.predict, curTick());
+
+    //This should be all
 }
 
 int

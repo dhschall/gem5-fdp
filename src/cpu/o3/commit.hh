@@ -301,6 +301,9 @@ class Commit
     /** Update Value predictor */
     void updateValuePredictor(ThreadID tid, const DynInstPtr &inst);
 
+    /** Recieves that the value predictor update was done successfully */
+    void recvUpdateValuePredictor();
+
     /** Handles processing an interrupt. */
     void handleInterrupt();
 

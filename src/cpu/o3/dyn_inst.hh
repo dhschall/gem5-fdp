@@ -428,6 +428,16 @@ class DynInst : public ExecContext, public RefCounted
         return vpInfo.predicted;
     }
 
+    bool
+    hasGeneratedValuePrediction()
+    {
+        //If not generated value, should have never predicted
+        if (!vpInfo.generatedValue) {
+            assert(!vpInfo.predicted);
+        }
+        return vpInfo.generatedValue;
+    }
+
     /** Read predicted value from the VP */
     RegVal
     getPredictedValue()

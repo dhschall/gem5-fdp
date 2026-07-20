@@ -533,6 +533,9 @@ Commit::squashAll(ThreadID tid)
     if (valuePredAtomic) {
         valuePredAtomic->squash(squashed_inst);
     }
+    if (valuePredTiming) {
+        valuePredTiming->squash(squashed_inst);
+    }
 
     // Send back the sequence number of the squashed instruction.
     toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -855,6 +858,9 @@ Commit::commit()
             rob->squash(squashed_inst, tid, squashReason[tid] == MemViolation);
             changedROBNumEntries[tid] = true;
 
+            if (valuePredAtomic) {
+                valuePredAtomic->squash(squashed_inst);
+            }
             if (valuePredAtomic) {
                 valuePredAtomic->squash(squashed_inst);
             }
@@ -1383,37 +1389,91 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 void
 Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
 {
-    if (!valuePredAtomic) {
+    if (!(valuePredAtomic || valuePredTiming)) {
         return;
     }
 
+    //For atomic value predictor -> update automatically
+    //For timing value predictor -> request update, and wait?
+
     // Only update for predictable instructions (loads)
     if (inst->canValuePredict()) {
-        // Update the VP for all instructions
-        Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
-        valuePredAtomic->updateWhenLoad(inst->threadNumber,
-                        inst->pcState().instAddr(),
-                        inst->seqNum, inst->effAddr, inst->getActualValue(),
-                        inst->getPredictedValue(), inst->isValuePredicted(),
-                        clk);
-        // debug statement to see if we are speculating
-        DPRINTF(Commit,
-                "Verify value prediction for inst [sn=%llu] "
-                "Predicted=%i, mispred=%i\n",
-                inst->seqNum, inst->isValuePredicted(), inst->vpInfo.valueMispred);
 
-        // Sanity check
-        inst->vpSanityCheck();
+        if (valuePredAtomic) {
+            // Update the VP for all instructions
+            Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
+            valuePredAtomic->updateWhenLoad(inst->threadNumber,
+                            inst->pcState().instAddr(),
+                            inst->seqNum, inst->effAddr,
+                            inst->getActualValue(),
+                            inst->getPredictedValue(),
+                            inst->isValuePredicted(),
+                            clk);
+            // debug statement to see if we are speculating
+            DPRINTF(Commit,
+                    "Verify value prediction for inst [sn=%llu] "
+                    "Predicted=%i, mispred=%i\n",
+                    inst->seqNum, inst->isValuePredicted(),
+                    inst->vpInfo.valueMispred);
+
+            // Sanity check
+            inst->vpSanityCheck();
+        }
+
+        if (valuePredTiming) {
+
+            Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
+
+            valuePredTiming->startUpdateWhenLoad(inst->threadNumber,
+                            inst->pcState().instAddr(),
+                            inst->seqNum, inst->effAddr,
+                            inst->getActualValue(),
+                            inst->getPredictedValue(),
+                            inst->isValuePredicted(),
+                            clk, [this](){recvUpdateValuePredictor();});
+
+            // debug statement to see if we are speculating
+            DPRINTF(Commit,
+                    "Verify value prediction for inst [sn=%llu] "
+                    "Predicted=%i, mispred=%i\n",
+                    inst->seqNum, inst->isValuePredicted(),
+                    inst->vpInfo.valueMispred);
+
+            // Sanity check
+            inst->vpSanityCheck();
+        }
     }
 
     //If it is a store, also update
     if (inst->isStore()) {
-        ByteOrder guestByteOrder = inst->tcBase()->getSystemPtr()->getGuestByteOrder();
-        valuePredAtomic->updateWhenStore(inst->threadNumber,
-                        inst->pcState().instAddr(),
-                        inst->seqNum, inst->physEffAddr, inst->memData,
-                        inst->effSize, guestByteOrder);
+
+        if (valuePredAtomic) {
+            ByteOrder guestByteOrder =
+                inst->tcBase()->getSystemPtr()->getGuestByteOrder();
+
+            valuePredAtomic->updateWhenStore(inst->threadNumber,
+                            inst->pcState().instAddr(),
+                            inst->seqNum, inst->effAddr, inst->memData,
+                            inst->effSize, guestByteOrder);
+        }
+
+        if (valuePredTiming) {
+            ByteOrder guestByteOrder =
+                inst->tcBase()->getSystemPtr()->getGuestByteOrder();
+
+            valuePredTiming->startUpdateWhenStore(inst->threadNumber,
+                            inst->pcState().instAddr(),
+                            inst->seqNum, inst->effAddr, inst->memData,
+                            inst->effSize, guestByteOrder,
+                            [this](){recvUpdateValuePredictor();});
+        }
     }
+}
+
+void
+Commit::recvUpdateValuePredictor()
+{
+    //Currently do nothing
 }
 
 void

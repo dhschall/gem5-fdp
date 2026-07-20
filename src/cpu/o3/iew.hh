@@ -52,6 +52,7 @@
 #include "cpu/o3/lsq.hh"
 #include "cpu/o3/scoreboard.hh"
 #include "cpu/timebuf.hh"
+#include "cpu/vp/timing_value_predictor.hh"
 #include "debug/IEW.hh"
 #include "sim/probe/probe.hh"
 
@@ -357,6 +358,9 @@ class IEW
   private:
     /** CPU pointer. */
     CPU *cpu;
+
+    /** Timing Value Predictor pointer */
+    TimingValuePredictor *valuePredTiming;
 
     /** Records if IEW has written to the time buffer this cycle, so that the
      * CPU can deschedule itself if there is no activity.

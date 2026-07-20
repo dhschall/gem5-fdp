@@ -92,6 +92,7 @@ std::string IEW::IEWStats::statusStrings[ThreadStatusMax] = {
 IEW::IEW(CPU *_cpu, const BaseO3CPUParams &params)
     : issueToExecQueue(params.backComSize, params.forwardComSize),
       cpu(_cpu),
+      valuePredTiming(params.valuePredTiming),
       instQueue(_cpu, this, params),
       ldstQueue(_cpu, this, params),
       commitToIEWDelay(params.commitToIEWDelay),
@@ -1025,6 +1026,39 @@ IEW::dispatchInsts(ThreadID tid)
             toRename->iewInfo[tid].dispatched++;
 
             continue;
+        }
+
+        //Insert value prediction if ready
+        if (valuePredTiming && inst->canValuePredict()
+        && inst->hasGeneratedValuePrediction()) {
+
+            //The instruction is marked as predicted
+            inst->vpInfo.predicted = true;
+
+            // We want to predict the value
+            // and set the destination reg as ready for
+            // dependent instructions here if it is predictable
+            DPRINTF(
+                Rename,
+                "[tid:%i] Issue: Predictable Load encountered,"
+                " predicting value.\n",
+                tid);
+            // Specutively set the register with the predicted value
+            // This should get corrected later if its wrong
+            // and if so we can flush and
+            // re-execute the instructions
+            inst->setRegOperand(inst->staticInst.get(), 0,
+                inst->vpInfo.predValue);
+            // Pop the predicted value from instruction itself.
+            inst->popResult();
+
+            // Mark the destination register
+            // as ready for dependent instructions
+            DPRINTF(IEW,
+                "Speculatively setting Destination Register %i (%s), [%d]\n",
+                    inst->renamedDestIdx(0)->index(),
+                    inst->renamedDestIdx(0)->className(), inst->seqNum);
+            scoreboard->setReg(inst->renamedDestIdx(0));
         }
 
         // Check for full conditions.

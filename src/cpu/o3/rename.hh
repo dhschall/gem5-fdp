@@ -263,6 +263,10 @@ class Rename
     /** Predicts the value of an instructions destination register. */
     void valuePredict(const DynInstPtr &inst, ThreadID tid);
 
+    /** Handles the return of a prediction made by TimingValuePrediction */
+    void recvValuePredict(DynInstPtr inst, ThreadID tid, Addr inst_addr,
+                    InstSeqNum seq_num, VPResult result);
+
     /** Calculates the number of free ROB entries for a specific thread. */
     int calcFreeROBEntries(ThreadID tid);
 
