@@ -42,7 +42,7 @@
 namespace gem5::avpp::fetchers
 {
 
-PrefetchRequest::PrefetchRequest(StrideAvppLVP &owner, Addr vaddr,
+PrefetchRequest::PrefetchRequest(AtomicStrideAvppLVP &owner, Addr vaddr,
                     ThreadID tid, InstSeqNum seqNum)
                 : owner(owner),
                 vaddr(vaddr),

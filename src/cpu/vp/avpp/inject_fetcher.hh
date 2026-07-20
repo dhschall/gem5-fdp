@@ -40,7 +40,7 @@
 
 #include "arch/generic/mmu.hh"
 #include "base/statistics.hh"
-#include "cpu/vp/avpp/stride_avpp_lvp.hh"
+#include "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
 
 namespace gem5::avpp::fetchers
 {
@@ -60,12 +60,12 @@ struct PrefetchSenderState : public Packet::SenderState
  * It handles the translation basically for free. */
 struct PrefetchRequest : public BaseMMU::Translation
 {
-    PrefetchRequest(StrideAvppLVP &owner, Addr vaddr,
+    PrefetchRequest(AtomicStrideAvppLVP &owner, Addr vaddr,
                     ThreadID tid, InstSeqNum seqNum);
     ~PrefetchRequest();
 
     /** Owner of the request */
-    StrideAvppLVP &owner;
+    AtomicStrideAvppLVP &owner;
 
     /** The virtual address */
     const Addr vaddr;

@@ -102,10 +102,10 @@ class StrideLVP(AtomicValuePredictor):
     use_stride = Param.Bool(True, "Use stride (true) or use constant (false)")
 
 
-class StrideAvppLVP(AtomicValuePredictor):
-    type = "StrideAvppLVP"
-    cxx_class = "gem5::avpp::StrideAvppLVP"
-    cxx_header = "cpu/vp/avpp/stride_avpp_lvp.hh"
+class AtomicStrideAvppLVP(AtomicValuePredictor):
+    type = "AtomicStrideAvppLVP"
+    cxx_class = "gem5::avpp::AtomicStrideAvppLVP"
+    cxx_header = "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
 
     pdis_max_value = Param.Unsigned(8, "Max prefetch distance")
 

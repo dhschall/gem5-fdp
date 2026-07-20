@@ -35,8 +35,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __CPU_AVPP_STRIDE_AVPP_LVP_HH__
-#define __CPU_AVPP_STRIDE_AVPP_LVP_HH__
+#ifndef __CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__
+#define __CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__
 
 #include <deque>
 #include <unordered_set>
@@ -51,7 +51,7 @@
 #include "mem/cache/replacement_policies/replaceable_entry.hh"
 #include "mem/cache/tags/tagged_entry.hh"
 #include "mem/port.hh"
-#include "params/StrideAvppLVP.hh"
+#include "params/AtomicStrideAvppLVP.hh"
 
 //Forward definition of the PrefetchTranslationRequest
 namespace gem5::avpp::fetchers
@@ -63,13 +63,13 @@ namespace gem5::avpp::fetchers
 namespace gem5::avpp
 {
 
-class StrideAvppLVP : public AtomicValuePredictor
+class AtomicStrideAvppLVP : public AtomicValuePredictor
 {
     public:
 
         friend struct gem5::avpp::fetchers::PrefetchRequest;
 
-        StrideAvppLVP(const StrideAvppLVPParams &params);
+        AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params);
 
         VPResult lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num) override;
         void updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
@@ -86,16 +86,16 @@ class StrideAvppLVP : public AtomicValuePredictor
 
     private:
 
-        const StrideAvppLVPParams &params;
+        const AtomicStrideAvppLVPParams &params;
 
         RequestorID requestorID;
 
         class PrefetchRequestPort : public RequestPort
         {
             private:
-                StrideAvppLVP *owner;
+                AtomicStrideAvppLVP *owner;
             public:
-                PrefetchRequestPort(const std::string& name, StrideAvppLVP *owner) :
+                PrefetchRequestPort(const std::string& name, AtomicStrideAvppLVP *owner) :
                     RequestPort(name), owner(owner)
                 { }
             protected:
@@ -154,9 +154,9 @@ class StrideAvppLVP : public AtomicValuePredictor
         unsigned numInflights(Addr iaddr);
 
         /** The statistics that this component adds */
-        struct StrideAvppLVPStats : public statistics::Group
+        struct AtomicStrideAvppLVPStats : public statistics::Group
         {
-            StrideAvppLVPStats(statistics::Group *parent);
+            AtomicStrideAvppLVPStats(statistics::Group *parent);
 
             statistics::Scalar constantCorrect;
             statistics::Scalar strideCorrect;
@@ -170,4 +170,4 @@ class StrideAvppLVP : public AtomicValuePredictor
 
 } //namespace gem5::avpp
 
-#endif //__CPU_AVPP_STRIDE_AVPP_LVP_HH__
+#endif //__CPU_AVPP_ATOMIC_STRIDE_AVPP_LVP_HH__

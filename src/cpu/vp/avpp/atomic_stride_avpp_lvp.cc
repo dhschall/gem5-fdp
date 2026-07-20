@@ -34,7 +34,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "cpu/vp/avpp/stride_avpp_lvp.hh"
+#include "cpu/vp/avpp/atomic_stride_avpp_lvp.hh"
 
 #include <bit>
 
@@ -50,7 +50,7 @@
 namespace gem5::avpp
 {
 
-StrideAvppLVP::StrideAvppLVP(const StrideAvppLVPParams &params)
+AtomicStrideAvppLVP::AtomicStrideAvppLVP(const AtomicStrideAvppLVPParams &params)
     : AtomicValuePredictor(params),
     params(params),
     requestPort(params.name + ".prefetch_request_port", this),
@@ -80,7 +80,7 @@ StrideAvppLVP::StrideAvppLVP(const StrideAvppLVPParams &params)
     }
 
 void
-StrideAvppLVP::init()
+AtomicStrideAvppLVP::init()
 {
     //Check that the port is initalized
     if (!requestPort.isConnected()) {
@@ -92,7 +92,7 @@ StrideAvppLVP::init()
 }
 
 VPResult
-StrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
+AtomicStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
 {
 
     stats.lookups++;
@@ -205,7 +205,7 @@ StrideAvppLVP::lookup(ThreadID tid, Addr inst_addr, InstSeqNum seq_num)
 }
 
 void
-StrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
     Addr load_address, RegVal correct_val, RegVal predicted_val,
     bool value_predicted, Cycles rn_to_ex_delay)
 {
@@ -280,7 +280,7 @@ StrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
 }
 
 void
-StrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
+AtomicStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
     Addr store_address, uint8_t *data_written,
     unsigned effective_size, ByteOrder guest_byte_order)
 {
@@ -324,7 +324,7 @@ StrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
 }
 
 void
-StrideAvppLVP::squash(const InstSeqNum seq_num)
+AtomicStrideAvppLVP::squash(const InstSeqNum seq_num)
 {
     DPRINTF(VP, "Squash inflight prediction until sn:%llu\n", seq_num);
     while (!inflightPred.empty() && inflightPred.front().sn > seq_num) {
@@ -355,7 +355,7 @@ StrideAvppLVP::squash(const InstSeqNum seq_num)
 }
 
 Port&
-StrideAvppLVP::getPort(const std::string &if_name, PortID idx)
+AtomicStrideAvppLVP::getPort(const std::string &if_name, PortID idx)
 {
     panic_if(idx != InvalidPortID, "No support for vector ports");
 
@@ -368,13 +368,13 @@ StrideAvppLVP::getPort(const std::string &if_name, PortID idx)
 }
 
 bool
-StrideAvppLVP::PrefetchRequestPort::recvTimingResp(PacketPtr pkt)
+AtomicStrideAvppLVP::PrefetchRequestPort::recvTimingResp(PacketPtr pkt)
 {
     return owner->ownerRecvTimingResp(pkt);
 }
 
 bool
-StrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
+AtomicStrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
 {
 
     //Change to dynamic_cast if problems.
@@ -419,13 +419,13 @@ StrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
 }
 
 void
-StrideAvppLVP::PrefetchRequestPort::recvReqRetry()
+AtomicStrideAvppLVP::PrefetchRequestPort::recvReqRetry()
 {
     owner->ownerRecvReqRetry();
 }
 
 void
-StrideAvppLVP::ownerRecvReqRetry()
+AtomicStrideAvppLVP::ownerRecvReqRetry()
 {
 
     while (!blockedPrefetchRequests.empty()) {
@@ -441,7 +441,7 @@ StrideAvppLVP::ownerRecvReqRetry()
 }
 
 void
-StrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefetchRequest, const Fault &fault)
+AtomicStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefetchRequest, const Fault &fault)
 {
     if (fault != NoFault) {
         //Abort the whole prefetch
@@ -476,7 +476,7 @@ StrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefetchRequ
 }
 
 void
-StrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum, Addr prefetchAddress)
+AtomicStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum, Addr prefetchAddress)
 {
 
     assert(inflightPrefetchRequests.size() < params.size_prefetch_inflight_queue);
@@ -493,20 +493,20 @@ StrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum
 }
 
 Addr
-StrideAvppLVP::indexAT(Addr inst_addr)
+AtomicStrideAvppLVP::indexAT(Addr inst_addr)
 {
     return (inst_addr >> instShiftAmt);
 }
 
 TaggedEntry::KeyType
-StrideAvppLVP::indexAT(ThreadID tid, Addr inst_addr)
+AtomicStrideAvppLVP::indexAT(ThreadID tid, Addr inst_addr)
 {
                                 //address                          //secure
     return TaggedEntry::KeyType{(inst_addr >> instShiftAmt) ^ tid, false};
 }
 
 TaggedEntry::KeyType
-StrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
+AtomicStrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
 {
                             //address                 //secure
     return TaggedEntry::KeyType{predicted_addr ^ tid, false};
@@ -515,7 +515,7 @@ StrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
 }
 
 unsigned
-StrideAvppLVP::numInflights(Addr iaddr)
+AtomicStrideAvppLVP::numInflights(Addr iaddr)
 {
     unsigned n = 0;
     for (auto &e : inflightPred) {
@@ -527,7 +527,7 @@ StrideAvppLVP::numInflights(Addr iaddr)
 }
 
 //Register the statistics
-StrideAvppLVP::StrideAvppLVPStats::StrideAvppLVPStats(statistics::Group *parent) :
+AtomicStrideAvppLVP::AtomicStrideAvppLVPStats::AtomicStrideAvppLVPStats(statistics::Group *parent) :
     statistics::Group(parent),
     ADD_STAT(constantCorrect, statistics::units::Count::get(),
             "Number of VP lookups"),
