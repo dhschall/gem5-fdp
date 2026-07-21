@@ -82,7 +82,7 @@ TimingValuePredictor::startLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
         finishLookup(inst, tid, inst_addr, seq_num, callback);
     };
 
-    auto event = EventFunctionWrapper(lambda, name());
+    auto event = new EventFunctionWrapper(lambda, name());
 
     schedule(event, clockEdge(lookupLatency));
 
@@ -109,6 +109,9 @@ TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
 
     callback(inst, tid, inst_addr, seq_num, predictionResult);
 
+    //Destroy the event:
+    delete lookupInflight.front().event;
+
     lookupInflight.pop_front();
 }
 
@@ -124,7 +127,7 @@ TimingValuePredictor::startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
             predicted_val, value_predicted, rn_to_ex_delay, callback);
     };
 
-    auto event = EventFunctionWrapper(lambda, name());
+    auto event = new EventFunctionWrapper(lambda, name());
 
     schedule(event, clockEdge(updateLoadLatency));
 
@@ -149,6 +152,9 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 
     callback(); //Notify commit stage that the update has finished.
 
+    //Destroy the event:
+    delete updateWhenLoadInflight.front().event;
+
     updateWhenLoadInflight.pop_front();
 
     assert(generalInflight.front().seqNum == seq_num);
@@ -167,7 +173,7 @@ TimingValuePredictor::startUpdateWhenStore(ThreadID tid, Addr inst_addr,
             data_written, effective_size, guest_byte_order, callback);
     };
 
-    auto event = EventFunctionWrapper(lambda, name());
+    auto event = new EventFunctionWrapper(lambda, name());
 
     schedule(event, clockEdge(updateStoreLatency));
 
@@ -191,6 +197,9 @@ TimingValuePredictor::finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
                 data_written, effective_size, guest_byte_order);
 
     callback(); //Notify commit stage that the update has finished.
+
+    //Destroy the event:
+    delete updateWhenStoreInflight.front().event;
 
     updateWhenStoreInflight.pop_front();
 }

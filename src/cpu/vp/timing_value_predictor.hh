@@ -66,7 +66,7 @@ struct VPTimingInflightEvent
     Addr instAddr;
     InstSeqNum seqNum;
 
-    EventFunctionWrapper event;
+    EventFunctionWrapper *event;
 };
 
 struct VPTimingInflight

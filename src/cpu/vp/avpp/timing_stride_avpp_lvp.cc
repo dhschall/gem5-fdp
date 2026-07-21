@@ -340,7 +340,7 @@ TimingStrideAvppLVP::getPort(const std::string &if_name, PortID idx)
 {
     panic_if(idx != InvalidPortID, "No support for vector ports");
 
-    if (if_name == "speculative_request_port") {
+    if (if_name == "prefetch_request_port") {
         return requestPort;
     } else {
         //Pass the burn to the parent class
