@@ -88,47 +88,32 @@ class TimingValuePredictor : public ClockedObject
         */
 
         // GETS CALLED DURING FETCH
-        void startLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+        void requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
                         std::function<void(gem5::o3::DynInstPtr inst,
                             ThreadID tid, Addr inst_addr,
                             InstSeqNum seq_num, VPResult result)>
                             callback);
 
-        void finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
-                        Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback);
+        bool canLookup();
 
         // GETS CALLED DURING COMMIT
-        void startUpdateWhenLoad(ThreadID tid, Addr inst_addr,
-                                InstSeqNum seq_num, Addr load_address,
-                                RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
-                                std::function<void()> callback);
-
-        void finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
+        void requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_predicted, Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         // GETS CALLED DURING COMMIT
-        void startUpdateWhenStore(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order,
-                                    std::function<void()> callback);
-
-        void finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
+        void requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
                                     uint8_t* data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
 
         void squash(const InstSeqNum seq_num); //The "real" squash function
+
+        void registerLoad(Addr inst_addr, InstSeqNum seq_num);
 
         // If predict error, squash the inflight instructions in value predictor.
         // GETS (hopefully not) CALLED DURING COMMIT
@@ -144,6 +129,46 @@ class TimingValuePredictor : public ClockedObject
          * Returns true if yes, false if not.
          */
         bool checkInflightWait(Addr inst_addr);
+
+    private:
+
+        void processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback);
+
+        void finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback);
+
+        void processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
+                                InstSeqNum seq_num, Addr load_address,
+                                RegVal correct_val, RegVal predicted_val,
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback);
+
+        void finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
+                                InstSeqNum seq_num, Addr load_address,
+                                RegVal correct_val, RegVal predicted_val,
+                                bool value_predicted, Cycles rn_to_ex_delay,
+                                std::function<void()> callback);
+
+        void processUpdateWhenStore(ThreadID tid, Addr inst_addr,
+                                    InstSeqNum seq_num, Addr store_address,
+                                    uint8_t* data_written, unsigned effective_size,
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback);
+
+        void finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
+                                    InstSeqNum seq_num, Addr store_address,
+                                    uint8_t* data_written, unsigned effective_size,
+                                    ByteOrder guest_byte_order,
+                                    std::function<void()> callback);
 
     protected:
 
@@ -165,11 +190,15 @@ class TimingValuePredictor : public ClockedObject
         /** Notifies the child of the squash */
         virtual void squashNotify(const InstSeqNum seq_num) {};
 
+        //Variables defining latencies
         Cycles lookupLatency;
-
         Cycles updateLoadLatency;
-
         Cycles updateStoreLatency;
+
+        //Variables defining maxRequests/cycle (i.e. ports)
+        const unsigned maxLookupsPerCycle;
+        const unsigned maxUpdatesWhenLoadPerCycle;
+        const unsigned maxUpdatesWhenStorePerCycle;
 
         /** Instruction shift amount */
         const unsigned instShiftAmt;
@@ -177,11 +206,39 @@ class TimingValuePredictor : public ClockedObject
         /** Pointer to the O3 CPU used */
         gem5::o3::CPU *cpu;
 
+    private:
+
+        //Deques containing the inflight events + metadata
+        std::deque<VPTimingInflightEvent> lookupInflight;
+        std::deque<VPTimingInflightEvent> updateWhenLoadInflight;
+        std::deque<VPTimingInflightEvent> updateWhenStoreInflight;
+
+        //Mark how many requests accepted in a particular cycle
+        unsigned acceptedLookups;
+        unsigned acceptedUpdateWhenLoad;
+        unsigned acceptedUpdateWhenStore;
+
+        Cycles previousAcceptedLookups;
+        Cycles previousAcceptedUpdateWhenLoad;
+        Cycles previousAcceptedUpdateWhenStore;
+
+        /** General in-flight loads */
+        std::deque<VPTimingInflight> generalInflight;
+
         struct TimingValuePredictorStats : public statistics::Group
         {
             TimingValuePredictorStats(statistics::Group *parent);
 
+            statistics::Scalar totalLoads;
             statistics::Scalar lookups;
+            statistics::Scalar updates;
+            statistics::Formula predicted;
+            statistics::Scalar correctPredicted;
+            statistics::Scalar incorrectPredicted;
+            statistics::Formula predCoverage;
+            statistics::Formula accuracy;
+
+            /*statistics::Scalar lookups;
             statistics::Scalar misses;
             statistics::Scalar predictableLoads;
             statistics::Formula predicted;
@@ -195,20 +252,9 @@ class TimingValuePredictor : public ClockedObject
             statistics::Scalar totalLoads;
 
             statistics::Scalar numZeroConstLoads;
-            statistics::Scalar numOneConstLoads;
+            statistics::Scalar numOneConstLoads;*/
 
         } stats;
-
-    private:
-
-        //Deques containing the inflight events + metadata
-
-        std::deque<VPTimingInflightEvent> lookupInflight;
-        std::deque<VPTimingInflightEvent> updateWhenLoadInflight;
-        std::deque<VPTimingInflightEvent> updateWhenStoreInflight;
-
-        /** General in-flight predictions */
-        std::deque<VPTimingInflight> generalInflight;
 };
 
 } //namespace gem5

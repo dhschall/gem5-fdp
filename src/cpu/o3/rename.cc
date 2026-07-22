@@ -665,6 +665,20 @@ Rename::renameInsts(ThreadID tid)
         //For store instruction, check SQ size and take into account the
         //inflight stores
 
+        if (valuePredTiming && inst->canValuePredict()) {
+            //First check value prediction stall
+            if (valuePredTiming->canLookup()
+                && valuePredTiming->inflightPendingUpdatePolicy
+                == gem5::enums::InflightPendingUpdatePolicy::InflightWait &&
+                valuePredTiming->checkInflightWait(inst->pcState()
+                    .instAddr())) {
+
+                //Mark what instruction causes the stall
+                valuePredStall[tid] = inst;
+                break;
+            }
+        }
+
         if (inst->isLoad()) {
             if (calcFreeLQEntries(tid) <= 0) {
                 DPRINTF(Rename, "[tid:%i] Cannot rename due to no free LQ\n",
@@ -1294,36 +1308,17 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
 
     if (valuePredTiming) {
 
+        //Register it as in-flight load.
+        valuePredTiming->registerLoad(inst->pcState().instAddr(),
+            inst->seqNum);
+
         auto lambda = [this] (DynInstPtr inst, ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, VPResult result) {
             recvValuePredict(inst, tid, inst_addr, seq_num, result);
         };
 
-        //Only request IF a previous in-flight has already updated the state:
-        if (valuePredTiming->inflightPendingUpdatePolicy
-            == gem5::enums::InflightPendingUpdatePolicy::InflightWait) {
-
-            if (valuePredTiming->checkInflightWait(
-                inst->pcState().instAddr())) {
-                //Mark what instruction causes the stall
-                valuePredStall[tid] = inst;
-                block(tid); //Stall
-                return;
-            } else {
-                // No problem, can continue
-            }
-
-        } else if (valuePredTiming->inflightPendingUpdatePolicy
-            == gem5::enums::InflightPendingUpdatePolicy::InflightIgnore) {
-
-            //Do absolutely nothing
-
-        } else {
-            fatal("Not recognixzed policy");
-        }
-
         //Request the prediction
-        valuePredTiming->startLookup(inst, tid, inst->pcState().instAddr(),
+        valuePredTiming->requestLookup(inst, tid, inst->pcState().instAddr(),
                                     inst->seqNum, lambda);
 
         if (valuePredTiming->predictorAvailabilityPolicy
@@ -1463,6 +1458,8 @@ Rename::checkStall(ThreadID tid)
         if (valuePredTiming->checkInflightWait(valuePredStall[tid]->pcState()
                 .instAddr())) {
             ret_val = true;
+        } else {
+            valuePredStall[tid] = nullptr; //Clean the stall reason
         }
     }
 

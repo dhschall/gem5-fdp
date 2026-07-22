@@ -63,7 +63,6 @@
 #include "debug/ExecFaulting.hh"
 #include "debug/HtmCpu.hh"
 #include "debug/O3PipeView.hh"
-#include "debug/VP.hh"
 #include "inst_queue.hh"
 #include "params/BaseO3CPU.hh"
 #include "sim/faults.hh"
@@ -861,8 +860,8 @@ Commit::commit()
             if (valuePredAtomic) {
                 valuePredAtomic->squash(squashed_inst);
             }
-            if (valuePredAtomic) {
-                valuePredAtomic->squash(squashed_inst);
+            if (valuePredTiming) {
+                valuePredTiming->squash(squashed_inst);
             }
 
             toIEW->commitInfo[tid].doneSeqNum = squashed_inst;
@@ -1424,7 +1423,7 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
 
             Cycles clk = cpu->ticksToCycles(inst->vpInfo.pred_tick);
 
-            valuePredTiming->startUpdateWhenLoad(inst->threadNumber,
+            valuePredTiming->requestUpdateWhenLoad(inst->threadNumber,
                             inst->pcState().instAddr(),
                             inst->seqNum, inst->effAddr,
                             inst->getActualValue(),
@@ -1461,7 +1460,7 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
             ByteOrder guestByteOrder =
                 inst->tcBase()->getSystemPtr()->getGuestByteOrder();
 
-            valuePredTiming->startUpdateWhenStore(inst->threadNumber,
+            valuePredTiming->requestUpdateWhenStore(inst->threadNumber,
                             inst->pcState().instAddr(),
                             inst->seqNum, inst->effAddr, inst->memData,
                             inst->effSize, guestByteOrder,

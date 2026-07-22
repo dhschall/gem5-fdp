@@ -48,6 +48,18 @@ class TimingValuePredictor(ClockedObject):
         "Number of cycles that takes to update the predictor in case of a store",
     )
 
+    max_lookups_per_cycle = Param.Unsigned(
+        1, "How many lookups can be realized by cycle without serializing"
+    )
+
+    max_updates_when_load_per_cycle = Param.Unsigned(
+        1, "How many updates when load can be realized by cycle"
+    )
+
+    max_updates_when_store_per_cycle = Param.Unsigned(
+        1, "How many updates when store can be realized by cycle"
+    )
+
     instShiftAmt = Param.Unsigned(2, "Number of bits to shift instructions by")
 
     predictor_update_policy = Param.PredictorUpdatePolicy(
