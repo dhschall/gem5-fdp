@@ -86,7 +86,7 @@ class AtomicValuePredictor : public SimObject
     // GETS CALLED DURING COMMIT
     virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
                         InstSeqNum seq_num, Addr store_address,
-                        uint8_t *data_written, unsigned effective_size,
+                        const std::vector<uint8_t>& data_written, unsigned effective_size,
                         ByteOrder guest_byte_order) {};
 
     // If predict error, squash the inflight instructions in value predictor.

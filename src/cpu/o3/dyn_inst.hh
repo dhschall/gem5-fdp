@@ -360,6 +360,9 @@ class DynInst : public ExecContext, public RefCounted
     /** Pointer to the data for the memory access. */
     uint8_t *memData = nullptr;
 
+    /** Data for the memory access, persistent for Value Prediction */
+    std::vector<uint8_t> memDataPersistent;
+
     /** Load queue index. */
     ssize_t lqIdx = -1;
     LQIterator lqIt;

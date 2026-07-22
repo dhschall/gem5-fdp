@@ -46,7 +46,9 @@ AtomicValuePredictor::AtomicValuePredictor(
       numThreads(params.numThreads),
       instShiftAmt(params.instShiftAmt),
       stats(this)
-{}
+{
+    warn("Updating when store is currently unsupported.");
+}
 
 void
 AtomicValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {

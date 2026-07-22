@@ -107,7 +107,7 @@ class TimingValuePredictor : public ClockedObject
         // GETS CALLED DURING COMMIT
         void requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
 
@@ -160,13 +160,13 @@ class TimingValuePredictor : public ClockedObject
 
         void processUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
 
         void finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
 
@@ -183,7 +183,7 @@ class TimingValuePredictor : public ClockedObject
 
         virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order)
                                     {};
 
@@ -230,29 +230,38 @@ class TimingValuePredictor : public ClockedObject
             TimingValuePredictorStats(statistics::Group *parent);
 
             statistics::Scalar totalLoads;
-            statistics::Scalar lookups;
-            statistics::Scalar updates;
-            statistics::Formula predicted;
+
+            // ---------------------------------------------
+
+            statistics::Scalar lookupRequests;
+            statistics::Scalar lookupAccepted;
+            statistics::Formula lookupAcceptedRate;
+
+            statistics::Scalar predicted;
+            statistics::Formula predCoverage;
+            statistics::Formula aparentAccuracy;
+            statistics::Formula realAccuracy;
+
+            // ---------------------------------------------
+
+            statistics::Scalar updateWhenLoadRequests;
+            statistics::Scalar updateWhenLoadAccepted;
+            statistics::Formula updateWhenLoadAcceptedRate;
+
             statistics::Scalar correctPredicted;
+            statistics::Scalar realCorrectPredicted;
+
             statistics::Scalar incorrectPredicted;
-            statistics::Formula predCoverage;
-            statistics::Formula accuracy;
+            statistics::Scalar realIncorrectPredicted;
 
-            /*statistics::Scalar lookups;
-            statistics::Scalar misses;
-            statistics::Scalar predictableLoads;
-            statistics::Formula predicted;
-            statistics::Scalar correct;
-            statistics::Scalar incorrect;
-            statistics::Formula predCoverage;
-            statistics::Formula accuracy;
-            statistics::Scalar constLoads;
-            statistics::Scalar constLoadsCorrect;
-            statistics::Scalar constLoadsIncorrect;
-            statistics::Scalar totalLoads;
+            statistics::Scalar ignoredPredicted;
+            statistics::Formula ignoredPredictedRate;
 
-            statistics::Scalar numZeroConstLoads;
-            statistics::Scalar numOneConstLoads;*/
+            // ---------------------------------------------
+
+            statistics::Scalar updateWhenStoreRequests;
+            statistics::Scalar updateWhenStoreAccepted;
+            statistics::Formula updateWhenStoreAcceptedRate;
 
         } stats;
 };

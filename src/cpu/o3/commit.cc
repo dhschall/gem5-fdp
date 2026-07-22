@@ -1442,31 +1442,6 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
             inst->vpSanityCheck();
         }
     }
-
-    //If it is a store, also update
-    if (inst->isStore()) {
-
-        if (valuePredAtomic) {
-            ByteOrder guestByteOrder =
-                inst->tcBase()->getSystemPtr()->getGuestByteOrder();
-
-            valuePredAtomic->updateWhenStore(inst->threadNumber,
-                            inst->pcState().instAddr(),
-                            inst->seqNum, inst->effAddr, inst->memData,
-                            inst->effSize, guestByteOrder);
-        }
-
-        if (valuePredTiming) {
-            ByteOrder guestByteOrder =
-                inst->tcBase()->getSystemPtr()->getGuestByteOrder();
-
-            valuePredTiming->requestUpdateWhenStore(inst->threadNumber,
-                            inst->pcState().instAddr(),
-                            inst->seqNum, inst->effAddr, inst->memData,
-                            inst->effSize, guestByteOrder,
-                            [this](){recvUpdateValuePredictor();});
-        }
-    }
 }
 
 void

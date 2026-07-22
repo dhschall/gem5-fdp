@@ -70,31 +70,13 @@ TimingValuePredictor::TimingValuePredictor(
     panic_if(predictorAvailabilityPolicy
         == gem5::enums::PredictorAvailabilityPolicy::Delay,
         "Currently delay dispatch availability policy is not supported!");
+
+    warn("Updating when store is currently unsupported.");
 }
 
 void
 TimingValuePredictor::setO3CPU(gem5::o3::CPU *cpu) {
     this->cpu = cpu;
-}
-
-void
-TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
-                        Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback)
-{
-    if (curCycle() != previousAcceptedLookups) {
-        previousAcceptedLookups = curCycle();
-        acceptedLookups = 0;
-    }
-
-    if (acceptedLookups < maxLookupsPerCycle) {
-        //Process directly (The waiting queue is empty and more lookups can be accepted)
-        processLookup(inst, tid, inst_addr, seq_num, callback);
-        ++acceptedLookups;
-    }
 }
 
 bool
@@ -108,15 +90,46 @@ TimingValuePredictor::canLookup()
 }
 
 void
+TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
+                        Addr inst_addr, InstSeqNum seq_num,
+                        std::function<void(gem5::o3::DynInstPtr inst,
+                            ThreadID tid, Addr inst_addr,
+                            InstSeqNum seq_num, VPResult result)>
+                            callback)
+{
+    ++stats.lookupRequests;
+
+    if (curCycle() != previousAcceptedLookups) {
+        previousAcceptedLookups = curCycle();
+        acceptedLookups = 0;
+    }
+
+    if (acceptedLookups < maxLookupsPerCycle) {
+        //Process directly (The waiting queue is empty and more lookups can be accepted)
+        processLookup(inst, tid, inst_addr, seq_num, callback);
+        ++acceptedLookups;
+        ++stats.lookupAccepted;
+    }
+}
+
+void
 TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_predicted, Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
+    ++stats.updateWhenLoadRequests;
+
+    //Regardless, update the real predict counter:
+    if (value_predicted && correct_val == predicted_val) {
+        ++stats.realCorrectPredicted;
+    } else {
+        ++stats.realIncorrectPredicted;
+    }
 
     //Do this here, as generalInflight includes ALL loads, so it pops for all loads like this.
-    panic_if(!(generalInflight.front().seqNum == seq_num), "Expected %llu. Got %llu", generalInflight.front().seqNum, seq_num);
+    assert(generalInflight.front().seqNum == seq_num);
     generalInflight.pop_front();
 
     if (curCycle() != previousAcceptedUpdateWhenLoad) {
@@ -129,16 +142,23 @@ TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
         processUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
             predicted_val, value_predicted, rn_to_ex_delay, callback);
         ++acceptedUpdateWhenLoad;
+        ++stats.updateWhenLoadAccepted;
+    } else {
+        if (value_predicted) {
+            ++stats.ignoredPredicted;
+        }
     }
 }
 
 void
 TimingValuePredictor::requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback)
 {
+    ++stats.updateWhenStoreRequests;
+
     if (curCycle() != previousAcceptedUpdateWhenStore) {
         previousAcceptedUpdateWhenStore = curCycle();
         acceptedUpdateWhenStore = 0;
@@ -149,6 +169,7 @@ TimingValuePredictor::requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
         processUpdateWhenStore(tid, inst_addr, seq_num, store_address,
             data_written, effective_size, guest_byte_order, callback);
         ++acceptedUpdateWhenStore;
+        ++stats.updateWhenStoreAccepted;
     }
 }
 
@@ -160,8 +181,6 @@ TimingValuePredictor::processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                             InstSeqNum seq_num, VPResult result)>
                             callback)
 {
-    ++stats.lookups;
-
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
         finishLookup(inst, tid, inst_addr, seq_num, callback);
@@ -185,8 +204,6 @@ TimingValuePredictor::processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 bool value_predicted, Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
-    ++stats.updates;
-
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
         finishUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
@@ -207,7 +224,7 @@ TimingValuePredictor::processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::processUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback)
 {
@@ -240,6 +257,10 @@ TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
 
     VPResult predictionResult = lookup(tid, inst_addr, seq_num);
 
+    if (predictionResult.predict) {
+        ++stats.predicted;
+    }
+
     callback(inst, tid, inst_addr, seq_num, predictionResult);
 
     //Destroy the event:
@@ -261,7 +282,7 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     updateWhenLoad(tid, inst_addr, seq_num, load_address,
             correct_val, predicted_val, value_predicted, rn_to_ex_delay);
 
-    if (correct_val == predicted_val) {
+    if (value_predicted && correct_val == predicted_val) {
         ++stats.correctPredicted;
     } else {
         ++stats.incorrectPredicted;
@@ -279,7 +300,7 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::finishUpdateWhenStore(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr store_address,
-                                    uint8_t* data_written, unsigned effective_size,
+                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback)
 {
@@ -357,7 +378,7 @@ void
 TimingValuePredictor::registerLoad(Addr inst_addr, InstSeqNum seq_num)
 {
     generalInflight.push_back({inst_addr, seq_num});
-    ++stats.totalLoads; //Count the load
+    ++stats.totalLoads;
 }
 
 bool
@@ -385,24 +406,70 @@ TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(
     : statistics::Group(parent),
       ADD_STAT(totalLoads, statistics::units::Count::get(),
                "Total loads processed by the Load value predictor"),
-      ADD_STAT(lookups, statistics::units::Count::get(),
+
+    // ---------------------------------------------------------------------
+
+      ADD_STAT(lookupRequests, statistics::units::Count::get(),
+               "Number of VP lookups requested"),
+      ADD_STAT(lookupAccepted, statistics::units::Count::get(),
                "Number of VP lookups accepted"),
-      ADD_STAT(updates, statistics::units::Count::get(),
-               "Number of VP load updates accepted"),
+      ADD_STAT(lookupAcceptedRate, statistics::units::Count::get(),
+               "Rate of VP lookups accepted"),
+
       ADD_STAT(predicted, statistics::units::Count::get(),
                "Number of loads classified as predictable"),
-      ADD_STAT(correctPredicted, statistics::units::Count::get(),
-               "Number of loads correctly predicted"),
-      ADD_STAT(incorrectPredicted, statistics::units::Count::get(),
-               "Number of loads incorrectly predicted"),
       ADD_STAT(predCoverage, statistics::units::Count::get(),
                "Number covered loads predicted compared to all loads"),
-      ADD_STAT(accuracy, statistics::units::Count::get(),
-               "Accuracy of the predictions")
+      ADD_STAT(aparentAccuracy, statistics::units::Count::get(),
+               "Accuracy of the predictions, based on the ones checked"),
+      ADD_STAT(realAccuracy, statistics::units::Count::get(),
+               "Accuracy of the predictions, accounting all predictions"),
+
+    // ---------------------------------------------------------------------
+
+      ADD_STAT(updateWhenLoadRequests, statistics::units::Count::get(),
+               "Number of VP update when load requested"),
+      ADD_STAT(updateWhenLoadAccepted, statistics::units::Count::get(),
+               "Number of VP update when load accepted"),
+      ADD_STAT(updateWhenLoadAcceptedRate, statistics::units::Count::get(),
+               "Rate of VP update when load accepted"),
+
+      ADD_STAT(correctPredicted, statistics::units::Count::get(),
+               "Number of loads correctly checked that predicted correctly"),
+      ADD_STAT(realCorrectPredicted, statistics::units::Count::get(),
+               "Number of total predicted loads that predicted correctly"),
+
+      ADD_STAT(incorrectPredicted, statistics::units::Count::get(),
+               "Number of loads correctly checked that predicted incorrectly"),
+      ADD_STAT(realIncorrectPredicted, statistics::units::Count::get(),
+               "Number of total predicted loads that predicted incorrectly"),
+
+      ADD_STAT(ignoredPredicted, statistics::units::Count::get(),
+               "Number of loads predicted that haven't been checked"),
+      ADD_STAT(ignoredPredictedRate, statistics::units::Count::get(),
+               "Rate of loads predicted that haven't been predicted against total predicted"),
+
+    // ---------------------------------------------------------------------
+
+      ADD_STAT(updateWhenStoreRequests, statistics::units::Count::get(),
+               "Number of VP update when store requested"),
+      ADD_STAT(updateWhenStoreAccepted, statistics::units::Count::get(),
+               "Number of VP update when store accepted"),
+      ADD_STAT(updateWhenStoreAcceptedRate, statistics::units::Count::get(),
+               "Rate of VP update when store accepted")
+
 {
-    predicted = correctPredicted + incorrectPredicted;
+    lookupAcceptedRate = lookupAccepted / lookupRequests;
     predCoverage = predicted / totalLoads;
-    accuracy = correctPredicted / predicted;
+    aparentAccuracy = correctPredicted / (correctPredicted + incorrectPredicted);
+    //(realCorrectPredicted + realIncorrectPredicted) SHALL BE EQUAL TO predicted
+    realAccuracy = realCorrectPredicted / (realCorrectPredicted + realIncorrectPredicted);
+
+    updateWhenLoadAcceptedRate = updateWhenLoadAccepted / updateWhenLoadRequests;
+    //(realCorrectPredicted + realIncorrectPredicted) SHALL BE EQUAL TO predicted
+    ignoredPredictedRate = ignoredPredicted / (realCorrectPredicted + realIncorrectPredicted);
+
+    updateWhenStoreAcceptedRate = updateWhenStoreAccepted / updateWhenStoreRequests;
 }
 
 } //namespace gem5
