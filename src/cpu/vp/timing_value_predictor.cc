@@ -381,8 +381,8 @@ TimingValuePredictor::registerLoad(Addr inst_addr, InstSeqNum seq_num)
     ++stats.totalLoads;
 }
 
-bool
-TimingValuePredictor::checkInflightWait(Addr inst_addr)
+uint64_t
+TimingValuePredictor::countInflight(Addr inst_addr)
 {
     uint64_t count = 0;
     for (auto &inflight: generalInflight) {
@@ -391,14 +391,7 @@ TimingValuePredictor::checkInflightWait(Addr inst_addr)
         }
     }
 
-    //Should this include the waiting ones??
-
-    //Check if more than one because we don't count the itself instruction waiting.
-    if (count > 0) {
-        return true;
-    } else {
-        return false;
-    }
+    return count;
 }
 
 TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(

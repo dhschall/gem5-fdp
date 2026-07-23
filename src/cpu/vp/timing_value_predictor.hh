@@ -124,11 +124,9 @@ class TimingValuePredictor : public ClockedObject
         gem5::enums::PredictorAvailabilityPolicy predictorAvailabilityPolicy;
         gem5::enums::InflightPendingUpdatePolicy inflightPendingUpdatePolicy;
 
-        /** Checks if there is at least one in-flight instace
-         * of a certain instruction.
-         * Returns true if yes, false if not.
-         */
-        bool checkInflightWait(Addr inst_addr);
+        /** Calculate how many instances in-flight there are
+         * of a single instruction. */
+        uint64_t countInflight(Addr inst_addr);
 
     private:
 

@@ -670,7 +670,7 @@ Rename::renameInsts(ThreadID tid)
             if (valuePredTiming->canLookup()
                 && valuePredTiming->inflightPendingUpdatePolicy
                 == gem5::enums::InflightPendingUpdatePolicy::InflightWait &&
-                valuePredTiming->checkInflightWait(inst->pcState()
+                valuePredTiming->countInflight(inst->pcState()
                     .instAddr())) {
 
                 //Mark what instruction causes the stall
@@ -1455,7 +1455,7 @@ Rename::checkStall(ThreadID tid)
                 tid);
         ret_val = true;
     } else if (valuePredStall[tid] && valuePredTiming) {
-        if (valuePredTiming->checkInflightWait(valuePredStall[tid]->pcState()
+        if (valuePredTiming->countInflight(valuePredStall[tid]->pcState()
                 .instAddr())) {
             ret_val = true;
         } else {
