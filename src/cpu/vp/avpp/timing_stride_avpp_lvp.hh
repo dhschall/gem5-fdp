@@ -75,7 +75,7 @@ class TimingStrideAvppLVP : public TimingValuePredictor
 
         void updateWhenStore(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr store_address,
-                    uint8_t* data_written, unsigned effective_size,
+                    const std::vector<uint8_t>& data_written, unsigned effective_size,
                     ByteOrder guest_byte_order)
                     override;
 
@@ -144,10 +144,16 @@ class TimingStrideAvppLVP : public TimingValuePredictor
         {
             TimingStrideAvppLVPStats(statistics::Group *parent);
 
-            statistics::Scalar constantCorrect;
-            statistics::Scalar strideCorrect;
-            statistics::Scalar numZeroConstLoads;
-            statistics::Scalar numOneConstLoads;
+            statistics::Scalar ATmissLookup;
+            statistics::Scalar AThitLookup;
+            statistics::Formula AThitLookupRate;
+
+            statistics::Scalar VTmissLookup;
+            statistics::Scalar VThitLookup;
+            statistics::Formula VThitLookupRate;
+
+            statistics::Scalar constantAddressCorrect;
+            statistics::Scalar strideAddressCorrect;
 
             statistics::Distribution valuePredSavedCyclesLog2;
             statistics::Distribution valuePredSavedCycles;

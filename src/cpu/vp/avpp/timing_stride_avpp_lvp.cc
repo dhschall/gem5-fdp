@@ -93,8 +93,6 @@ TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
     TODO: change for not making this assumption
     */
 
-    stats.lookups++;
-
     // -------------------------------
     // FIRST LOOKUP (AT Table)
     // -------------------------------
@@ -109,11 +107,13 @@ TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
 
     if (addressEntry && addressEntry->tid == tid) {
 
+        ++lvpstats.AThitLookup;
+
         // ---------------------------
         // GENERATE PREDICTED ADDRESS
         // ---------------------------
 
-        // The address is this instance + in-flight * the stride
+        // The address is this instance + the stride
         addressResult.predictedAddress = addressEntry->predictedAddress + addressEntry->stride;
         // Notice that it doesn't take into accunt the in-flights as that is left to policies.
 
@@ -139,6 +139,8 @@ TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
         if (addressResult.predict && blockedPrefetchRequests.size() < params.size_prefetch_inflight_queue) {
             issuePrefetchLoad(inst_addr, tid, seq_num, addressResult.prefetchAddress);
         }
+    } else {
+        ++lvpstats.ATmissLookup;
     }
 
     // -------------------------------
@@ -158,7 +160,9 @@ TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
             valueResult.value = valueEntry->value;
             valueResult.predict = true;
             valueTable.accessEntry(valueEntry);
+            ++lvpstats.VThitLookup;
         } else {
+            ++lvpstats.VTmissLookup;
             //NO ENTRY -> performing prefetch distance updating
 
             //Check if a prefetch for the predicted address is present
@@ -203,8 +207,6 @@ TimingStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr,
 {
     //COMMIT UPDATE: update only the AT
 
-    stats.totalLoads++;
-
     //Updating the AT table with the load address
     ATEntry::KeyType key = indexAT(tid, inst_addr);
     ATEntry *entry = addressTable.findEntry(key);
@@ -224,12 +226,17 @@ TimingStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr,
 
     //If there is an entry, update it
     addressTable.accessEntry(entry);
-    Addr lastPredictedAddress = entry->predictedAddress;
-    Addr lastPredictionValue = entry->predictedAddress + entry->stride; //The value that was predicted
-    int64_t stride = (int64_t)load_address - (int64_t)lastPredictedAddress;
+
+    Addr lastPredictedAddress = entry->predictedAddress + entry->stride;
+
+    if (value_predicted && predictorUpdatePolicy == gem5::enums::PredictorUpdatePolicy::Correct) {
+        panic_if(!(lastPredictedAddress == predicted_val), "Expected %llu, got %llu. Stride: %llu", predicted_val, lastPredictedAddress, entry->stride); //Should be the same, as not updates
+    }
+
+    int64_t stride = (int64_t)load_address - (int64_t)entry->predictedAddress;
     entry->predictedAddress = load_address;
 
-    if (lastPredictionValue != correct_val) {
+    if (lastPredictedAddress != load_address) {
         if (entry->confidence > 0) {
             entry->confidence = params.confidence_reset_to_zero ? 0 : (entry->confidence - 1);
         }
@@ -243,29 +250,25 @@ TimingStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr,
         lvpstats.valuePredSavedCycles.sample(rn_to_ex_delay);
 
         if (entry->confidence < params.confidence_threshold) {
-                entry->confidence++;
+            ++entry->confidence;
         }
+
         if (entry->stride == 0) {
-            lvpstats.constantCorrect++;
-            if (predicted_val == 0) {
-                lvpstats.numZeroConstLoads++;
-            } else if (predicted_val == 1) {
-                lvpstats.numOneConstLoads++;
-            }
+            ++lvpstats.constantAddressCorrect;
         } else {
-            lvpstats.strideCorrect++;
+            ++lvpstats.strideAddressCorrect;
         }
     }
 
     DPRINTF(VP,
-        "Entry update: pred=%i, conf=%i, val=%li, stride=%li",
+        "Entry update: pred=%i, conf=%i, val=%li, stride=%li\n",
         predicted_val != correct_val, entry->confidence, entry->predictedAddress,
         entry->stride);
 }
 
 void
 TimingStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr,
-    InstSeqNum seq_num, Addr store_address, uint8_t* data_written,
+    InstSeqNum seq_num, Addr store_address, const std::vector<uint8_t>& data_written,
     unsigned effective_size, ByteOrder guest_byte_order)
 {
     //First of all, check that there is a load in the same store address. I.e. a VT entry exists
@@ -286,22 +289,11 @@ TimingStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr,
 
     //get the whole data that is going to be stored:
     uint64_t value = 0;
-    switch (effective_size) {
-        case 1:
-            value = *reinterpret_cast<const uint8_t*>(data_written);
-            break;
-        case 2:
-            value = gtoh(*reinterpret_cast<const uint16_t*>(data_written), guest_byte_order);
-            break;
-        case 4:
-            value = gtoh(*reinterpret_cast<const uint32_t*>(data_written), guest_byte_order);
-            break;
-        case 8:
-            value = gtoh(*reinterpret_cast<const uint64_t*>(data_written), guest_byte_order);
-            break;
-        default:
-            panic("Unexpected store size");
-    }
+    assert(effective_size <= sizeof(value));
+
+    memcpy(&value, data_written.data(), effective_size);
+
+    value = gtoh(value, guest_byte_order);
 
     entry->value = value; //That is all!
 }
@@ -357,45 +349,57 @@ TimingStrideAvppLVP::PrefetchRequestPort::recvTimingResp(PacketPtr pkt)
 bool
 TimingStrideAvppLVP::ownerRecvTimingResp(PacketPtr pkt)
 {
+
+    DPRINTF(VP, "Received packet %p cmd=%s response=%d\n",
+        pkt, pkt->cmd.toString(), pkt->isResponse());
+
     //Change to dynamic_cast if problems.
-    auto *state = static_cast<gem5::avpp::fetchers::PrefetchSenderState*>(pkt->popSenderState());
+    auto *state = dynamic_cast<gem5::avpp::fetchers::PrefetchSenderState*>(pkt->popSenderState());
 
     panic_if(!state, "Expected PrefetchSenderState in the return packet!");
 
     auto prefetchRequest = state->prefetchRequest;
 
-    ThreadID tid = prefetchRequest->tid;
-    //Currently not used!
-    //InstSeqNum seqNum = prefetchRequest->seqNum;
-    delete state; //Free up memory of the state
+    if (inflightPrefetchRequests.find(prefetchRequest) != inflightPrefetchRequests.end()) {
+        ThreadID tid = prefetchRequest->tid;
+        //Currently not used!
+        //InstSeqNum seqNum = prefetchRequest->seqNum;
+        delete state; //Free up memory of the state
 
-    //Get the data to update the VT table
-    uint64_t value = pkt->getLE<uint64_t>(); //NOTE: ASSUMES LITTLE ENDIAN
-    Addr prefetchAddress = prefetchRequest->vaddr;
+        //Get the data to update the VT table
+        uint64_t value = pkt->getLE<uint64_t>(); //NOTE: ASSUMES LITTLE ENDIAN
+        Addr prefetchAddress = prefetchRequest->vaddr;
 
-    //Access the VT table:
-    VTEntry::KeyType key = indexVT(tid, prefetchAddress);
-    VTEntry *entry = valueTable.findEntry(key);
+        //Access the VT table:
+        VTEntry::KeyType key = indexVT(tid, prefetchAddress);
+        VTEntry *entry = valueTable.findEntry(key);
 
-    //Update the entry
-    if (!entry) {
-        entry = valueTable.findVictim(key);
-        valueTable.insertEntry(key, entry);
+        //Update the entry
+        if (!entry) {
+            entry = valueTable.findVictim(key);
+            valueTable.insertEntry(key, entry);
 
-        entry->tid = tid;
-        entry->value = value;
+            entry->tid = tid;
+            entry->value = value;
+        } else {
+            valueTable.accessEntry(entry);
+
+            entry->tid = tid;
+            entry->value = value;
+        }
+
+        auto erased = inflightPrefetchRequests.erase(prefetchRequest);
+        assert(erased == 1);
+
+        delete prefetchRequest; //Free up the memory of the packet and prefetch request in general
+        return true;
     } else {
-        valueTable.accessEntry(entry);
+        //In principle, this could happen if the prefetch got squashed, therefore, do nothing.
 
-        entry->tid = tid;
-        entry->value = value;
+        delete state; //Free up memory of the state
+        delete prefetchRequest; //Free up the memory of the packet and prefetch request in general
+        return true;
     }
-
-    auto erased = inflightPrefetchRequests.erase(prefetchRequest);
-    assert(erased == 1);
-
-    delete prefetchRequest; //Free up the memory of the packet and prefetch request in general
-    return true;
 }
 
 void
@@ -410,12 +414,18 @@ TimingStrideAvppLVP::ownerRecvReqRetry()
     while (!blockedPrefetchRequests.empty()) {
         auto prefetchRequest = blockedPrefetchRequests.front();
 
+        assert(prefetchRequest->pkt->isRequest());
+        DPRINTF(VP, "Sending prefetch packet RETRY %p cmd=%s\n",
+        prefetchRequest->pkt, prefetchRequest->pkt->cmd.toString());
         if (!requestPort.sendTimingReq(prefetchRequest->pkt)) {
+            DPRINTF(VP, "FAILED!\n");
             return; //Stop and wait, the port is blocked
         }
 
+        DPRINTF(VP, "SUCCESFULL!\n");
+
         //Else: has been accepted
-        blockedPrefetchRequests.pop_back();
+        blockedPrefetchRequests.pop_front();
     }
 }
 
@@ -444,9 +454,15 @@ TimingStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefet
 
     if (blockedPrefetchRequests.empty()) {
         //The port is ready to recieve some more requests, sent it:
+        assert(prefetchRequest->pkt->isRequest());
+        DPRINTF(VP, "Sending prefetch packet FIRST %p cmd=%s\n",
+        prefetchRequest->pkt, prefetchRequest->pkt->cmd.toString());
         if (!requestPort.sendTimingReq(prefetchRequest->pkt)) { //Send the request
             //It fails! Add it to the retry queue
             blockedPrefetchRequests.push_back(prefetchRequest);
+            DPRINTF(VP, "FAILED!\n");
+        } else {
+            DPRINTF(VP, "SUCCESFULL!\n");
         }
     } else {
         //Add it to the blocked queue directly, as the port is blocked
@@ -457,7 +473,7 @@ TimingStrideAvppLVP::ownerFinish(gem5::avpp::fetchers::PrefetchRequestPtr prefet
 void
 TimingStrideAvppLVP::issuePrefetchLoad(Addr inst_addr, ThreadID tid, InstSeqNum seqNum, Addr prefetchAddress)
 {
-    assert(inflightPrefetchRequests.size() < params.size_prefetch_inflight_queue);
+    assert(blockedPrefetchRequests.size() < params.size_prefetch_inflight_queue);
 
     //Aliases:
     using PrefetchRequestPtr = gem5::avpp::fetchers::PrefetchRequestPtr;
@@ -499,19 +515,33 @@ TimingStrideAvppLVP::indexVT(ThreadID tid, Addr predicted_addr)
 //Register the statistics
 TimingStrideAvppLVP::TimingStrideAvppLVPStats::TimingStrideAvppLVPStats(statistics::Group *parent) :
     statistics::Group(parent),
-    ADD_STAT(constantCorrect, statistics::units::Count::get(),
-            "Number of VP lookups"),
-    ADD_STAT(strideCorrect, statistics::units::Count::get(),
-            "Number of VP lookups"),
-    ADD_STAT(numZeroConstLoads, statistics::units::Count::get(),
-            "Number of constant loads with value 0"),
-    ADD_STAT(numOneConstLoads, statistics::units::Count::get(),
-            "Number of constant loads with value 1"),
+    ADD_STAT(ATmissLookup, statistics::units::Count::get(),
+            "Number of AT misses at lookup"),
+    ADD_STAT(AThitLookup, statistics::units::Count::get(),
+            "Number of AT hits at lookup"),
+    ADD_STAT(AThitLookupRate, statistics::units::Count::get(),
+            "Rate of AT hits at lookup"),
+
+    ADD_STAT(VTmissLookup, statistics::units::Count::get(),
+            "Number of VT misses at lookup"),
+    ADD_STAT(VThitLookup, statistics::units::Count::get(),
+            "Number of VT hits at lookup"),
+    ADD_STAT(VThitLookupRate, statistics::units::Count::get(),
+            "Rate of VT hits at lookup"),
+
+    ADD_STAT(constantAddressCorrect, statistics::units::Count::get(),
+            "Number of correct checked predictions with constant address"),
+    ADD_STAT(strideAddressCorrect, statistics::units::Count::get(),
+            "Number of correct checked predictions with stride address"),
+
     ADD_STAT(valuePredSavedCyclesLog2, statistics::units::Count::get(),
             "Required for Top-Down, number of committed instructions"),
     ADD_STAT(valuePredSavedCycles, statistics::units::Count::get(),
             "Required for Top-Down, number of committed instructions")
 {
+    AThitLookupRate = AThitLookup / (AThitLookup + ATmissLookup);
+    VThitLookupRate = VThitLookup / (VThitLookup + VTmissLookup);
+
     valuePredSavedCyclesLog2.init(0, 15, 1).flags(statistics::pdf);
     valuePredSavedCycles.init(0, 100, 10).flags(statistics::pdf);
 }

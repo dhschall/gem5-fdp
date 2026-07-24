@@ -65,7 +65,7 @@ PrefetchRequest::PrefetchRequest(gem5::o3::CPU *cpu, RequestorID requestorID, Ad
     assert(req);
 
     //Mark as prefetch
-    req->setFlags(Request::PREFETCH);
+    //req->setFlags(Request);
 }
 
 PrefetchRequest::~PrefetchRequest()
@@ -78,7 +78,7 @@ PrefetchRequest::~PrefetchRequest()
 void
 PrefetchRequest::createPkt()
 {
-    pkt = new Packet(req, MemCmd::HardPFReq);
+    pkt = new Packet(req, MemCmd::ReadReq);
     pkt->allocate();
 }
 
