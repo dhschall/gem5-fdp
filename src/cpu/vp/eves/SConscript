@@ -33,29 +33,6 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
 Import('*')
-SimObject('ValuePredictionUnit.py',
-    sim_objects=[
-        'AtomicValuePredictor',
-        'TimingValuePredictor',
-        'StrideLVP',
-        'AtomicStrideAvppLVP',
-        'TimingStrideAvppLVP',
-        'EStride'
-    ],
-    enums=[
-        'PredictorUpdatePolicy',
-        'PredictorAvailabilityPolicy',
-        'InflightPendingUpdatePolicy'
-    ])
 
-Source('atomic_value_predictor.cc')
-Source('timing_value_predictor.cc')
-Source('stride_lvp.cc')
-Source('structs.cc')
-Source('avpp/atomic_stride_avpp_lvp.cc')
-Source('avpp/timing_stride_avpp_lvp.cc')
-Source('eves/estride.cc')
-
-DebugFlag('VP', "For debugging the value predictor")
+Source('estride_table.cc')

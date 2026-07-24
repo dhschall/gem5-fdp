@@ -246,3 +246,9 @@ class TimingStrideAvppLVP(TimingValuePredictor):
         4,
         "How many prefetchs can be in a state of not-being able to be sent at the same time to memory.",
     )
+
+
+class EStride(TimingValuePredictor):
+    type = "EStride"
+    cxx_class = "gem5::eves::EStride"
+    cxx_header = "cpu/vp/eves/estride.hh"
