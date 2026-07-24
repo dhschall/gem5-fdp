@@ -122,10 +122,12 @@ TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     ++stats.updateWhenLoadRequests;
 
     //Regardless, update the real predict counter:
-    if (value_predicted && correct_val == predicted_val) {
-        ++stats.realCorrectPredicted;
-    } else {
-        ++stats.realIncorrectPredicted;
+    if (value_predicted) {
+        if (correct_val == predicted_val) {
+            ++stats.realCorrectPredicted;
+        } else {
+            ++stats.realIncorrectPredicted;
+        }
     }
 
     //Do this here, as generalInflight includes ALL loads, so it pops for all loads like this.
@@ -187,7 +189,7 @@ TimingValuePredictor::processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
     };
 
     //Priority trick for ensuring FIFO
-    auto event = new EventFunctionWrapper(lambda, name(), false, maxLookupsPerCycle-acceptedLookups);
+    auto event = new EventFunctionWrapper(lambda, name(), false, acceptedLookups);
 
     schedule(event, clockEdge(lookupLatency));
 
@@ -211,7 +213,7 @@ TimingValuePredictor::processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     };
 
     //Priority trick for ensuring FIFO
-    auto event = new EventFunctionWrapper(lambda, name(), false, maxUpdatesWhenLoadPerCycle-acceptedUpdateWhenLoad);
+    auto event = new EventFunctionWrapper(lambda, name(), false, acceptedUpdateWhenLoad);
 
     schedule(event, clockEdge(updateLoadLatency));
 
@@ -235,7 +237,7 @@ TimingValuePredictor::processUpdateWhenStore(ThreadID tid, Addr inst_addr,
     };
 
     //Priority trick for ensuring FIFO
-    auto event = new EventFunctionWrapper(lambda, name(), false, maxUpdatesWhenStorePerCycle-acceptedUpdateWhenStore);
+    auto event = new EventFunctionWrapper(lambda, name(), false, acceptedUpdateWhenStore);
 
     schedule(event, clockEdge(updateStoreLatency));
 
@@ -282,10 +284,12 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     updateWhenLoad(tid, inst_addr, seq_num, load_address,
             correct_val, predicted_val, value_predicted, rn_to_ex_delay);
 
-    if (value_predicted && correct_val == predicted_val) {
-        ++stats.correctPredicted;
-    } else {
-        ++stats.incorrectPredicted;
+    if (value_predicted) {
+        if (correct_val == predicted_val) {
+            ++stats.correctPredicted;
+        } else {
+            ++stats.incorrectPredicted;
+        }
     }
 
     callback(); //Notify commit stage that the update has finished.
@@ -412,7 +416,7 @@ TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(
       ADD_STAT(predicted, statistics::units::Count::get(),
                "Number of loads classified as predictable"),
       ADD_STAT(predCoverage, statistics::units::Count::get(),
-               "Number covered loads predicted compared to all loads"),
+               "Rate of covered loads predicted compared to accepted lookups"),
       ADD_STAT(aparentAccuracy, statistics::units::Count::get(),
                "Accuracy of the predictions, based on the ones checked"),
       ADD_STAT(realAccuracy, statistics::units::Count::get(),
@@ -453,7 +457,7 @@ TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(
 
 {
     lookupAcceptedRate = lookupAccepted / lookupRequests;
-    predCoverage = predicted / totalLoads;
+    predCoverage = predicted / lookupAccepted;
     aparentAccuracy = correctPredicted / (correctPredicted + incorrectPredicted);
     //(realCorrectPredicted + realIncorrectPredicted) SHALL BE EQUAL TO predicted
     realAccuracy = realCorrectPredicted / (realCorrectPredicted + realIncorrectPredicted);
