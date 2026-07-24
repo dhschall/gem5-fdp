@@ -37,5 +37,6 @@ configs/dram/lowp_sweep.cfg
 .pyenv
 .vscode
 .devcontainer/devcontainer-lock.json
+parsing_results/
 typings
 .DS_Store
