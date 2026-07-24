@@ -284,7 +284,7 @@ AtomicStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq
 
 void
 AtomicStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-    Addr store_address, uint8_t *data_written,
+    Addr store_address, const std::vector<uint8_t>& data_written,
     unsigned effective_size, ByteOrder guest_byte_order)
 {
 
@@ -306,22 +306,11 @@ AtomicStrideAvppLVP::updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum se
 
     //get the whole data that is going to be stored:
     uint64_t value = 0;
-    switch (effective_size) {
-        case 1:
-            value = *reinterpret_cast<const uint8_t*>(data_written);
-            break;
-        case 2:
-            value = gtoh(*reinterpret_cast<const uint16_t*>(data_written), guest_byte_order);
-            break;
-        case 4:
-            value = gtoh(*reinterpret_cast<const uint32_t*>(data_written), guest_byte_order);
-            break;
-        case 8:
-            value = gtoh(*reinterpret_cast<const uint64_t*>(data_written), guest_byte_order);
-            break;
-        default:
-            panic("Unexpected store size");
-    }
+    assert(effective_size <= sizeof(value));
+
+    memcpy(&value, data_written.data(), effective_size);
+
+    value = gtoh(value, guest_byte_order);
 
     entry->value = value; //That is all!
 }

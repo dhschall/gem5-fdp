@@ -68,7 +68,7 @@ class AtomicStrideAvppLVP : public AtomicValuePredictor
             Addr load_address, RegVal correct_val, RegVal predicted_val,
             bool value_predicted, Cycles rn_to_ex_delay) override;
         void updateWhenStore(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
-            Addr store_address, uint8_t *data_written,
+            Addr store_address, const std::vector<uint8_t>& data_written,
             unsigned effective_size, ByteOrder guest_byte_order) override;
         void squash(const InstSeqNum seq_num) override;
 
