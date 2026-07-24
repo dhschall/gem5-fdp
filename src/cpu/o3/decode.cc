@@ -97,7 +97,7 @@ Decode::Decode(CPU *_cpu, const BaseO3CPUParams &params)
              decodeWidth, static_cast<int>(MaxWidth));
 
     // @todo: Make into a parameter
-    skidBufferMax = (fetchToDecodeDelay + 1) *  params.decodeWidth;
+    skidBufferMax = (fetchToDecodeDelay + 1) *  params.decodeWidth * 10;
     for (int tid = 0; tid < MaxThreads; tid++) {
         stalls[tid] = {false};
         decodeStatus[tid] = Idle;
@@ -360,7 +360,7 @@ Decode::squash(const DynInstPtr &inst, bool control_miss, ThreadID tid)
     while (!skidBuffer[tid].empty()) {
         skidBuffer[tid].pop();
     }
-    
+
     //revert branch history
     while (!decodedBranchHistory.empty() && decodedBranchHistory.front().seqNum > squash_seq_num) {
         decodedBranchHistory.pop_front();
@@ -747,7 +747,7 @@ Decode::decodeInsts(ThreadID tid)
                 break;
             }
         }
-    
+
         //Record decoded branches for memdep predictions
         if (inst->isControl() && !(inst->isDirectCtrl() && inst->isUncondCtrl())) {
             branchInfo branch_info = {
