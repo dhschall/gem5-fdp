@@ -36,18 +36,15 @@
  */
 #include "cpu/vp/eves/estride.hh"
 
+#include "base/trace.hh"
 #include "debug/VP.hh"
 
 namespace gem5::eves
 {
 
-EStride::EStride(const EStrideParams &params)
- : TimingValuePredictor(params)
-{}
-
 VPResult
 EStride::lookup(ThreadID tid, Addr inst_addr,
-            InstSeqNum seq_num)
+            InstSeqNum seq_num, uint64_t countInflight)
 {
 
     VPResult result;
@@ -61,7 +58,7 @@ EStride::lookup(ThreadID tid, Addr inst_addr,
         // different threads.
 
         result.value = entry->value
-            + (countInflight(inst_addr) + 1) * entry->stride;
+            + (countInflight + 1) * entry->stride;
         result.predict = true;
     }
 

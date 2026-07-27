@@ -40,30 +40,30 @@
 
 #include <deque>
 
+#include "base/types.hh"
+#include "cpu/inst_seq.hh"
 #include "cpu/random/lfsr16.hh"
 #include "cpu/vp/eves/estride_table.hh"
-#include "cpu/vp/timing_value_predictor.hh"
-#include "params/EStride.hh"
+#include "cpu/vp/structs.hh"
 
 namespace gem5::eves
 {
 
-class EStride : public TimingValuePredictor
+class EStride
 {
     public:
-        EStride(const EStrideParams &params);
+        EStride() {};
 
     protected:
 
         VPResult lookup(ThreadID tid, Addr inst_addr,
-                    InstSeqNum seq_num) override;
+                    InstSeqNum seq_num, uint64_t countInflight);
 
         void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
                     bool value_generated, bool value_predicted,
-                    Cycles rn_to_ex_delay)
-                    override;
+                    Cycles rn_to_ex_delay);
 
         //No update when store!
 

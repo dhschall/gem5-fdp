@@ -43,18 +43,21 @@
 namespace gem5::eves
 {
 
-EVTAGE::EVTAGE(const EVTAGEParams &params)
- : TimingValuePredictor(params),
-   lvpstats(this)
+EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
+    const std::vector<unsigned> &tableHistoryBits,
+    gem5::o3::CPU *cpu)
+ : cpu(cpu)
 {
-    unsigned numOfTables = params.log_table_sizes.size();
+    assert(logTableSizes.size() == tableHistoryBits.size() + 1);
+
+    unsigned numOfTables = logTableSizes.size();
 
     //Higher indeces -> larger history
-    tables.emplace_back(params.log_table_sizes[0], 0, true);
+    tables.emplace_back(logTableSizes[0], 0, true);
     for (int i = 0; i < numOfTables - 1; i++) {
 
-        tables.emplace_back(params.log_table_sizes[i+1],
-            params.table_history_bits[i], false);
+        tables.emplace_back(logTableSizes[i+1],
+            tableHistoryBits[i], false);
     }
 }
 
@@ -99,7 +102,7 @@ EVTAGE::lookup(ThreadID tid, Addr inst_addr,
     return result;
 }
 
-void
+bool
 EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num, Addr load_address,
             RegVal correct_val, RegVal predicted_val,
@@ -107,8 +110,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             Cycles rn_to_ex_delay)
 {
     if (!value_generated) {
-        ++lvpstats.updatesBlocked;
-        return;
+        return false;
     }
 
     assert(inflightPredictions.front().seqNum == seq_num);
@@ -166,6 +168,8 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             e->useful = false;
         }
     }
+
+    return true;
 }
 
 void
@@ -222,11 +226,11 @@ EVTAGE::randomIndex(std::size_t size)
 }
 
 //Register the statistics
-EVTAGE::EVTAGEStats::EVTAGEStats(statistics::Group *parent) :
-    statistics::Group(parent),
-    ADD_STAT(updatesBlocked, statistics::units::Count::get(),
-            "Number of updates that were blocked because didn't"
-            " produce a value")
-{}
+// EVTAGE::EVTAGEStats::EVTAGEStats(statistics::Group *parent) :
+//     statistics::Group(parent),
+//     ADD_STAT(updatesBlocked, statistics::units::Count::get(),
+//             "Number of updates that were blocked because didn't"
+//             " produce a value")
+// {}
 
 } //namespace gem5::eves

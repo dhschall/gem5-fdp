@@ -37,35 +37,45 @@
 #ifndef __CPU_EVES_EVTAGE_LVP_HH__
 #define __CPU_EVES_EVTAGE_LVP_HH__
 
+#include <deque>
 #include <vector>
 
+#include "cpu/inst_seq.hh"
 #include "cpu/vp/eves/evtage_table.hh"
-#include "cpu/vp/timing_value_predictor.hh"
-#include "params/EVTAGE.hh"
+#include "cpu/vp/structs.hh"
+
+namespace gem5::o3
+{
+    class CPU;
+}
 
 namespace gem5::eves
 {
 
-class EVTAGE : public TimingValuePredictor
+class EVTAGE
 {
     public:
-        EVTAGE(const EVTAGEParams &params);
+        EVTAGE(const std::vector<unsigned> &logTableSizes,
+            const std::vector<unsigned> &tableHistoryBits,
+            gem5::o3::CPU *cpu);
 
     protected:
 
         VPResult lookup(ThreadID tid, Addr inst_addr,
-                    InstSeqNum seq_num) override;
+                    InstSeqNum seq_num);
 
-        void updateWhenLoad(ThreadID tid, Addr inst_addr,
+        bool updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
                     bool value_generated, bool value_predicted,
-                    Cycles rn_to_ex_delay)
-                    override;
+                    Cycles rn_to_ex_delay);
 
-        void squashNotify(const InstSeqNum seq_num) override;
+        void squashNotify(const InstSeqNum seq_num);
 
     private:
+
+        gem5::o3::CPU *cpu;
+
         std::vector<EVTAGE_table> tables;
 
         struct InflightPrediction
@@ -83,12 +93,12 @@ class EVTAGE : public TimingValuePredictor
         std::size_t randomIndex(std::size_t size);
 
         /** The statistics that this component adds */
-        struct EVTAGEStats : public statistics::Group
-        {
-            EVTAGEStats(statistics::Group *parent);
+        // struct EVTAGEStats : public statistics::Group
+        // {
+        //     EVTAGEStats(statistics::Group *parent);
 
-            statistics::Scalar updatesBlocked;
-        } lvpstats;
+        //     statistics::Scalar updatesBlocked;
+        // } lvpstats;
 };
 
 } //namespace gem5::eves
