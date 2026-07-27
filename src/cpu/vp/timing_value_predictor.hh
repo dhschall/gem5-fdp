@@ -101,7 +101,8 @@ class TimingValuePredictor : public ClockedObject
         void requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         // GETS CALLED DURING COMMIT
@@ -190,13 +191,15 @@ class TimingValuePredictor : public ClockedObject
         void processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         void finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         void processUpdateWhenStore(ThreadID tid, Addr inst_addr,
@@ -219,7 +222,8 @@ class TimingValuePredictor : public ClockedObject
         virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
                                     InstSeqNum seq_num, Addr load_address,
                                     RegVal correct_val, RegVal predicted_val,
-                                    bool value_predicted, Cycles rn_to_ex_delay)
+                                    bool value_generated, bool value_predicted,
+                                    Cycles rn_to_ex_delay)
                                     {};
 
         virtual void updateWhenStore(ThreadID tid, Addr inst_addr,

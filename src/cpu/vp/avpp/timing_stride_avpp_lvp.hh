@@ -70,7 +70,8 @@ class TimingStrideAvppLVP : public TimingValuePredictor
         void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
-                    bool value_predicted, Cycles rn_to_ex_delay)
+                    bool value_generated, bool value_predicted,
+                    Cycles rn_to_ex_delay)
                     override;
 
         void updateWhenStore(ThreadID tid, Addr inst_addr,

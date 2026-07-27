@@ -1428,6 +1428,7 @@ Commit::updateValuePredictor(ThreadID tid, const DynInstPtr &inst)
                             inst->seqNum, inst->effAddr,
                             inst->getActualValue(),
                             inst->getPredictedValue(),
+                            inst->hasGeneratedValuePrediction(),
                             inst->isValuePredicted(),
                             clk, [this](){recvUpdateValuePredictor();});
 

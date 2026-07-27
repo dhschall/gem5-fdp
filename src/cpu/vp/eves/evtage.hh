@@ -59,7 +59,8 @@ class EVTAGE : public TimingValuePredictor
         void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
-                    bool value_predicted, Cycles rn_to_ex_delay)
+                    bool value_generated, bool value_predicted,
+                    Cycles rn_to_ex_delay)
                     override;
 
         void squashNotify(const InstSeqNum seq_num) override;
@@ -77,9 +78,17 @@ class EVTAGE : public TimingValuePredictor
 
         std::deque<InflightPrediction> inflightPredictions;
 
-        uint64_t getHistory();
+        uint64_t getHistory(InstSeqNum seq_num);
 
         std::size_t randomIndex(std::size_t size);
+
+        /** The statistics that this component adds */
+        struct EVTAGEStats : public statistics::Group
+        {
+            EVTAGEStats(statistics::Group *parent);
+
+            statistics::Scalar updatesBlocked;
+        } lvpstats;
 };
 
 } //namespace gem5::eves

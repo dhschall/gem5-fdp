@@ -44,7 +44,8 @@ namespace gem5::eves
 {
 
 EVTAGE::EVTAGE(const EVTAGEParams &params)
- : TimingValuePredictor(params)
+ : TimingValuePredictor(params),
+   lvpstats(this)
 {
     unsigned numOfTables = params.log_table_sizes.size();
 
@@ -61,7 +62,7 @@ VPResult
 EVTAGE::lookup(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num)
 {
-    uint64_t branchHistory = getHistory();
+    uint64_t branchHistory = getHistory(seq_num);
 
     //Higher indeces -> larger history
     std::vector<EVTAGE_Entry*> candidateEntries;
@@ -102,8 +103,14 @@ void
 EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num, Addr load_address,
             RegVal correct_val, RegVal predicted_val,
-            bool value_predicted, Cycles rn_to_ex_delay)
+            bool value_generated, bool value_predicted,
+            Cycles rn_to_ex_delay)
 {
+    if (!value_generated) {
+        ++lvpstats.updatesBlocked;
+        return;
+    }
+
     assert(inflightPredictions.front().seqNum == seq_num);
     auto &info = inflightPredictions.front();
 
@@ -132,7 +139,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
     std::vector<EVTAGE_Entry*> upperEntriesNotUseful;
     std::vector<EVTAGE_table*> upperEtnriesNotUsefulTables;
 
-    uint64_t branchHistory = getHistory();
+    uint64_t branchHistory = getHistory(seq_num);
 
     for (std::size_t i = info.table_idx + 1; i < tables.size(); ++i) {
 
@@ -147,7 +154,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
 
     if (upperEntriesNotUseful.size()) {
         //There are not-useful entries
-        auto idx = randomIndex(upperEntriesNotUsefulOriginTable.size());
+        auto idx = randomIndex(upperEtnriesNotUsefulTables.size());
 
         upperEntriesNotUseful[idx]->value = correct_val;
 
@@ -164,7 +171,6 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
 void
 EVTAGE::squashNotify(const InstSeqNum seq_num)
 {
-    DPRINTF(VP, "Squash inflight prediction until sn:%llu\n", seq_num);
     while (!inflightPredictions.empty()
         && inflightPredictions.back().seqNum > seq_num)
     {
@@ -173,7 +179,7 @@ EVTAGE::squashNotify(const InstSeqNum seq_num)
 }
 
 uint64_t
-EVTAGE::getHistory()
+EVTAGE::getHistory(InstSeqNum seq_num)
 {
     assert(cpu);
 
@@ -214,5 +220,13 @@ EVTAGE::randomIndex(std::size_t size)
 
     return dist(gen);
 }
+
+//Register the statistics
+EVTAGE::EVTAGEStats::EVTAGEStats(statistics::Group *parent) :
+    statistics::Group(parent),
+    ADD_STAT(updatesBlocked, statistics::units::Count::get(),
+            "Number of updates that were blocked because didn't"
+            " produce a value")
+{}
 
 } //namespace gem5::eves

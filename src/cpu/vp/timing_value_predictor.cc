@@ -116,7 +116,8 @@ void
 TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
     ++stats.updateWhenLoadRequests;
@@ -142,7 +143,8 @@ TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     if (acceptedUpdateWhenLoad < maxUpdatesWhenLoadPerCycle) {
         //Process directly (The waiting queue is empty and more lookups can be accepted)
         processUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
-            predicted_val, value_predicted, rn_to_ex_delay, callback);
+            predicted_val, value_generated, value_predicted,
+            rn_to_ex_delay, callback);
         ++acceptedUpdateWhenLoad;
         ++stats.updateWhenLoadAccepted;
     } else {
@@ -203,13 +205,15 @@ void
 TimingValuePredictor::processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
         finishUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
-            predicted_val, value_predicted, rn_to_ex_delay, callback);
+            predicted_val, value_generated, value_predicted,
+            rn_to_ex_delay, callback);
     };
 
     //Priority trick for ensuring FIFO
@@ -275,14 +279,16 @@ void
 TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
-                                bool value_predicted, Cycles rn_to_ex_delay,
+                                bool value_generated, bool value_predicted,
+                                Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
     //Check that the events are completed in-order of how they where scheduled
     assert(updateWhenLoadInflight.front().seqNum == seq_num);
 
     updateWhenLoad(tid, inst_addr, seq_num, load_address,
-            correct_val, predicted_val, value_predicted, rn_to_ex_delay);
+            correct_val, predicted_val, value_generated,
+            value_predicted, rn_to_ex_delay);
 
     if (value_predicted) {
         if (correct_val == predicted_val) {

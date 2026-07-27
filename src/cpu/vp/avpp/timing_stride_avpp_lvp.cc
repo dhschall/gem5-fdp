@@ -202,8 +202,9 @@ TimingStrideAvppLVP::lookup(ThreadID tid, Addr inst_addr,
 
 void
 TimingStrideAvppLVP::updateWhenLoad(ThreadID tid, Addr inst_addr,
-    InstSeqNum seq_num, Addr load_address, RegVal correct_val, RegVal predicted_val,
-    bool value_predicted, Cycles rn_to_ex_delay)
+    InstSeqNum seq_num, Addr load_address, RegVal correct_val,
+    RegVal predicted_val, bool value_generated, bool value_predicted,
+    Cycles rn_to_ex_delay)
 {
     //COMMIT UPDATE: update only the AT
 
