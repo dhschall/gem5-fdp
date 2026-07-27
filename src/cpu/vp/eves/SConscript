@@ -36,3 +36,4 @@
 Import('*')
 
 Source('estride_table.cc')
+Source('evtage_table.cc')
