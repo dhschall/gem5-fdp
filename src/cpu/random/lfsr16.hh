@@ -39,7 +39,8 @@
 
 namespace gem5 {
 
-    class LFSR16 {
+    class LFSR16
+    {
         public:
             LFSR16(uint16_t seed=0x7ecb);
 

@@ -40,6 +40,7 @@
 
 #include <deque>
 
+#include "cpu/random/lfsr16.hh"
 #include "cpu/vp/eves/estride_table.hh"
 #include "cpu/vp/timing_value_predictor.hh"
 #include "params/EStride.hh"
@@ -68,6 +69,8 @@ class EStride : public TimingValuePredictor
         //No need for extra squash logic!
     private:
         EStrideTable table;
+
+        LFSR16 lfsr16;
 };
 
 } //namespace gem5::eves

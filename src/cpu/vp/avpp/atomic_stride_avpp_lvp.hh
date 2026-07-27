@@ -45,7 +45,7 @@
 #include "base/cache/associative_cache.hh"
 #include "base/types.hh"
 #include "cpu/o3/lsq_unit.hh"
-#include "cpu/random/lsfr16.hh"
+#include "cpu/random/lfsr16.hh"
 #include "cpu/vp/atomic_value_predictor.hh"
 #include "cpu/vp/avpp/entries.hh"
 #include "cpu/vp/avpp/inject_fetcher.hh"

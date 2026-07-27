@@ -55,10 +55,6 @@ EStride::lookup(ThreadID tid, Addr inst_addr,
 
     EStrideEntry *entry = table.lookup(tid, inst_addr);
 
-    unsigned confidence = 0;
-    if (entry) {
-        confidence = entry->confidence;
-    }
     if (entry && entry->confidence >= 7) {
 
         // Unfortunately, this actually doesn't take into account
@@ -71,7 +67,8 @@ EStride::lookup(ThreadID tid, Addr inst_addr,
 
     DPRINTF(VP, "Performing lookup of seqNum: %llu."
         "PC: %llx. Confidence=%llu. Predicted=%i. Does entry exist? %i\n",
-        seq_num, inst_addr, confidence, result.predict, (bool)entry);
+        seq_num, inst_addr, entry ? entry->confidence : 0,
+        result.predict, (bool)entry);
 
     return result;
 }
@@ -110,21 +107,30 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
             entry->useful = 0;
 
         } else { //Everything is correct now
+
+
             //Increment confidence and useful
-            if (entry->confidence < 32) {
-                ++entry->confidence;
-            }
-            if (entry->useful < 4) {
-                ++entry->useful;
+            //Probability: 1/32
+            uint16_t randomValue = lfsr16.next();
+            if ((randomValue >> 11) == 0) {
+                if (entry->confidence < 32) {
+                    ++entry->confidence;
+                }
+                if (entry->useful < 4) {
+                    ++entry->useful;
+                }
             }
         }
 
     } else {
         //NO ENTRY, consider allocating one
-        //We will assume intially that 100% allocate
-        EStrideEntry a = {inst_addr, tid, correct_val, 0, 0, 0, true};
-        table.allocate(tid, inst_addr, a);
-        DPRINTF(VP, "ALLOCATING ENTRY FOR THIS PC\n");
+        //Probability: 1/32
+        uint16_t randomValue = lfsr16.next();
+        if ((randomValue >> 11) == 0) {
+            EStrideEntry a = {inst_addr, tid, correct_val, 0, 0, 0, true};
+            table.allocate(tid, inst_addr, a);
+            DPRINTF(VP, "ALLOCATING ENTRY FOR THIS PC\n");
+        }
     }
 }
 

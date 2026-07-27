@@ -39,7 +39,7 @@
 #define __CPU_TIMING_STRIDE_AVPP_LVP_HH__
 
 #include "base/cache/associative_cache.hh"
-#include "cpu/random/lsfr16.hh"
+#include "cpu/random/lfsr16.hh"
 #include "cpu/vp/avpp/entries.hh"
 #include "cpu/vp/avpp/inject_fetcher.hh"
 #include "cpu/vp/timing_value_predictor.hh"
