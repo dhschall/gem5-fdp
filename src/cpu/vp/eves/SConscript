@@ -37,5 +37,6 @@ Import('*')
 
 Source('estride_table.cc')
 Source('evtage_table.cc')
+Source('structs.cc')
 Source('estride.cc')
 Source('evtage.cc')

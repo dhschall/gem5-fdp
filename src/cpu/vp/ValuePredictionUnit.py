@@ -248,23 +248,17 @@ class TimingStrideAvppLVP(TimingValuePredictor):
     )
 
 
-class EStride(TimingValuePredictor):
-    type = "EStride"
-    cxx_class = "gem5::eves::EStride"
-    cxx_header = "cpu/vp/eves/estride.hh"
+class EVES(TimingValuePredictor):
+    type = "EVES"
+    cxx_class = "gem5::eves::EVES"
+    cxx_header = "cpu/vp/eves/eves.hh"
 
-
-class EVTAGE(TimingValuePredictor):
-    type = "EVTAGE"
-    cxx_class = "gem5::eves::EVTAGE"
-    cxx_header = "cpu/vp/eves/evtage.hh"
-
-    log_table_sizes = VectorParam.Unsigned(
+    evtage_log_table_sizes = VectorParam.Unsigned(
         [11, 10, 10, 9, 9, 9, 8, 8],
         "The size of each table as log2 of entries",
     )
 
-    table_history_bits = VectorParam.Unsigned(
+    evtage_table_history_bits = VectorParam.Unsigned(
         [2, 4, 7, 12, 21, 38, 64],
         "The number of bits of history used. "
         "NOTICE THAT THE FIRST TABLE HAS AN IMPLICIT ZERO. "

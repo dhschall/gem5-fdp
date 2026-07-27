@@ -42,7 +42,7 @@
 namespace gem5::eves
 {
 
-VPResult
+PredictorResult
 EStride::lookup(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num, uint64_t countInflight)
 {
@@ -67,7 +67,7 @@ EStride::lookup(ThreadID tid, Addr inst_addr,
         seq_num, inst_addr, entry ? entry->confidence : 0,
         result.predict, (bool)entry);
 
-    return result;
+    return {result, entry ? (uint64_t)entry->confidence : 0ULL};
 }
 
 void

@@ -44,7 +44,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/random/lfsr16.hh"
 #include "cpu/vp/eves/estride_table.hh"
-#include "cpu/vp/structs.hh"
+#include "cpu/vp/eves/structs.hh"
 
 namespace gem5::eves
 {
@@ -54,10 +54,8 @@ class EStride
     public:
         EStride() {};
 
-    protected:
-
-        VPResult lookup(ThreadID tid, Addr inst_addr,
-                    InstSeqNum seq_num, uint64_t countInflight);
+        PredictorResult lookup(ThreadID tid, Addr inst_addr,
+                        InstSeqNum seq_num, uint64_t countInflight);
 
         void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,

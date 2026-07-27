@@ -61,7 +61,7 @@ EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
     }
 }
 
-VPResult
+PredictorResult
 EVTAGE::lookup(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num)
 {
@@ -99,7 +99,7 @@ EVTAGE::lookup(ThreadID tid, Addr inst_addr,
     inflightPredictions.push_back({tableIdx.back(),
         provider->index, result.predict, seq_num});
 
-    return result;
+    return {result, provider->confidence};
 }
 
 bool
@@ -224,13 +224,5 @@ EVTAGE::randomIndex(std::size_t size)
 
     return dist(gen);
 }
-
-//Register the statistics
-// EVTAGE::EVTAGEStats::EVTAGEStats(statistics::Group *parent) :
-//     statistics::Group(parent),
-//     ADD_STAT(updatesBlocked, statistics::units::Count::get(),
-//             "Number of updates that were blocked because didn't"
-//             " produce a value")
-// {}
 
 } //namespace gem5::eves

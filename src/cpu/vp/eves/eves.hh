@@ -34,64 +34,50 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __CPU_EVES_EVTAGE_LVP_HH__
-#define __CPU_EVES_EVTAGE_LVP_HH__
+#ifndef __CPU_EVES_EVES_LVP_HH__
+#define __CPU_EVES_EVES_LVP_HH__
 
-#include <deque>
-#include <vector>
-
-#include "cpu/inst_seq.hh"
-#include "cpu/vp/eves/evtage_table.hh"
-#include "cpu/vp/eves/structs.hh"
-
-namespace gem5::o3
-{
-    class CPU;
-}
+#include "cpu/vp/eves/estride.hh"
+#include "cpu/vp/eves/evtage.hh"
+#include "cpu/vp/timing_value_predictor.hh"
+#include "params/EVES.hh"
 
 namespace gem5::eves
 {
 
-class EVTAGE
+class EVES : public TimingValuePredictor
 {
     public:
-        EVTAGE(const std::vector<unsigned> &logTableSizes,
-            const std::vector<unsigned> &tableHistoryBits,
-            gem5::o3::CPU *cpu);
+        EVES(const EVESParams &params);
 
-        PredictorResult lookup(ThreadID tid, Addr inst_addr,
-                        InstSeqNum seq_num);
+    protected:
+        VPResult lookup(ThreadID tid, Addr inst_addr,
+                    InstSeqNum seq_num)
+                    override;
 
-        bool updateWhenLoad(ThreadID tid, Addr inst_addr,
+        void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
                     bool value_generated, bool value_predicted,
-                    Cycles rn_to_ex_delay);
+                    Cycles rn_to_ex_delay)
+                    override;
 
-        void squashNotify(const InstSeqNum seq_num);
+        void squashNotify(const InstSeqNum seq_num) override;
 
     private:
 
-        gem5::o3::CPU *cpu;
+        EStride estride;
+        EVTAGE evtage;
 
-        std::vector<EVTAGE_table> tables;
-
-        struct InflightPrediction
+        /** The statistics that this component adds */
+        struct EVESStats : public statistics::Group
         {
-            std::size_t table_idx;
-            std::size_t index;
-            bool predicted;
-            InstSeqNum seqNum;
-        };
+            EVESStats(statistics::Group *parent);
 
-        std::deque<InflightPrediction> inflightPredictions;
-
-        uint64_t getHistory(InstSeqNum seq_num);
-
-        std::size_t randomIndex(std::size_t size);
+            statistics::Scalar EVTAGEupdatesBlocked;
+        } lvpstats;
 };
 
 } //namespace gem5::eves
 
-
-#endif
+#endif //__CPU_EVES_EVES_LVP_HH__
