@@ -675,6 +675,8 @@ Rename::renameInsts(ThreadID tid)
 
                 //Mark what instruction causes the stall
                 valuePredStall[tid] = inst;
+                ++valuePredTiming->stats.stallEvents;
+                ++valuePredTiming->stats.stallCycles;
                 break;
             }
         }
@@ -1458,6 +1460,7 @@ Rename::checkStall(ThreadID tid)
         if (valuePredTiming->countInflight(valuePredStall[tid]->pcState()
                 .instAddr())) {
             ret_val = true;
+            ++valuePredTiming->stats.stallCycles;
         } else {
             valuePredStall[tid] = nullptr; //Clean the stall reason
         }

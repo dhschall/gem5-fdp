@@ -128,6 +128,49 @@ class TimingValuePredictor : public ClockedObject
          * of a single instruction. */
         uint64_t countInflight(Addr inst_addr);
 
+        //For the rename stage to access
+        struct TimingValuePredictorStats : public statistics::Group
+        {
+            TimingValuePredictorStats(statistics::Group *parent);
+
+            statistics::Scalar totalLoads;
+            statistics::Scalar stallCycles;
+            statistics::Scalar stallEvents;
+
+            // ---------------------------------------------
+
+            statistics::Scalar lookupRequests;
+            statistics::Scalar lookupAccepted;
+            statistics::Formula lookupAcceptedRate;
+
+            statistics::Scalar predicted;
+            statistics::Formula predCoverage;
+            statistics::Formula aparentAccuracy;
+            statistics::Formula realAccuracy;
+
+            // ---------------------------------------------
+
+            statistics::Scalar updateWhenLoadRequests;
+            statistics::Scalar updateWhenLoadAccepted;
+            statistics::Formula updateWhenLoadAcceptedRate;
+
+            statistics::Scalar correctPredicted;
+            statistics::Scalar realCorrectPredicted;
+
+            statistics::Scalar incorrectPredicted;
+            statistics::Scalar realIncorrectPredicted;
+
+            statistics::Scalar ignoredPredicted;
+            statistics::Formula ignoredPredictedRate;
+
+            // ---------------------------------------------
+
+            statistics::Scalar updateWhenStoreRequests;
+            statistics::Scalar updateWhenStoreAccepted;
+            statistics::Formula updateWhenStoreAcceptedRate;
+
+        } stats;
+
     private:
 
         void processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
@@ -222,46 +265,6 @@ class TimingValuePredictor : public ClockedObject
 
         /** General in-flight loads */
         std::deque<VPTimingInflight> generalInflight;
-
-        struct TimingValuePredictorStats : public statistics::Group
-        {
-            TimingValuePredictorStats(statistics::Group *parent);
-
-            statistics::Scalar totalLoads;
-
-            // ---------------------------------------------
-
-            statistics::Scalar lookupRequests;
-            statistics::Scalar lookupAccepted;
-            statistics::Formula lookupAcceptedRate;
-
-            statistics::Scalar predicted;
-            statistics::Formula predCoverage;
-            statistics::Formula aparentAccuracy;
-            statistics::Formula realAccuracy;
-
-            // ---------------------------------------------
-
-            statistics::Scalar updateWhenLoadRequests;
-            statistics::Scalar updateWhenLoadAccepted;
-            statistics::Formula updateWhenLoadAcceptedRate;
-
-            statistics::Scalar correctPredicted;
-            statistics::Scalar realCorrectPredicted;
-
-            statistics::Scalar incorrectPredicted;
-            statistics::Scalar realIncorrectPredicted;
-
-            statistics::Scalar ignoredPredicted;
-            statistics::Formula ignoredPredictedRate;
-
-            // ---------------------------------------------
-
-            statistics::Scalar updateWhenStoreRequests;
-            statistics::Scalar updateWhenStoreAccepted;
-            statistics::Formula updateWhenStoreAcceptedRate;
-
-        } stats;
 };
 
 } //namespace gem5

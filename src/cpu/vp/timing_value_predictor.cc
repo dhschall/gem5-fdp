@@ -48,6 +48,7 @@ TimingValuePredictor::TimingValuePredictor(
     predictorUpdatePolicy(params.predictor_update_policy),
     predictorAvailabilityPolicy(params.predictor_availability_policy),
     inflightPendingUpdatePolicy(params.inflight_pending_update_policy),
+    stats(this),
     lookupLatency(params.lookup_latency),
     updateLoadLatency(params.update_load_latency),
     updateStoreLatency(params.update_store_latency),
@@ -57,8 +58,7 @@ TimingValuePredictor::TimingValuePredictor(
     instShiftAmt(params.instShiftAmt),
     acceptedLookups(0),
     acceptedUpdateWhenLoad(0),
-    acceptedUpdateWhenStore(0),
-    stats(this)
+    acceptedUpdateWhenStore(0)
 {
 
     //TODO: progressively keep implementing them to delete these panic_if
@@ -402,6 +402,10 @@ TimingValuePredictor::TimingValuePredictorStats::TimingValuePredictorStats(
     statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(totalLoads, statistics::units::Count::get(),
+               "Total loads processed by the Load value predictor"),
+      ADD_STAT(stallCycles, statistics::units::Count::get(),
+               "Total loads processed by the Load value predictor"),
+      ADD_STAT(stallEvents, statistics::units::Count::get(),
                "Total loads processed by the Load value predictor"),
 
     // ---------------------------------------------------------------------
