@@ -65,13 +65,14 @@ class TimingStrideAvppLVP : public TimingValuePredictor
     protected:
 
         VPResult lookup(ThreadID tid, Addr inst_addr,
-                    InstSeqNum seq_num) override;
+                    InstSeqNum seq_num, VPTimingInflight &entry)
+                    override;
 
         void updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
                     bool value_generated, bool value_predicted,
-                    Cycles rn_to_ex_delay)
+                    InflightState *state, Cycles rn_to_ex_delay)
                     override;
 
         void updateWhenStore(ThreadID tid, Addr inst_addr,

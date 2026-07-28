@@ -43,6 +43,7 @@
 #include "cpu/inst_seq.hh"
 #include "cpu/vp/eves/evtage_table.hh"
 #include "cpu/vp/eves/structs.hh"
+#include "cpu/vp/timing_value_predictor.hh"
 
 namespace gem5::o3
 {
@@ -52,39 +53,46 @@ namespace gem5::o3
 namespace gem5::eves
 {
 
+//Custom state for tracking indexes
+struct InflightIndexInformation : InflightState
+{
+
+    InflightIndexInformation(std::size_t table_idx, std::size_t index,
+        bool predicted, InstSeqNum seqNum)
+     : table_idx(table_idx),
+       index(index),
+       predicted(predicted),
+       seqNum(seqNum)
+    {}
+
+    std::size_t table_idx;
+    std::size_t index;
+    bool predicted;
+    InstSeqNum seqNum;
+};
+
 class EVTAGE
 {
     public:
         EVTAGE(const std::vector<unsigned> &logTableSizes,
-            const std::vector<unsigned> &tableHistoryBits,
-            gem5::o3::CPU *cpu);
+            const std::vector<unsigned> &tableHistoryBits);
 
         PredictorResult lookup(ThreadID tid, Addr inst_addr,
-                        InstSeqNum seq_num);
+                        InstSeqNum seq_num, VPTimingInflight &entry);
 
         bool updateWhenLoad(ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, Addr load_address,
                     RegVal correct_val, RegVal predicted_val,
                     bool value_generated, bool value_predicted,
-                    Cycles rn_to_ex_delay);
+                    InflightState *state, Cycles rn_to_ex_delay);
 
-        void squashNotify(const InstSeqNum seq_num);
+        void setO3CPU(gem5::o3::CPU *cpu);
 
     private:
 
         gem5::o3::CPU *cpu;
 
         std::vector<EVTAGE_table> tables;
-
-        struct InflightPrediction
-        {
-            std::size_t table_idx;
-            std::size_t index;
-            bool predicted;
-            InstSeqNum seqNum;
-        };
-
-        std::deque<InflightPrediction> inflightPredictions;
 
         uint64_t getHistory(InstSeqNum seq_num);
 

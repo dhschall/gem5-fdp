@@ -62,12 +62,12 @@ EStride::lookup(ThreadID tid, Addr inst_addr,
         result.predict = true;
     }
 
-    DPRINTF(VP, "Performing lookup of seqNum: %llu."
+    DPRINTF(VP, "EStride - Performing lookup of seqNum: %llu."
         "PC: %llx. Confidence=%llu. Predicted=%i. Does entry exist? %i\n",
         seq_num, inst_addr, entry ? entry->confidence : 0,
         result.predict, (bool)entry);
 
-    return {result, entry ? (uint64_t)entry->confidence : 0ULL};
+    return {result, entry ? entry->confidence : 0ULL};
 }
 
 void
@@ -79,7 +79,7 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
 {
 
     DPRINTF(VP,
-        "Performing updateWhenLoad of seqNum: %llu. PC: %llx\n",
+        "EStride - Performing updateWhenLoad of seqNum: %llu. PC: %llx\n",
         seq_num, inst_addr);
 
     EStrideEntry *entry = table.lookup(tid, inst_addr);

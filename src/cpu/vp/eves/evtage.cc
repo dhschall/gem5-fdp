@@ -40,13 +40,14 @@
 
 #include "cpu/o3/cpu.hh"
 
+#include "debug/VP.hh"
+
 namespace gem5::eves
 {
 
 EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
-    const std::vector<unsigned> &tableHistoryBits,
-    gem5::o3::CPU *cpu)
- : cpu(cpu)
+    const std::vector<unsigned> &tableHistoryBits)
+ : cpu(nullptr)
 {
     assert(logTableSizes.size() == tableHistoryBits.size() + 1);
 
@@ -63,8 +64,9 @@ EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
 
 PredictorResult
 EVTAGE::lookup(ThreadID tid, Addr inst_addr,
-            InstSeqNum seq_num)
+            InstSeqNum seq_num, VPTimingInflight &entry)
 {
+    DPRINTF(VP, "EVTAGE LOOKUP SEQNUM %llu\n", seq_num);
     uint64_t branchHistory = getHistory(seq_num);
 
     //Higher indeces -> larger history
@@ -96,8 +98,8 @@ EVTAGE::lookup(ThreadID tid, Addr inst_addr,
         result.predict = true;
     }
 
-    inflightPredictions.push_back({tableIdx.back(),
-        provider->index, result.predict, seq_num});
+    entry.state = new InflightIndexInformation(tableIdx.back(),
+        provider->index, result.predict, seq_num);
 
     return {result, provider->confidence};
 }
@@ -107,16 +109,23 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num, Addr load_address,
             RegVal correct_val, RegVal predicted_val,
             bool value_generated, bool value_predicted,
-            Cycles rn_to_ex_delay)
+            InflightState *state, Cycles rn_to_ex_delay)
 {
+    DPRINTF(VP, "EVTAGE UPDATE SEQNUM %llu\n", seq_num);
     if (!value_generated) {
+
+        //Clean up the state if there is one
+        if (state) {
+            delete state;
+        }
+
         return false;
     }
 
-    assert(inflightPredictions.front().seqNum == seq_num);
-    auto &info = inflightPredictions.front();
+    assert(state);
+    auto info = dynamic_cast<InflightIndexInformation*>(state);
 
-    auto entry = tables[info.table_idx].directAccess(info.index);
+    auto entry = tables[info->table_idx].directAccess(info->index);
     assert(entry);
 
     //Replace only the value when the confidence is zero
@@ -143,7 +152,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
 
     uint64_t branchHistory = getHistory(seq_num);
 
-    for (std::size_t i = info.table_idx + 1; i < tables.size(); ++i) {
+    for (std::size_t i = info->table_idx + 1; i < tables.size(); ++i) {
 
         auto entry = tables[i].find(tid, inst_addr, branchHistory);
 
@@ -169,17 +178,14 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
         }
     }
 
+    delete state; //VERY IMPORTANT
     return true;
 }
 
 void
-EVTAGE::squashNotify(const InstSeqNum seq_num)
+EVTAGE::setO3CPU(gem5::o3::CPU *cpu)
 {
-    while (!inflightPredictions.empty()
-        && inflightPredictions.back().seqNum > seq_num)
-    {
-        inflightPredictions.pop_back();
-    }
+    this->cpu = cpu;
 }
 
 uint64_t

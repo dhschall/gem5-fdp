@@ -43,19 +43,26 @@ EVES::EVES(const EVESParams &params)
  : TimingValuePredictor(params),
    estride(),
    evtage(params.evtage_log_table_sizes,
-    params.evtage_table_history_bits, cpu),
+    params.evtage_table_history_bits),
    lvpstats(this)
 {}
 
+void
+EVES::setO3CPU(gem5::o3::CPU *cpu)
+{
+    TimingValuePredictor::setO3CPU(cpu);
+    evtage.setO3CPU(cpu);
+}
+
 VPResult
 EVES::lookup(ThreadID tid, Addr inst_addr,
-            InstSeqNum seq_num)
+            InstSeqNum seq_num, VPTimingInflight &entry)
 {
     //Request the two predictors and pick the one with higher confidence.
     auto estrideResponse = estride.lookup(tid, inst_addr,
             seq_num, countInflight(inst_addr));
 
-    auto evtageResponse = evtage.lookup(tid, inst_addr, seq_num);
+    auto evtageResponse = evtage.lookup(tid, inst_addr, seq_num, entry);
 
     if (estrideResponse.result.predict
         && !evtageResponse.result.predict)
@@ -94,12 +101,12 @@ EVES::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InstSeqNum seq_num, Addr load_address,
             RegVal correct_val, RegVal predicted_val,
             bool value_generated, bool value_predicted,
-            Cycles rn_to_ex_delay)
+            InflightState *state, Cycles rn_to_ex_delay)
 {
     //Update both predictors
     auto success = evtage.updateWhenLoad(tid, inst_addr, seq_num,
         load_address, correct_val, predicted_val,
-        value_generated, value_predicted, rn_to_ex_delay);
+        value_generated, value_predicted, state, rn_to_ex_delay);
 
     if (!success)
         ++lvpstats.EVTAGEupdatesBlocked;
@@ -107,12 +114,6 @@ EVES::updateWhenLoad(ThreadID tid, Addr inst_addr,
     estride.updateWhenLoad(tid, inst_addr, seq_num, load_address,
         correct_val, predicted_val, value_generated,
         value_predicted, rn_to_ex_delay);
-}
-
-void
-EVES::squashNotify(const InstSeqNum seq_num)
-{
-    evtage.squashNotify(seq_num);
 }
 
 //Register the statistics

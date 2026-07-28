@@ -96,7 +96,7 @@ TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                             Addr, InstSeqNum, VPResult)> callback)
 {
     //ALL LOADS CALL THIS FUNCTION
-    generalInflight.push_back({inst_addr, seq_num});
+    generalInflight.push_back({inst_addr, seq_num, false, nullptr});
     ++stats.totalLoads;
 
     ++stats.lookupRequests;
@@ -108,9 +108,13 @@ TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
 
     if (acceptedLookups < maxLookupsPerCycle) {
         //Process directly (The waiting queue is empty and more lookups can be accepted)
-        processLookup(inst, tid, inst_addr, seq_num, callback);
+        processLookup(inst, tid, inst_addr,
+            seq_num, generalInflight.back(), callback);
         ++acceptedLookups;
         ++stats.lookupAccepted;
+    } else {
+        //Mark as processed nevertheless
+        generalInflight.back().lookupProcessed = true;
     }
 }
 
@@ -135,6 +139,13 @@ TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 
     //Do this here, as generalInflight includes ALL loads, so it pops for all loads like this.
     assert(generalInflight.front().seqNum == seq_num);
+
+    //assert that the lookup has completed for this instruction
+    assert(generalInflight.front().lookupProcessed);
+
+    //Before popping, make a copy of the possible state
+    InflightState *stateCopy = generalInflight.front().state;
+
     generalInflight.pop_front();
 
     if (curCycle() != previousAcceptedUpdateWhenLoad) {
@@ -145,7 +156,7 @@ TimingValuePredictor::requestUpdateWhenLoad(ThreadID tid, Addr inst_addr,
     if (acceptedUpdateWhenLoad < maxUpdatesWhenLoadPerCycle) {
         //Process directly (The waiting queue is empty and more lookups can be accepted)
         processUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
-            predicted_val, value_generated, value_predicted,
+            predicted_val, value_generated, value_predicted, stateCopy,
             rn_to_ex_delay, callback);
         ++acceptedUpdateWhenLoad;
         ++stats.updateWhenLoadAccepted;
@@ -182,12 +193,13 @@ TimingValuePredictor::requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
+                        VPTimingInflight &entry,
                         std::function<void(gem5::o3::DynInstPtr, ThreadID,
                             Addr, InstSeqNum, VPResult)> callback)
 {
     //Create the lambda function and schedule the event
-    auto lambda = [=, this] {
-        finishLookup(inst, tid, inst_addr, seq_num, callback);
+    auto lambda = [=, this, &entry] {
+        finishLookup(inst, tid, inst_addr, seq_num, entry, callback);
     };
 
     //Priority trick for ensuring FIFO
@@ -206,13 +218,13 @@ TimingValuePredictor::processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_generated, bool value_predicted,
-                                Cycles rn_to_ex_delay,
+                                InflightState *state, Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
         finishUpdateWhenLoad(tid, inst_addr, seq_num, load_address, correct_val,
-            predicted_val, value_generated, value_predicted,
+            predicted_val, value_generated, value_predicted, state,
             rn_to_ex_delay, callback);
     };
 
@@ -254,12 +266,13 @@ TimingValuePredictor::processUpdateWhenStore(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
+                        VPTimingInflight &entry,
                         std::function<void(gem5::o3::DynInstPtr, ThreadID,
                             Addr, InstSeqNum, VPResult)> callback)
 {
     assert(lookupInflight.front().seqNum == seq_num);
 
-    VPResult predictionResult = lookup(tid, inst_addr, seq_num);
+    VPResult predictionResult = lookup(tid, inst_addr, seq_num, entry);
 
     if (predictionResult.predict) {
         ++stats.predicted;
@@ -271,6 +284,9 @@ TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
     delete lookupInflight.front().event;
 
     lookupInflight.pop_front();
+
+    //Mark as processed
+    entry.lookupProcessed = true;
 }
 
 void
@@ -278,7 +294,7 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_generated, bool value_predicted,
-                                Cycles rn_to_ex_delay,
+                                InflightState *state, Cycles rn_to_ex_delay,
                                 std::function<void()> callback)
 {
     //Check that the events are completed in-order of how they where scheduled
@@ -286,7 +302,7 @@ TimingValuePredictor::finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
 
     updateWhenLoad(tid, inst_addr, seq_num, load_address,
             correct_val, predicted_val, value_generated,
-            value_predicted, rn_to_ex_delay);
+            value_predicted, state, rn_to_ex_delay);
 
     if (value_predicted) {
         if (correct_val == predicted_val) {

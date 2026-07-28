@@ -69,10 +69,26 @@ struct VPTimingInflightEvent
     EventFunctionWrapper *event;
 };
 
+struct InflightState
+{
+    virtual ~InflightState() {};
+};
+
 struct VPTimingInflight
 {
     Addr instAddr;
     InstSeqNum seqNum;
+
+    /** Whether it has been processed by a lookup in any way */
+    bool lookupProcessed;
+    /*
+    THIS ALSO INCLUDES EVEN IF NOT ACCEPTED
+    */
+
+    /** Any extra state that wants to be added.
+     * CREATION AND DESTRUCTION IS MANAGED BY THE ONE WHO SETS IT
+     */
+    InflightState *state;
 };
 
 class TimingValuePredictor : public ClockedObject
@@ -80,7 +96,7 @@ class TimingValuePredictor : public ClockedObject
     public:
         TimingValuePredictor(const TimingValuePredictorParams &params);
 
-        void setO3CPU(gem5::o3::CPU *cpu);
+        virtual void setO3CPU(gem5::o3::CPU *cpu);
 
         /*Children should override the ones that actually perform real work,
           The semantic ones: lookup, updateWhenLoad, updateWhenStore, squashNotify.
@@ -171,11 +187,13 @@ class TimingValuePredictor : public ClockedObject
 
         void processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
+                        VPTimingInflight &entry,
                         std::function<void(gem5::o3::DynInstPtr, ThreadID,
                             Addr, InstSeqNum, VPResult)> callback);
 
         void finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
+                        VPTimingInflight &entry,
                         std::function<void(gem5::o3::DynInstPtr, ThreadID,
                             Addr, InstSeqNum, VPResult)> callback);
 
@@ -183,14 +201,14 @@ class TimingValuePredictor : public ClockedObject
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_generated, bool value_predicted,
-                                Cycles rn_to_ex_delay,
+                                InflightState *state, Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         void finishUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,
                                 RegVal correct_val, RegVal predicted_val,
                                 bool value_generated, bool value_predicted,
-                                Cycles rn_to_ex_delay,
+                                InflightState *state, Cycles rn_to_ex_delay,
                                 std::function<void()> callback);
 
         void processUpdateWhenStore(ThreadID tid, Addr inst_addr,
@@ -208,20 +226,21 @@ class TimingValuePredictor : public ClockedObject
     protected:
 
         virtual VPResult lookup(ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num) = 0;
+                            InstSeqNum seq_num, VPTimingInflight &entry) = 0;
 
         virtual void updateWhenLoad(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr load_address,
-                                    RegVal correct_val, RegVal predicted_val,
-                                    bool value_generated, bool value_predicted,
-                                    Cycles rn_to_ex_delay)
-                                    {};
+                                InstSeqNum seq_num, Addr load_address,
+                                RegVal correct_val, RegVal predicted_val,
+                                bool value_generated, bool value_predicted,
+                                InflightState *state, Cycles rn_to_ex_delay)
+                                {};
 
         virtual void updateWhenStore(ThreadID tid, Addr inst_addr,
-                                    InstSeqNum seq_num, Addr store_address,
-                                    const std::vector<uint8_t>& data_written, unsigned effective_size,
-                                    ByteOrder guest_byte_order)
-                                    {};
+                                InstSeqNum seq_num, Addr store_address,
+                                const std::vector<uint8_t>& data_written,
+                                unsigned effective_size,
+                                ByteOrder guest_byte_order)
+                                {};
 
         /** Notifies the child of the squash */
         virtual void squashNotify(const InstSeqNum seq_num) {};
