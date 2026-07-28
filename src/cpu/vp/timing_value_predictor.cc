@@ -95,6 +95,10 @@ TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         std::function<void(gem5::o3::DynInstPtr, ThreadID,
                             Addr, InstSeqNum, VPResult)> callback)
 {
+    //ALL LOADS CALL THIS FUNCTION
+    generalInflight.push_back({inst_addr, seq_num});
+    ++stats.totalLoads;
+
     ++stats.lookupRequests;
 
     if (curCycle() != previousAcceptedLookups) {
