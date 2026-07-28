@@ -253,6 +253,10 @@ class EVES(TimingValuePredictor):
     cxx_class = "gem5::eves::EVES"
     cxx_header = "cpu/vp/eves/eves.hh"
 
+    enable_estride = Param.Bool(True, "Whether to use EStride or not")
+
+    enable_evtage = Param.Bool(True, "Whether to use EVTAGE or not")
+
     evtage_log_table_sizes = VectorParam.Unsigned(
         [11, 10, 10, 9, 9, 9, 8, 8],
         "The size of each table as log2 of entries",

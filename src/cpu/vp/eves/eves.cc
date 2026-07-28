@@ -44,8 +44,13 @@ EVES::EVES(const EVESParams &params)
    estride(),
    evtage(params.evtage_log_table_sizes,
     params.evtage_table_history_bits),
+   useEStride(params.enable_estride),
+   useEVTAGE(params.enable_evtage),
    lvpstats(this)
-{}
+{
+    panic_if(!useEStride && !useEVTAGE,
+        "Must at least use some predictor.");
+}
 
 void
 EVES::setO3CPU(gem5::o3::CPU *cpu)
@@ -63,6 +68,16 @@ EVES::lookup(ThreadID tid, Addr inst_addr,
             seq_num, countInflight(inst_addr));
 
     auto evtageResponse = evtage.lookup(tid, inst_addr, seq_num, entry);
+
+    if (!useEStride) {
+        //Directly use EVTAGE
+        return evtageResponse.result;
+    }
+
+    if (!useEVTAGE) {
+        //Directly use EStride
+        return estrideResponse.result;
+    }
 
     if (estrideResponse.result.predict
         && !evtageResponse.result.predict)
@@ -104,16 +119,20 @@ EVES::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InflightState *state, Cycles rn_to_ex_delay)
 {
     //Update both predictors
-    auto success = evtage.updateWhenLoad(tid, inst_addr, seq_num,
-        load_address, correct_val, predicted_val,
-        value_generated, value_predicted, state, rn_to_ex_delay);
+    if (useEVTAGE) {
+        auto success = evtage.updateWhenLoad(tid, inst_addr, seq_num,
+            load_address, correct_val, predicted_val,
+            value_generated, value_predicted, state, rn_to_ex_delay);
 
-    if (!success)
-        ++lvpstats.EVTAGEupdatesBlocked;
+        if (!success)
+            ++lvpstats.EVTAGEupdatesBlocked;
+    }
 
-    estride.updateWhenLoad(tid, inst_addr, seq_num, load_address,
-        correct_val, predicted_val, value_generated,
-        value_predicted, rn_to_ex_delay);
+    if (useEStride) {
+        estride.updateWhenLoad(tid, inst_addr, seq_num, load_address,
+            correct_val, predicted_val, value_generated,
+            value_predicted, rn_to_ex_delay);
+    }
 }
 
 //Register the statistics

@@ -69,6 +69,9 @@ class EVES : public TimingValuePredictor
         EStride estride;
         EVTAGE evtage;
 
+        const bool useEStride;
+        const bool useEVTAGE;
+
         /** The statistics that this component adds */
         struct EVESStats : public statistics::Group
         {
