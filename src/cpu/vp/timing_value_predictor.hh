@@ -90,10 +90,8 @@ class TimingValuePredictor : public ClockedObject
         // GETS CALLED DURING FETCH
         void requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback);
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback);
 
         bool canLookup();
 
@@ -112,12 +110,9 @@ class TimingValuePredictor : public ClockedObject
                                     ByteOrder guest_byte_order,
                                     std::function<void()> callback);
 
-        void squash(const InstSeqNum seq_num); //The "real" squash function
-
-        void registerLoad(Addr inst_addr, InstSeqNum seq_num);
-
-        // If predict error, squash the inflight instructions in value predictor.
+        // If predict error, squash the inflight instructions.
         // GETS (hopefully not) CALLED DURING COMMIT
+        void squash(const InstSeqNum seq_num); //The "real" squash function
 
         //the internal policies
 
@@ -176,17 +171,13 @@ class TimingValuePredictor : public ClockedObject
 
         void processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback);
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback);
 
         void finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback);
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback);
 
         void processUpdateWhenLoad(ThreadID tid, Addr inst_addr,
                                 InstSeqNum seq_num, Addr load_address,

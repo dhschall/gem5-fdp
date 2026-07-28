@@ -92,10 +92,8 @@ TimingValuePredictor::canLookup()
 void
 TimingValuePredictor::requestLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback)
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback)
 {
     ++stats.lookupRequests;
 
@@ -180,10 +178,8 @@ TimingValuePredictor::requestUpdateWhenStore(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::processLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback)
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback)
 {
     //Create the lambda function and schedule the event
     auto lambda = [=, this] {
@@ -254,10 +250,8 @@ TimingValuePredictor::processUpdateWhenStore(ThreadID tid, Addr inst_addr,
 void
 TimingValuePredictor::finishLookup(gem5::o3::DynInstPtr inst, ThreadID tid,
                         Addr inst_addr, InstSeqNum seq_num,
-                        std::function<void(gem5::o3::DynInstPtr inst,
-                            ThreadID tid, Addr inst_addr,
-                            InstSeqNum seq_num, VPResult result)>
-                            callback)
+                        std::function<void(gem5::o3::DynInstPtr, ThreadID,
+                            Addr, InstSeqNum, VPResult)> callback)
 {
     assert(lookupInflight.front().seqNum == seq_num);
 
@@ -382,13 +376,6 @@ TimingValuePredictor::squash(const InstSeqNum seq_num)
     }
 
     squashNotify(seq_num); //Notify the child of the squash
-}
-
-void
-TimingValuePredictor::registerLoad(Addr inst_addr, InstSeqNum seq_num)
-{
-    generalInflight.push_back({inst_addr, seq_num});
-    ++stats.totalLoads;
 }
 
 uint64_t

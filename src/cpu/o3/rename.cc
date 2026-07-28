@@ -1310,16 +1310,12 @@ Rename::valuePredict(const DynInstPtr &inst, ThreadID tid)
 
     if (valuePredTiming) {
 
-        //Register it as in-flight load.
-        valuePredTiming->registerLoad(inst->pcState().instAddr(),
-            inst->seqNum);
-
         auto lambda = [this] (DynInstPtr inst, ThreadID tid, Addr inst_addr,
                     InstSeqNum seq_num, VPResult result) {
             recvValuePredict(inst, tid, inst_addr, seq_num, result);
         };
 
-        //Request the prediction
+        //Request the prediction & registers as in-flight load
         valuePredTiming->requestLookup(inst, tid, inst->pcState().instAddr(),
                                     inst->seqNum, lambda);
 
