@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "cpu/inst_seq.hh"
+#include "cpu/random/lfsr16.hh"
 #include "cpu/vp/eves/evtage_table.hh"
 #include "cpu/vp/eves/structs.hh"
 #include "cpu/vp/timing_value_predictor.hh"
@@ -97,6 +98,8 @@ class EVTAGE
         uint64_t getHistory(InstSeqNum seq_num);
 
         std::size_t randomIndex(std::size_t size);
+
+        LFSR16 lfsr16;
 };
 
 } //namespace gem5::eves

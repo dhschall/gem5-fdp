@@ -129,13 +129,45 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
     }
 
     if (predicted_val == correct_val) {
-        if (entry->confidence < 7) {
-            ++entry->confidence;
+
+        //Increment confidence and useful
+        //Probability: 1/32
+        uint16_t randomValue = lfsr16.next();
+        if ((randomValue >> 11) == 0) {
+
+            if (entry->confidence < 7) {
+                ++entry->confidence;
+            }
+
+            if (entry->confidence < 7) {
+                ++entry->confidence;
+            } else {
+                if (entry->useful < 3)
+                    ++entry->useful;
+            }
+            ++entry->useful;
         }
-        entry->useful = true;
+
+        if (entry->useful < 3) {
+            if (entry->confidence == 7) {
+                ++entry->useful;
+            } else {
+                randomValue = lfsr16.next();
+                if ((randomValue >> 11) == 0) {
+                    ++entry->confidence;
+                }
+            }
+        }
+
     } else {
+        if (entry->confidence == 7) {
+            entry->confidence -= 2;
+            entry->useful = 1;
+        } else {
+            entry->confidence = 0;
+            entry->useful = 0;
+        }
         entry->confidence = 0;
-        entry->useful = false;
     }
 
     // -----------------------------------------------
@@ -152,7 +184,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
         auto entry = tables[i].find(tid, inst_addr, branchHistory);
 
         upperEntriesAll.push_back(entry);
-        if (!entry->useful) {
+        if (entry->useful == 0) {
             upperEntriesNotUseful.push_back(entry);
             upperEtnriesNotUsefulTables.push_back(&tables[i]);
         }

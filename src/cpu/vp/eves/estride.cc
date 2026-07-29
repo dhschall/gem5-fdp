@@ -97,12 +97,12 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
             entry->stride = correct_val - lastValue;
 
             //Reduce confidence by 4 and reset useful
-            if (entry->confidence < 4) {
-                entry->confidence = 0;
-            } else {
+            if (entry->confidence > 4) {
                 entry->confidence -= 4;
+            } else {
+                entry->confidence = 4;
+                entry->useful = 0;
             }
-            entry->useful = 0;
 
         } else { //Everything is correct now
 
@@ -116,6 +116,9 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
                 }
                 if (entry->useful < 4) {
                     ++entry->useful;
+                }
+                if (entry->confidence >= 7) {
+                    entry->useful = 3;
                 }
             }
         }

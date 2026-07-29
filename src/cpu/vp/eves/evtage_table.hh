@@ -52,7 +52,7 @@ struct EVTAGE_Entry
     uint64_t value;
 
     uint8_t confidence; //3-bit
-    bool useful;
+    uint8_t useful; //2-bit
 
     //Bookeeping information:
     std::size_t index;
