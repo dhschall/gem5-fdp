@@ -392,6 +392,10 @@ TimingValuePredictor::squash(const InstSeqNum seq_num)
 
     while (!generalInflight.empty() &&
             generalInflight.back().seqNum > seq_num) {
+
+        if (generalInflight.back().state) {
+            delete generalInflight.back().state;
+        }
         generalInflight.pop_back();
     }
 
