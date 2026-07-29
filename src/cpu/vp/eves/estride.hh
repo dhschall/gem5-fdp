@@ -52,7 +52,9 @@ namespace gem5::eves
 class EStride
 {
     public:
-        EStride() {};
+        EStride(unsigned probConfidence)
+         : probConfidence(probConfidence)
+        {assert(probConfidence < 16);};
 
         PredictorResult lookup(ThreadID tid, Addr inst_addr,
                         InstSeqNum seq_num, uint64_t countInflight);
@@ -68,6 +70,8 @@ class EStride
         //No need for extra squash logic!
     private:
         EStrideTable table;
+
+        const unsigned probConfidence;
 
         LFSR16 lfsr16;
 };

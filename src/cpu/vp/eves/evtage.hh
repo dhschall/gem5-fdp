@@ -76,7 +76,8 @@ class EVTAGE
 {
     public:
         EVTAGE(const std::vector<unsigned> &logTableSizes,
-            const std::vector<unsigned> &tableHistoryBits);
+            const std::vector<unsigned> &tableHistoryBits,
+            unsigned probConfidence);
 
         PredictorResult lookup(ThreadID tid, Addr inst_addr,
                         InstSeqNum seq_num, VPTimingInflight &entry);
@@ -94,6 +95,8 @@ class EVTAGE
         gem5::o3::CPU *cpu;
 
         std::vector<EVTAGE_table> tables;
+
+        const unsigned probConfidence;
 
         uint64_t getHistory(InstSeqNum seq_num);
 

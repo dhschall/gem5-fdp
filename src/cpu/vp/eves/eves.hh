@@ -72,6 +72,8 @@ class EVES : public TimingValuePredictor
         const bool useEStride;
         const bool useEVTAGE;
 
+        const unsigned probConfidence;
+
         /** The statistics that this component adds */
         struct EVESStats : public statistics::Group
         {

@@ -281,3 +281,8 @@ class EVES(TimingValuePredictor):
         "NOTICE THAT THE FIRST TABLE HAS AN IMPLICIT ZERO. "
         "Currently only up to 64 bits supported",
     )
+
+    prob_confidence = Param.Unsigned(
+        2,
+        "The probability, expressed like 1/2^P, of incrementing confidence. Therefore 1 means 1/2, 2 means 1/4, ...",
+    )

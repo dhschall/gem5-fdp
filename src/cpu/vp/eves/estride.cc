@@ -108,9 +108,9 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
 
 
             //Increment confidence and useful
-            //Probability: 1/4
+            //Probability: 1/2^probConfidence
             uint16_t randomValue = lfsr16.next();
-            if ((randomValue >> 14) == 0) {
+            if ((randomValue >> (16 - probConfidence)) == 0) {
                 if (entry->confidence < 32) {
                     ++entry->confidence;
                 }
@@ -125,9 +125,9 @@ EStride::updateWhenLoad(ThreadID tid, Addr inst_addr,
 
     } else {
         //NO ENTRY, consider allocating one
-        //Probability: 1/4
+        //Probability: 1/2^probConfidence
         uint16_t randomValue = lfsr16.next();
-        if ((randomValue >> 14) == 0) {
+        if ((randomValue >> (16 - probConfidence)) == 0) {
             EStrideEntry a = {inst_addr, tid, correct_val, 0, 0, 0, true};
             table.allocate(tid, inst_addr, a);
             DPRINTF(VP, "ALLOCATING ENTRY FOR THIS PC\n");

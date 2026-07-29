@@ -41,11 +41,13 @@ namespace gem5::eves
 
 EVES::EVES(const EVESParams &params)
  : TimingValuePredictor(params),
-   estride(),
+   estride(params.prob_confidence),
    evtage(params.evtage_log_table_sizes,
-    params.evtage_table_history_bits),
+    params.evtage_table_history_bits,
+    params.prob_confidence),
    useEStride(params.enable_estride),
    useEVTAGE(params.enable_evtage),
+   probConfidence(params.prob_confidence),
    lvpstats(this)
 {
     panic_if(!useEStride && !useEVTAGE,

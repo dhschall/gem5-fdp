@@ -46,8 +46,10 @@ namespace gem5::eves
 {
 
 EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
-    const std::vector<unsigned> &tableHistoryBits)
- : cpu(nullptr)
+    const std::vector<unsigned> &tableHistoryBits,
+    unsigned probConfidence)
+ : cpu(nullptr),
+   probConfidence(probConfidence)
 {
     assert(logTableSizes.size() == tableHistoryBits.size() + 1);
 
@@ -131,10 +133,10 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
     if (predicted_val == correct_val) {
 
         //Increment confidence and useful
-        //Probability: 1/4
+        //Probability: 1/2^probConfidence
         if (entry->confidence < 7) {
             uint16_t randomValue = lfsr16.next();
-            if ((randomValue >> 14) == 0) {
+            if ((randomValue >> (16 - probConfidence)) == 0) {
                 ++entry->confidence;
             }
         }
@@ -144,7 +146,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
                 ++entry->useful;
             } else {
                 uint16_t randomValue = lfsr16.next();
-                if ((randomValue >> 14) == 0) {
+                if ((randomValue >> (16 - probConfidence)) == 0) {
                     ++entry->useful;
                 }
             }
