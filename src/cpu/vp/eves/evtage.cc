@@ -112,17 +112,12 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             InflightState *state, Cycles rn_to_ex_delay)
 {
     DPRINTF(VP, "EVTAGE UPDATE SEQNUM %llu\n", seq_num);
-    if (!value_generated) {
-
-        //Clean up the state if there is one
-        if (state) {
-            delete state;
-        }
-
+    //There is only state for the instructions that have called Lookup,
+    //therefore, if not state, the instruction shouldn't updateWhenLoad
+    if (!state) {
         return false;
     }
 
-    assert(state);
     auto info = dynamic_cast<InflightIndexInformation*>(state);
 
     auto entry = tables[info->table_idx].directAccess(info->index);
