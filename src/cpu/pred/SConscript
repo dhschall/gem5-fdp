@@ -45,8 +45,9 @@ SimObject('BranchPredictor.py',
     sim_objects=[
     'BranchPredictor',
     'ConditionalPredictor',
-    'IndirectPredictor', 'SimpleIndirectPredictor', #'ITTAGE',
-    'BranchTargetBuffer', 'SimpleBTB', 'BTBIndexingPolicy', 'BTBSetAssociative', 'AssociativeBTB',
+    'IndirectPredictor', 'SimpleIndirectPredictor',
+    'BranchTargetBuffer', 'SimpleBTB', 'BTBLevel', 'MultiLevelBTB',
+    'BTBIndexingPolicy', 'BTBSetAssociative',
     'ReturnAddrStack',
     'ITTAGE', 'ITTAGE_TAGE',
     'LocalBP', 'TournamentBP', 'BiModeBP', 'TAGEBase', 'TAGE', 'LoopPredictor',
@@ -91,7 +92,8 @@ Source('tage_sc_l_emilio.cc')
 Source('gshare.cc')
 Source('btb.cc')
 Source('simple_btb.cc')
-Source('associative_btb.cc')
+# Source('associative_btb.cc')
+Source('multi_level_btb.cc')
 DebugFlag('Indirect')
 DebugFlag('BTB')
 DebugFlag('RAS')

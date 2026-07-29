@@ -85,6 +85,7 @@ class BranchTargetBuffer(ClockedObject):
     abstract = True
 
     numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
+    latency = Param.Cycles(0, "Latency of the BTB (in cycles)")
 
 
 class BTBIndexingPolicy(SimObject):
@@ -144,6 +145,7 @@ class SimpleBTB(BranchTargetBuffer):
         "BTB indexing policy",
     )
 
+
 class AssociativeBTB(BranchTargetBuffer):
     type = "AssociativeBTB"
     cxx_class = "gem5::branch_prediction::AssociativeBTB"
@@ -164,6 +166,61 @@ class AssociativeBTB(BranchTargetBuffer):
     instShiftAmt = Param.Unsigned(
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
+
+
+class BTBLevel(SimObject):
+    type = "BTBLevel"
+    cxx_class = "gem5::branch_prediction::BTBLevel"
+    cxx_header = "cpu/pred/multi_level_btb.hh"
+
+    tagBits = Param.Unsigned(64, "Size of the BTB tags, in bits")
+    numEntries = Param.Unsigned(4096, "Number of BTB entries")
+    associativity = Param.Unsigned(8, "BTB associativity")
+    latency = Param.Cycles(1, "BTB access latency in cycles")
+    inclusive = Param.Bool(
+        False,
+        "Whether this level is inclusive of the immediately upper level; "
+        "otherwise, it is an exclusive victim buffer of the upper levels ",
+    )
+    instShiftAmt = Param.Unsigned(
+        Parent.instShiftAmt, "Number of bits to shift instructions by"
+    )
+    numThreads = Param.Unsigned(Parent.numThreads, "Number of threads")
+    replPolicy = Param.BaseReplacementPolicy(LRURP(), "BTB replacement policy")
+    indexingPolicy = Param.BTBIndexingPolicy(
+        BTBSetAssociative(
+            assoc=Parent.associativity,
+            num_entries=Parent.numEntries,
+            set_shift=Parent.instShiftAmt,
+            tag_bits=Parent.tagBits,
+            numThreads=Parent.numThreads,
+        ),
+        "BTB indexing policy",
+    )
+
+
+class MultiLevelBTB(BranchTargetBuffer):
+    type = "MultiLevelBTB"
+    cxx_class = "gem5::branch_prediction::MultiLevelBTB"
+    cxx_header = "cpu/pred/multi_level_btb.hh"
+
+    # Default is a three-level BTB. Subclass can override `levels` to build a
+    # custom BTB hierarchy; the L1-BTB must be inclusive.
+    levels = VectorParam.BTBLevel(
+        [
+            BTBLevel(
+                numEntries=256, associativity=8, latency=0, inclusive=True
+            ),
+            BTBLevel(
+                numEntries=4096, associativity=8, latency=1, inclusive=True
+            ),
+            BTBLevel(
+                numEntries=16384, associativity=8, latency=3, inclusive=False
+            ),
+        ],
+        "BTB levels ordered from the uppermost to the lowermost level",
+    )
+
 
 class ConditionalPredictor(ClockedObject):
     type = "ConditionalPredictor"
@@ -218,7 +275,8 @@ class SimpleIndirectPredictor(IndirectPredictor):
         Parent.instShiftAmt, "Number of bits to shift instructions by"
     )
 
-#class ITTAGE(IndirectPredictor):
+
+# class ITTAGE(IndirectPredictor):
 #    type = 'ITTAGE'
 #    cxx_class = 'gem5::branch_prediction::ITTAGE'
 #    cxx_header = "cpu/pred/ittage.hh"
@@ -234,6 +292,7 @@ class SimpleIndirectPredictor(IndirectPredictor):
 #    histLengths = VectorParam.Int(
 #        [4, 10, 16, 27, 44, 60, 96, 109, 219, 449, 487], "the ITTAGE T1~Tn history length")
 #    simpleBTBSize = Param.Unsigned(512, "size of base predictor")
+
 
 class BranchPredictor(SimObject):
     type = "BranchPredictor"
@@ -403,10 +462,12 @@ class TAGE(ConditionalPredictor):
 
     tage = Param.TAGEBase(TAGEBase(), "Tage object")
 
+
 class TAGE_EMILIO(ConditionalPredictor):
     type = "TAGE_EMILIO"
     cxx_class = "gem5::branch_prediction::TAGE_EMILIO"
     cxx_header = "cpu/pred/tage_sc_l_emilio.hh"
+
 
 class LTAGE_TAGE(TAGEBase):
     nHistoryTables = 12
@@ -498,7 +559,8 @@ class TAGE_SC_L_TAGE(TAGEBase):
     truncatePathHist = Param.Bool(
         True, "Truncate the path history to its configured size"
     )
- 
+
+
 class TAGE_SC_L_TAGE_64KB(TAGE_SC_L_TAGE):
     type = "TAGE_SC_L_TAGE_64KB"
     cxx_class = "gem5::branch_prediction::TAGE_SC_L_TAGE_64KB"
@@ -750,13 +812,15 @@ class TAGE_SC_L(LTAGE):
     statistical_corrector = Param.StatisticalCorrector(
         "Statistical Corrector. Set to NULL to disable it"
     )
- 
+
+
 class TAGE_SC_L_64KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 5
 
 
 class TAGE_SC_L_8KB_LoopPredictor(TAGE_SC_L_LoopPredictor):
     logSizeLoopPred = 3
+
 
 class TAGE_SC_L_64KB_StatisticalCorrector(StatisticalCorrector):
     type = "TAGE_SC_L_64KB_StatisticalCorrector"
