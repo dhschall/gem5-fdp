@@ -34,6 +34,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef __CPU_RANDOM_LFSR16_HH__
+#define __CPU_RANDOM_LFSR16_HH__
 
 #include "base/types.hh"
 
@@ -51,3 +53,5 @@ namespace gem5 {
             uint16_t state;
     };
 }
+
+#endif //__CPU_RANDOM_LFSR16_HH__
