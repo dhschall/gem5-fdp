@@ -52,6 +52,7 @@ EVTAGE::EVTAGE(const std::vector<unsigned> &logTableSizes,
    probConfidence(probConfidence)
 {
     assert(logTableSizes.size() == tableHistoryBits.size() + 1);
+    assert(probConfidence < 16);
 
     unsigned numOfTables = logTableSizes.size();
 
