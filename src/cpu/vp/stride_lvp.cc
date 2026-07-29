@@ -52,7 +52,10 @@ StrideLVP::StrideLVP(const StrideLVPParams &p)
               p.table_replacement_policy, p.table_indexing_policy,
               LVPEntry(genTagExtractor(p.table_indexing_policy))),
       confThreshold(p.confidence_threshold),
+      confSubstraction(p.confidence_substraction),
+      confBuffer(p.confidence_extra_buffer),
       confResetToZero(p.confidence_reset_to_zero),
+      alwaysUpdateStride(p.always_update_stride),
       useStride(p.use_stride),
       lvpstats(this)
 {
@@ -155,10 +158,11 @@ StrideLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
 
     if (pred_value != correct_val) {
         if (entry->confidence > 0) {
-            entry->confidence = confResetToZero ? 0 : entry->confidence - 1;
+            entry->confidence = confResetToZero ? 0 :
+                entry->confidence - confSubstraction;
         }
 
-        if (entry->confidence == 0) {
+        if (entry->confidence == 0 || alwaysUpdateStride) {
             entry->stride = stride;
         }
     } else {
@@ -166,8 +170,8 @@ StrideLVP::updateWhenLoad(ThreadID tid, Addr inst_addr, InstSeqNum seq_num,
         lvpstats.valuePredSavedCyclesLog2.sample(d > 0 ? floorLog2(d) : 0);
         lvpstats.valuePredSavedCycles.sample(rn_to_ex_delay);
 
-        if (entry->confidence < confThreshold) {
-            entry->confidence++;
+        if (entry->confidence < confThreshold + confBuffer) {
+            ++entry->confidence;
         }
         if (entry->stride == 0) {
             lvpstats.constantCorrect++;

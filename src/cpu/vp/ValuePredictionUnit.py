@@ -107,6 +107,19 @@ class StrideLVP(AtomicValuePredictor):
     confidence_reset_to_zero = Param.Bool(
         False, "Reset confidence to 0 on misprediction"
     )
+    confidence_substraction = Param.Unsigned(
+        0,
+        "How many confidence is substracted when missprediction, in case"
+        " of confidence_reset_to_zero=False",
+    )
+    confidence_extra_buffer = Param.Unsigned(
+        0, "How many confidence points can it be increased over threshold"
+    )
+
+    always_update_stride = Param.Bool(
+        False, "Whether update the stride even when confidence != 0"
+    )
+
     use_stride = Param.Bool(True, "Use stride (true) or use constant (false)")
 
 

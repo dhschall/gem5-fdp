@@ -113,10 +113,13 @@ class StrideLVP : public AtomicValuePredictor
 
     /** The confidence threshold */
     const int confThreshold;
+    const unsigned confSubstraction;
+    const unsigned confBuffer;
 
     /** Reset policy. Reset to zero or decrement */
     const bool confResetToZero;
 
+    const bool alwaysUpdateStride;
     const bool useStride;
 
     struct StrideLVPStats : public statistics::Group
