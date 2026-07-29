@@ -131,10 +131,10 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
     if (predicted_val == correct_val) {
 
         //Increment confidence and useful
-        //Probability: 1/32
+        //Probability: 1/4
         if (entry->confidence < 7) {
             uint16_t randomValue = lfsr16.next();
-            if ((randomValue >> 11) == 0) {
+            if ((randomValue >> 14) == 0) {
                 ++entry->confidence;
             }
         }
@@ -144,7 +144,7 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
                 ++entry->useful;
             } else {
                 uint16_t randomValue = lfsr16.next();
-                if ((randomValue >> 11) == 0) {
+                if ((randomValue >> 14) == 0) {
                     ++entry->useful;
                 }
             }
@@ -158,7 +158,6 @@ EVTAGE::updateWhenLoad(ThreadID tid, Addr inst_addr,
             entry->confidence = 0;
             entry->useful = 0;
         }
-        entry->confidence = 0;
     }
 
     // -----------------------------------------------
