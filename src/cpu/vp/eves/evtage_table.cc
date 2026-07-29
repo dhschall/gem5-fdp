@@ -45,7 +45,7 @@ EVTAGE_table::EVTAGE_table(uint64_t logNumberOfEntries,
    bitsHistoryUsed(bitsHistoryUsed),
    isBase(isBase)
 {
-    table.resize(1ULL << logNumberOfEntries, {0, 0, 0, 0, false, 0});
+    table.resize(1ULL << logNumberOfEntries, {0, 0, 0, 0, 0, 0});
     for (std::size_t i = 0; i < table.size(); ++i) {
         table[i].index = i;
     }
