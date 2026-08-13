@@ -87,6 +87,8 @@ class FetchTarget
   public:
     FetchTarget(const FTQ& parent, const ThreadID _tid,
                 const PCStateBase &_start_pc, FTSeqNum _seqNum);
+    FetchTarget(const FTQ& parent, const ThreadID _tid, const PCStateBase &_start_pc, const PCStateBase &_end_pc,
+                FTSeqNum _seqNum);
 
     ~FetchTarget();
 
@@ -129,6 +131,8 @@ class FetchTarget
     bool paddr_valid;
 
     Tick translation_start = 0;
+
+    bool is_override_ft;
 
   public:
     /** Anchor point to attach a branch predictor history.
@@ -331,6 +335,12 @@ class FetchTarget
     bool readyToFetch() { return state == ReadyToFetch; }
 
     bool isValid() { return state != Invalid; }
+
+    bool
+    isOverride()
+    {
+        return is_override_ft;
+    }
 
     /** Print the fetch target for debugging. */
     std::string toString();

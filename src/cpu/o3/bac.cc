@@ -69,10 +69,13 @@ std::string BAC::BACStats::statusStrings[ThreadStatusMax] = {
     "Running",
     "Squashing",
     "Blocked",
+    "Overriding",
     "FTQFull",
     "FTQLocked",
 };
 // clang-format on
+
+#define FALSE_PATH_MODELLING
 
 BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
     : cpu(_cpu),
@@ -90,6 +93,7 @@ BAC::BAC(CPU *_cpu, const BaseO3CPUParams &params)
       numThreads(params.numThreads),
       maxFTPerCycle(params.maxFTPerCycle),
       maxTakenPredPerCycle(params.maxTakenPredPerCycle),
+      modelOverrideFalsePath(params.modelOverrideFalsePath),
       stats(_cpu, this)
 {
     fatal_if(decoupledFrontEnd && (fetchTargetWidth < params.fetchBufferSize),
@@ -406,10 +410,34 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
         stalls[tid].bpu = false;
     }
 
+
+
+
+
+#ifdef FALSE_PATH_MODELLING
+    if (stalls[tid].fetch) {
+        DPRINTF(BAC, "[tid:%i] Fetch stall detected.\n", tid);
+        bacStatus[tid] = Blocked;
+        return true;
+    }
+
+    if (stalls[tid].bpu) {
+        DPRINTF(BAC, "[tid:%i] BPU stall detected.\n", tid);
+        bacStatus[tid] = Overriding;
+    }
+
+        // if (stalls[tid].bpu) {
+        //     bacStatus[tid] = Overriding;
+        // } else {
+        //     bacStatus[tid] = Blocked;
+        // }
+#else
     if (checkStall(tid)) {
         bacStatus[tid] = Blocked;
         return true;
     }
+#endif
+
 
     // If at this point the FTQ is still invalid we need to wait for
     // A resteer/squash signal.
@@ -456,6 +484,14 @@ BAC::checkSignalsAndUpdate(ThreadID tid)
             DPRINTF(BAC, "[tid:%i] FTQ is full. Blocking BAC.\n", tid);
             bacStatus[tid] = FTQFull;
         }
+        return true;
+    }
+
+    if ((bacStatus[tid] == Overriding) && !stalls[tid].bpu) {
+
+        // Switch status to running after squashing FTQ and setting the PC.
+        DPRINTF(BAC, "[tid:%i] Done overriding, switching to running.\n", tid);
+        bacStatus[tid] = Running;
         return true;
     }
 
@@ -538,7 +574,19 @@ BAC::tick()
                 generateFetchTargets(tid, status_change);
                 activity = true;
             }
+            if (bacStatus[tid] == Overriding) {
+                generateOverrideFetchTargets(tid, status_change);
+                activity = true;
+            }
             stats.status[bacStatus[tid]]++;
+
+            if (bacStatus[tid] == Overriding) {
+                auto btype = branch_prediction::BranchType::NoBranch;
+                if (block_inst) {
+                    btype = branch_prediction::getBranchType(block_inst);
+                }
+                stats.bacBlockCycles[btype]++;
+            }
         }
 
     } else {
@@ -575,6 +623,20 @@ BAC::newFetchTarget(ThreadID tid, const PCStateBase &start_pc)
                                             cpu->getAndIncrementFTSeq());
 
     DPRINTF(BAC, "Create new fetch target ftn:%llu\n", ft->ftNum());
+    stats.fetchTargets++;
+    return ft;
+}
+
+FetchTargetPtr
+BAC::newOverrideFetchTarget(ThreadID tid, const Addr start_pc, const Addr end_pc)
+{
+    std::unique_ptr<PCStateBase> spc(bacPC[tid]->clone());
+    std::unique_ptr<PCStateBase> epc(bacPC[tid]->clone());
+    spc->set(start_pc);
+    epc->set(end_pc);
+    auto ft = std::make_shared<FetchTarget>(*ftq, tid, *spc, *epc, 0);
+
+    DPRINTF(BAC, "Create new override fetch target ftn:%llu [%#llx:%#llx]\n", ft->ftNum(), start_pc, end_pc);
     stats.fetchTargets++;
     return ft;
 }
@@ -765,6 +827,16 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         curFT->finalize(cur_pc, ftEndAddr, curFT->ftNum(), branch_found,
                             predict_taken, *next_pc);
 
+        // If the BTB overrides we "simulate" the false-path prefetches
+        // for N cycles.
+        if (branchPredictRemaining[tid] != 0) {
+            block_inst = staticInst;
+            false_path_cur_addr = start_addr;
+            advanceL1PredPC();
+        }
+        // Even with override we can push the correct FT since the fetch units
+        // will correctly fetch instructions until the overriding branch.
+        // Only the instructions after the override will be squashed.
         ftq->insert(tid, curFT);
         wroteToTimeBuffer = true;
 
@@ -797,6 +869,59 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
     }
     stats.ftNumber.sample(num_ft);
 }
+
+void
+BAC::generateOverrideFetchTargets(ThreadID tid, bool &status_change)
+{
+    // if (branchPredictRemaining[tid] == 0) {
+    //     // In the last cycle we resteer and push the old "correct FT"
+    //     DPRINTF(BAC,
+    //             "[tid:%i] Override ends: Push [fn:%llu] into FTQ.\n",
+    //             tid, block_ft->ftNum());
+    //     // ftq->insert(tid, block_ft);
+    //     return;
+    // }
+    if (!modelOverrideFalsePath) {
+        return;
+    }
+
+    // Follow fall-through
+    auto start_addr = false_path_cur_addr;
+    advanceL1PredPC();
+
+    auto ft = newOverrideFetchTarget(tid, start_addr, false_path_cur_addr);
+    DPRINTF(BAC, "[tid:%i] Overriding: Push [fn:%llu] into FTQ.\n",
+                tid, ft->ftNum());
+
+    ftq->insert(tid, ft);
+}
+
+void
+BAC::advanceL1PredPC()
+{
+    // false_path_cur_addr += fetchTargetWidth;
+
+
+    auto start_addr = false_path_cur_addr;
+    auto br_addr = false_path_cur_addr;
+    // TODO implement searching
+    // auto br_addr = bpu->lookupBBBranch(0, start_addr);
+
+    auto target = bpu->predictL1(0, br_addr);
+
+    DPRINTF(BAC, "Overriding: False path pred: [start=%#llx, br_addr=%#llx, target=%#llx].\n",
+                start_addr, br_addr, target);
+
+    if (target == MaxAddr) {
+        // On BTB miss fall-through
+        false_path_cur_addr += fetchTargetWidth;
+        stats.l1FallThrough++;
+    } else {
+        false_path_cur_addr = target;
+        stats.l1Taken++;
+    }
+}
+
 
 /// Post fetch part ------------------------------------------
 
@@ -1044,7 +1169,17 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
       ADD_STAT(ftSizeDist, statistics::units::Count::get(),
                "Number of bytes per fetch target"),
       ADD_STAT(ftNumber, statistics::units::Count::get(),
-               "Number of fetch target inserted to the FTQ per cycle")
+               "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(bacBlockCycles, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle"),
+    // ADD_STAT(fetchBlockCycles, statistics::units::Count::get(),
+    //          "Number of fetch target inserted to the FTQ per cycle"),
+    // ADD_STAT(fetchBlocked, statistics::units::Count::get(),
+    //          "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(l1FallThrough, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle"),
+    ADD_STAT(l1Taken, statistics::units::Count::get(),
+             "Number of fetch target inserted to the FTQ per cycle")
 {
     using namespace statistics;
     status.init(ThreadStatusMax).flags(statistics::pdf | statistics::nozero);
@@ -1061,11 +1196,13 @@ BAC::BACStats::BACStats(o3::CPU *cpu, BAC *bac)
 
     preDecUpdate.init(enums::Num_BranchType).flags(total | pdf);
     noHistByType.init(enums::Num_BranchType).flags(total | pdf);
+    bacBlockCycles.init(enums::Num_BranchType).flags(total | pdf);
     ftNumber.init(0, bac->maxFTPerCycle, 1);
 
     for (int i = 0; i < enums::Num_BranchType; i++) {
         preDecUpdate.subname(i, enums::BranchTypeStrings[i]);
         noHistByType.subname(i, enums::BranchTypeStrings[i]);
+        bacBlockCycles.subname(i, enums::BranchTypeStrings[i]);
     }
 }
 

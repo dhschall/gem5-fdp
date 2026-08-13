@@ -185,6 +185,8 @@ class BPredUnit : public SimObject
         return btb->update(tid, pc, target);
     }
 
+    Addr predictL1(ThreadID tid, Addr pc);
+
     void dump();
 
     /** Branch Predictor Unit (BPU) history object `PredictorHistory`

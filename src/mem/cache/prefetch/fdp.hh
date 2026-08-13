@@ -115,6 +115,8 @@ class FetchDirectedPrefetcher : public Base
     /** Probe the cache before a prefetch gets inserted into the PFQ */
     const bool cacheSnoop;
 
+    const bool onlyOverride;
+
     /** The prefetch queue entry objects */
     struct PrefetchRequest : public BaseMMU::Translation
     {

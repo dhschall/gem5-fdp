@@ -120,6 +120,8 @@ class BranchTargetBuffer : public ClockedObject
       stats.mispredict[type]++;
     }
 
+    virtual Addr lookupL1(ThreadID tid, Addr instPC) { panic("Not Implemented"); return 0; }
+
   protected:
     /** Number of the threads for which the branch history is maintained. */
     const unsigned numThreads;

@@ -51,6 +51,7 @@ namespace o3
 {
 
 /** Fetch Target Methods -------------------------------- */
+
 FetchTarget::FetchTarget(const FTQ& parent, const ThreadID _tid,
                          const PCStateBase &_start_pc, InstSeqNum _seqNum)
   : ftq(parent),
@@ -58,6 +59,7 @@ FetchTarget::FetchTarget(const FTQ& parent, const ThreadID _tid,
     tid(_tid),
     is_branch(false),
     taken(false),
+    is_override_ft(false),
     paddr(MaxAddr),
     translation_done(false),
     paddr_valid(false),
@@ -79,6 +81,28 @@ FetchTarget::~FetchTarget()
         delete[] fetchBuffer;
         fetchBuffer = nullptr;
     }
+}
+
+FetchTarget::FetchTarget(const FTQ& parent, const ThreadID _tid,
+                         const PCStateBase &_start_pc, const PCStateBase &_end_pc, InstSeqNum _seqNum)
+  : ftq(parent),
+    ftSeqNum(_seqNum),
+    tid(_tid),
+    is_branch(false),
+    taken(false),
+    paddr(MaxAddr),
+    translation_done(false),
+    paddr_valid(false),
+    is_override_ft(true),
+    bpuHistory(nullptr),
+    state(Initial),
+    fetchBuffer(nullptr),
+    fetchBufferValid(false)
+{
+    set(startPC , _start_pc);
+    set(endPC, _end_pc);
+    vaddr = startPC->instAddr() & ~(ftq.cacheBlkSize-1);
+    endAddr = endPC->instAddr();
 }
 
 void
@@ -273,6 +297,15 @@ void
 FTQ::insert(ThreadID tid, FetchTargetPtr fetchTarget)
 {
     assert(ftq[tid].size() < numEntries);
+
+    if (fetchTarget->isOverride()) {
+        // For override FTs we only notifiy the prefether to simulate
+        // false-path prefetches but then we drop it.
+        // This is for simplicity.
+        ppFTQInsert->notify(fetchTarget);
+        return;
+    }
+
     ftq[tid].push_back(fetchTarget);
     ppFTQInsert->notify(fetchTarget);
     stats.inserts++;

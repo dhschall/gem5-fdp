@@ -200,6 +200,17 @@ MultiLevelBTB::lookup(ThreadID tid, Addr instPC, BranchType type)
     return BTBLookupResult(nullptr, Cycles(0));
 }
 
+Addr
+MultiLevelBTB::lookupL1(ThreadID tid, Addr inst_pc)
+{
+    BTBEntry *l1_entry = levels.front()->lookup(tid, inst_pc);
+    if (l1_entry) {
+        return l1_entry->target->instAddr();
+    }
+    return MaxAddr;
+}
+
+
 const StaticInstPtr
 MultiLevelBTB::getInst(ThreadID tid, Addr instPC)
 {

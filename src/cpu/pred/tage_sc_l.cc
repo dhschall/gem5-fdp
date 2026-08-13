@@ -383,6 +383,12 @@ TAGE_SC_L_TAGE::getBimodePred(Addr pc, TAGEBase::BranchInfo* tage_bi) const
     return TAGEBase::getBimodePred(pc, tage_bi);
 }
 
+bool
+TAGE_SC_L_TAGE::getBimodePred(Addr pc) const
+{
+    return btablePrediction[bindex(pc)];
+}
+
 void
 TAGE_SC_L_TAGE::extraAltCalc(TAGEBase::BranchInfo* bi)
 {
@@ -461,6 +467,12 @@ TAGE_SC_L::predict(ThreadID tid, Addr pc, bool cond_branch, void *&b)
     }
 
     return Prediction{pred_taken, latency};
+}
+
+bool
+TAGE_SC_L::predictL1NoUpdate(ThreadID tid, Addr pc)
+{
+    return tage->getBimodePred(pc);
 }
 
 void

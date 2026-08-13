@@ -214,9 +214,9 @@ class BaseO3CPU(BaseCPU):
 
     branchPred = Param.BranchPredictor(
         BranchPredictor(
-            conditionalBranchPred=TAGE_EMILIO(),
-            indirectBranchPred=ITTAGE(),
-            btb=AssociativeBTB()
+            conditionalBranchPred=TournamentBP(),
+            indirectBranchPred=SimpleIndirectPredictor(),
+            btb=SimpleBTB()
         ),
         "Branch Predictor",
     )
@@ -235,6 +235,9 @@ class BaseO3CPU(BaseCPU):
 
     ## Parameters for decoupled front-end
     decoupledFrontEnd = Param.Bool(False, "Enables the decoupled front-end")
+
+    modelOverrideFalsePath = Param.Bool(False, "Enables override modelling in the front end")
+
     numFTQEntries = Param.Unsigned(
         8,
         "Number of entries in the Fetch target queue. (only used for "

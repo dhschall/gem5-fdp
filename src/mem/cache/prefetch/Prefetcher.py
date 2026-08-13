@@ -812,6 +812,9 @@ class FetchDirectedPrefetcher(BasePrefetcher):
         "Snoop the icache (if present) and do not enqueue prefetches for "
         "blocks already in the cache.",
     )
+    prefetch_only_override = Param.Bool(
+        False, "Prefetch only override fetch targets"
+    )
 
 
 add_citation(

@@ -89,6 +89,8 @@ class MultiLevelBTB : public BranchTargetBuffer
     lookup(ThreadID tid, Addr instPC,
            BranchType type = BranchType::NoBranch) override;
 
+    Addr lookupL1(ThreadID tid, Addr instPC) override;
+
     void update(ThreadID tid, Addr instPC, const PCStateBase &target_pc,
                 BranchType type = BranchType::NoBranch,
                 StaticInstPtr inst = nullptr) override;

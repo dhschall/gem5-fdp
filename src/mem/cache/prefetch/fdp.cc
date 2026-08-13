@@ -61,12 +61,17 @@ FetchDirectedPrefetcher::FetchDirectedPrefetcher(
       pfqSize(p.pfq_size),
       tqSize(p.tq_size),
       cacheSnoop(p.cache_snoop),
+      onlyOverride(p.prefetch_only_override),
       stats(this, p.pfq_size, p.tq_size)
 {}
 
 void
 FetchDirectedPrefetcher::notifyFTQInsert(const o3::FetchTargetPtr &ft)
 {
+    if (onlyOverride && !ft->isOverride()) {
+        return;
+    }
+
     const Addr start_blk_addr = blockAddress(ft->startAddress());
     const Addr end_blk_addr = blockAddress(ft->endAddress());
 
@@ -81,6 +86,7 @@ FetchDirectedPrefetcher::notifyFTQInsert(const o3::FetchTargetPtr &ft)
     // Advancing an Addr past the final block near MaxAddr wraps it to zero.
     // Bound iteration by a non-address counter so the loop still terminates.
     const uint64_t num_blocks = (end_blk_addr - start_blk_addr) / blkSize + 1;
+    DPRINTF(HWPrefetch, "FT[%#x->%#x] blocks=%i\n", start_blk_addr, end_blk_addr, num_blocks);
     for (uint64_t block = 0; block < num_blocks; ++block) {
         const Addr blk_addr = start_blk_addr + block * blkSize;
 
