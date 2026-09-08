@@ -39,10 +39,12 @@ SimObject('ValuePredictionUnit.py',
     sim_objects=[
         'ValuePredictor',
         'StrideLVP',
+        'EVES',
     ],
     enums=[])
 
-Source('stride_lvp.cc')
 Source('value_predictor.cc')
+Source('stride_lvp.cc')
+Source('eves.cc')
 
 DebugFlag('VP', "For debugging the value predictor")
